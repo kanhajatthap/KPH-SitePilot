@@ -39,6 +39,317 @@ function escapeHtml(value: string): string {
   });
 }
 
+/**
+ * The KPH SitePilot About page is intentionally a separate branch from the
+ * generic About template. Page 36 already uses a calm, craft-led SitePilot
+ * voice; this branch keeps that tone while following the requested five
+ * sections exactly.
+ */
+function synthesizeKphAboutPreview(siteUrl: string): SynthesizedComponent {
+  const safeSiteUrl = escapeHtml(siteUrl);
+  const year = new Date().getFullYear();
+
+  const aboutCss = `
+.about-preview { container-type: inline-size; }
+.about-preview .ap-header { padding: 1rem 1.25rem; }
+.about-preview .ap-nav { display: none; }
+.about-preview .ap-hero { padding: 3.5rem 1.25rem; }
+.about-preview .ap-hero-grid { display: grid; gap: 2.5rem; }
+.about-preview .ap-hero-title { font-size: 40px; line-height: 1.02; }
+.about-preview .ap-section { padding: 3rem 1.25rem; }
+.about-preview .ap-cards { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+.about-preview .ap-principles { display: grid; gap: 0.75rem; grid-template-columns: 1fr; }
+.about-preview .ap-mission-grid { display: grid; gap: 2rem; }
+.about-preview .ap-cta-row { display: flex; flex-direction: column; gap: 1.5rem; }
+.about-preview .ap-cta { padding: 3rem 1.25rem; }
+.about-preview .ap-footer { padding: 1.25rem; }
+@container (min-width: 640px) {
+  .about-preview .ap-header { padding: 1rem 2rem; }
+  .about-preview .ap-nav { display: flex; }
+  .about-preview .ap-hero { padding: 5rem 2rem; }
+  .about-preview .ap-hero-title { font-size: 56px; }
+  .about-preview .ap-section { padding: 3rem 2rem; }
+  .about-preview .ap-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .about-preview .ap-principles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .about-preview .ap-cta { padding: 3rem 2rem; }
+  .about-preview .ap-footer { padding: 1.25rem 2rem; }
+}
+@container (min-width: 900px) {
+  .about-preview .ap-hero-grid { grid-template-columns: 1.05fr 0.95fr; align-items: center; }
+  .about-preview .ap-mission-grid { grid-template-columns: 0.8fr 1.2fr; gap: 3.5rem; }
+  .about-preview .ap-principles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .about-preview .ap-cta-row { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+`;
+
+  const renderedHtml = `
+<div class="about-preview min-h-[680px] bg-[#fbf8f4] font-sans text-stone-900">
+  <style>${aboutCss}</style>
+  <header class="ap-header border-b border-stone-200/80 bg-[#fbf8f4]/90">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 via-pink-500 to-violet-500 text-sm font-bold text-white">K</span>
+        <span class="text-sm font-semibold tracking-tight">KPH SitePilot</span>
+      </div>
+      <nav class="ap-nav items-center gap-5 text-[11px] font-medium text-stone-500" aria-label="Preview navigation">
+        <a href="#mission" class="hover:text-stone-900">Mission</a>
+        <a href="#what-were-building" class="hover:text-stone-900">What we’re building</a>
+        <a href="#principles" class="hover:text-stone-900">Principles</a>
+      </nav>
+      <span class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">Preview only</span>
+    </div>
+  </header>
+
+  <!-- 1. Hero -->
+  <section class="ap-hero relative overflow-hidden">
+    <div class="pointer-events-none absolute inset-0" style="background-image: radial-gradient(ellipse at 8% 0%, rgba(255,138,91,0.18), transparent 45%), radial-gradient(ellipse at 88% 18%, rgba(255,77,141,0.14), transparent 45%), radial-gradient(ellipse at 55% 100%, rgba(168,85,247,0.10), transparent 55%);"></div>
+    <div class="ap-hero-grid relative mx-auto max-w-5xl">
+      <div>
+        <span class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-stone-600 shadow-sm">
+          <span class="h-1.5 w-1.5 rounded-full bg-pink-500"></span>
+          About KPH SitePilot
+        </span>
+        <h1 class="ap-hero-title mt-5 max-w-xl font-semibold tracking-tight text-stone-950">
+          Your Ideas. Your Website. Powered by AI.
+        </h1>
+        <p class="mt-5 max-w-lg text-[13.5px] leading-7 text-stone-600">
+          KPH SitePilot turns a clear prompt into a real WordPress page — with a preview you can inspect before anything is saved.
+        </p>
+        <div class="mt-7 flex flex-wrap items-center gap-2.5">
+          <a href="#what-were-building" class="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-stone-800">See what we’re building <span aria-hidden="true">→</span></a>
+          <a href="#principles" class="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[12px] font-semibold text-stone-700 transition hover:bg-stone-50">Our principles</a>
+        </div>
+        <p class="mt-6 text-[10.5px] text-stone-400">Local-first · Approval-gated · No production surprises</p>
+      </div>
+
+      <div class="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm">
+        <div class="rounded-2xl border border-stone-200 bg-[#fbf8f4] p-3">
+          <div class="flex items-center justify-between border-b border-stone-200 pb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="h-2 w-2 rounded-full bg-rose-400"></span>
+              <span class="h-2 w-2 rounded-full bg-amber-400"></span>
+              <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+            </div>
+            <span class="rounded-full bg-white px-2 py-0.5 text-[9px] font-medium text-stone-500">staged preview</span>
+          </div>
+          <div class="mt-3 rounded-xl bg-gradient-to-br from-orange-100 via-pink-50 to-violet-100 p-4">
+            <p class="text-[9px] font-semibold uppercase tracking-[0.16em] text-pink-600">Your idea</p>
+            <p class="mt-1.5 font-serif text-lg font-semibold leading-tight text-stone-900">“A calm About page for KPH SitePilot.”</p>
+            <div class="mt-3 h-1.5 w-4/5 rounded-full bg-white/80"></div>
+            <div class="mt-1.5 h-1.5 w-3/5 rounded-full bg-white/60"></div>
+          </div>
+          <div class="mt-3 grid grid-cols-3 gap-1.5 text-center">
+            <div class="rounded-lg bg-white px-2 py-2"><p class="text-[9px] font-semibold text-stone-700">Prompt</p><p class="mt-0.5 text-[8px] text-stone-400">plain language</p></div>
+            <div class="rounded-lg bg-white px-2 py-2"><p class="text-[9px] font-semibold text-stone-700">Preview</p><p class="mt-0.5 text-[8px] text-stone-400">real page</p></div>
+            <div class="rounded-lg bg-white px-2 py-2"><p class="text-[9px] font-semibold text-stone-700">Approve</p><p class="mt-0.5 text-[8px] text-stone-400">you decide</p></div>
+          </div>
+        </div>
+        <p class="mt-3 text-center text-[10px] text-stone-500">Nothing is saved until you approve.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Mission -->
+  <section id="mission" class="ap-section border-y border-stone-200/80 bg-white/50">
+    <div class="ap-mission-grid mx-auto max-w-5xl">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">Our Mission</p>
+        <h2 class="mt-2.5 max-w-xs text-3xl font-semibold leading-tight tracking-tight">Making website creation simpler.</h2>
+      </div>
+      <div>
+        <p class="max-w-2xl text-[13px] leading-7 text-stone-600">
+          Most website tools ask you to learn their system before you can explain your idea. KPH SitePilot starts with the idea: describe the page, inspect a real preview, and approve the change only when it feels right.
+        </p>
+        <p class="mt-4 max-w-2xl text-[13px] leading-7 text-stone-500">
+          The goal is not to remove your judgment. It is to remove the busywork between a clear thought and a working page.
+        </p>
+        <div class="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Prompt</div>
+            <div class="mt-1 text-[11px] text-stone-600">Plain-language ideas.</div>
+          </div>
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Preview</div>
+            <div class="mt-1 text-[11px] text-stone-600">A real staged page.</div>
+          </div>
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Approve</div>
+            <div class="mt-1 text-[11px] text-stone-600">You stay in control.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. What we're building -->
+  <section id="what-were-building" class="ap-section">
+    <div class="mx-auto max-w-5xl">
+      <div class="max-w-2xl">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">What We’re Building</p>
+        <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight">Three pieces of one calm workspace.</h2>
+      </div>
+      <div class="ap-cards mt-7">
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5h16v10H9l-5 3v-13Z" stroke-linejoin="round"/><path d="M8 9h8M8 12h5" stroke-linecap="round"/></svg>
+          </span>
+          <h3 class="mt-4 text-sm font-semibold">Prompt-to-page builder</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">Describe the page you want. SitePilot turns it into a structured, responsive WordPress draft you can inspect.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-pink-50 text-pink-600">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </span>
+          <h3 class="mt-4 text-sm font-semibold">Preview-first workflow</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">See the actual staged page in the canvas before anything is written. Revise the plan, not a broken live site.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.5 19 6v5.5c0 4.2-2.8 7.4-7 9-4.2-1.6-7-4.8-7-9V6l7-2.5Z" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <h3 class="mt-4 text-sm font-semibold">Safe by default</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">Read-only inspection, local-first targets, and approval-gated writes keep you in control at every step.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Principles -->
+  <section id="principles" class="ap-section border-y border-stone-200/80 bg-white/60">
+    <div class="mx-auto max-w-5xl">
+      <div class="max-w-2xl">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">Our Principles</p>
+        <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight">Four rules we do not trade away.</h2>
+      </div>
+      <div class="ap-principles mt-7">
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">01</span>
+          <h3 class="mt-3 text-sm font-semibold">User Control</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">You approve every change. Nothing is published automatically.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">02</span>
+          <h3 class="mt-3 text-sm font-semibold">Security First</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">Local-first targets, least privilege, and no secrets in prompts or logs.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">03</span>
+          <h3 class="mt-3 text-sm font-semibold">Transparency</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">Clear plans, visible reasoning, and honest status at every step.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">04</span>
+          <h3 class="mt-3 text-sm font-semibold">Continuous Improvement</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">Small, testable iterations instead of risky big-bang rewrites.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Closing CTA -->
+  <section id="lets-build" class="ap-cta">
+    <div class="relative mx-auto max-w-5xl overflow-hidden rounded-3xl bg-stone-900 px-6 py-9 text-white">
+      <div class="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full opacity-30 blur-2xl" style="background-image: radial-gradient(circle, rgba(255,77,141,0.9), rgba(168,85,247,0.35), transparent 70%);"></div>
+      <div class="ap-cta-row relative">
+        <div class="max-w-xl">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-300">Closing CTA</p>
+          <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight">Let’s Build Something Great</h2>
+          <p class="mt-3 text-[12px] leading-6 text-stone-300">Bring the idea. We’ll help you shape it, preview it, and ship it safely.</p>
+        </div>
+        <a href="#what-were-building" class="inline-flex w-fit shrink-0 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[12px] font-semibold text-stone-900">Start with a prompt <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="ap-footer border-t border-stone-200/80">
+    <div class="mx-auto flex max-w-5xl flex-col gap-1.5 text-[10px] text-stone-400">
+      <span>© ${year} KPH SitePilot. Built with care.</span>
+      <span>Preview staged for ${safeSiteUrl} · not published</span>
+    </div>
+  </footer>
+</div>`;
+
+  const gutenbergBlocksHtml = `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Your Ideas. Your Website. Powered by AI.</h1><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>KPH SitePilot turns a clear prompt into a real WordPress page — with a preview you can inspect before anything is saved.</p><!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons">
+    <!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#what-were-building">See what we’re building</a></div><!-- /wp:button -->
+    <!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="#principles">Our principles</a></div><!-- /wp:button -->
+  </div>
+  <!-- /wp:buttons -->
+
+  <!-- wp:heading {"level":2,"anchor":"mission"} --><h2 id="mission" class="wp-block-heading">Our Mission</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p><strong>Making website creation simpler.</strong> Most website tools ask you to learn their system before you can explain your idea. KPH SitePilot starts with the idea: describe the page, inspect a real preview, and approve the change only when it feels right.</p><!-- /wp:paragraph -->
+  <!-- wp:paragraph --><p>The goal is not to remove your judgment. It is to remove the busywork between a clear thought and a working page.</p><!-- /wp:paragraph -->
+
+  <!-- wp:heading {"level":2,"anchor":"what-were-building"} --><h2 id="what-were-building" class="wp-block-heading">What We’re Building</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Three pieces of one calm workspace.</p><!-- /wp:paragraph -->
+  <!-- wp:columns -->
+  <div class="wp-block-columns">
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Prompt-to-page builder</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>Describe the page you want. SitePilot turns it into a structured, responsive WordPress draft you can inspect.</p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Preview-first workflow</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>See the actual staged page in the canvas before anything is written. Revise the plan, not a broken live site.</p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Safe by default</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>Read-only inspection, local-first targets, and approval-gated writes keep you in control at every step.</p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+  </div>
+  <!-- /wp:columns -->
+
+  <!-- wp:heading {"level":2,"anchor":"principles"} --><h2 id="principles" class="wp-block-heading">Our Principles</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Four rules we do not trade away.</p><!-- /wp:paragraph -->
+  <!-- wp:list -->
+  <ul class="wp-block-list">
+    <!-- wp:list-item --><li><strong>User Control.</strong> You approve every change. Nothing is published automatically.</li><!-- /wp:list-item -->
+    <!-- wp:list-item --><li><strong>Security First.</strong> Local-first targets, least privilege, and no secrets in prompts or logs.</li><!-- /wp:list-item -->
+    <!-- wp:list-item --><li><strong>Transparency.</strong> Clear plans, visible reasoning, and honest status at every step.</li><!-- /wp:list-item -->
+    <!-- wp:list-item --><li><strong>Continuous Improvement.</strong> Small, testable iterations instead of risky big-bang rewrites.</li><!-- /wp:list-item -->
+  </ul>
+  <!-- /wp:list -->
+
+  <!-- wp:heading {"level":2,"anchor":"lets-build"} --><h2 id="lets-build" class="wp-block-heading">Let’s Build Something Great</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Bring the idea. We’ll help you shape it, preview it, and ship it safely.</p><!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#what-were-building">Start with a prompt</a></div><!-- /wp:button --></div>
+  <!-- /wp:buttons -->
+</main>
+<!-- /wp:group -->`;
+
+  return {
+    title: 'About KPH SitePilot',
+    type: 'about',
+    route: '/about',
+    summary:
+      'Staged a five-section responsive About page for KPH SitePilot, using page 36’s calm, craft-led tone as reference.',
+    bulletPoints: [
+      'Section 1 — Hero: “Your Ideas. Your Website. Powered by AI.” with a preview-first note',
+      'Section 2 — Our Mission: Making website creation simpler.',
+      'Section 3 — What We’re Building: three feature cards for prompt-to-page, preview-first and safe-by-default',
+      'Section 4 — Our Principles: User Control, Security First, Transparency, Continuous Improvement',
+      'Section 5 — Closing CTA: “Let’s Build Something Great”',
+      `Target: ${siteUrl} · Builder: Gutenberg core blocks · Status: staged, not published`,
+    ],
+    codeSnippet: `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Your Ideas. Your Website. Powered by AI.</h1><!-- /wp:heading -->
+  <!-- wp:heading {"level":2,"anchor":"mission"} --><h2 id="mission" class="wp-block-heading">Our Mission</h2><!-- /wp:heading -->
+  <!-- wp:heading {"level":2,"anchor":"what-were-building"} --><h2 id="what-were-building" class="wp-block-heading">What We’re Building</h2><!-- /wp:heading -->
+  <!-- wp:heading {"level":2,"anchor":"principles"} --><h2 id="principles" class="wp-block-heading">Our Principles</h2><!-- /wp:heading -->
+  <!-- wp:heading {"level":2,"anchor":"lets-build"} --><h2 id="lets-build" class="wp-block-heading">Let’s Build Something Great</h2><!-- /wp:heading -->
+</main>
+<!-- /wp:group -->`,
+    renderedHtml,
+    gutenbergBlocksHtml,
+  };
+}
+
 export function synthesizeFromPrompt(
   prompt: string,
   siteUrl: string,
@@ -309,6 +620,13 @@ export function synthesizeFromPrompt(
     /\babout\s+["“'`]?[A-Z]/.test(prompt);
 
   if (isAboutPageRequest) {
+    // KPH SitePilot's About page has a fixed five-section brief. Keep it
+    // separate from the generic About template so the section names and
+    // closing CTA stay exact.
+    if (/\bKPH\s+SitePilot\b/i.test(prompt)) {
+      return synthesizeKphAboutPreview(siteUrl);
+    }
+
     const quotedSubject = prompt.match(/(?:about|for)\s+["“'`](.+?)["”'`]/i)?.[1];
     const brandSubject = prompt.match(/\bfor\s+([A-Z][A-Za-z0-9&' -]{1,60})/)?.[1];
     const aboutSubject = (quotedSubject || brandSubject || 'SitePilot')

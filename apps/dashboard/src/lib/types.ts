@@ -152,6 +152,14 @@ export interface InspectedPageData {
   content?: string;
 }
 
+export interface SitePageSummary {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  url: string;
+}
+
 export interface PreviewState {
   targetSite: string;
   viewport: ViewportMode;

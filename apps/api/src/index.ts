@@ -2483,7 +2483,24 @@ export async function handleRequest(
     }
   }
 
-  // 21. Page Sections Read Endpoint
+  // 21. Page Inventory Read Endpoint
+  if (url === '/api/site/pages/list' || url === '/site/pages/list') {
+    if (method !== 'GET') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only GET is accepted.' });
+      return;
+    }
+    try {
+      const siteMgr = new LocalWpSiteManager();
+      const pages = await siteMgr.listPages();
+      sendJson(res, 200, { pages, count: pages.length, verified: true });
+      return;
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 22. Page Sections Read Endpoint
   if (url === '/api/site/pages/sections' || url === '/site/pages/sections') {
     if (method !== 'GET') {
       sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only GET is accepted.' });

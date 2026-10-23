@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
-import { DraftProposal, BuilderProposal, PreviewState } from '../lib/types';
+import React, { useCallback, useEffect, useState } from 'react';
+import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary } from '../lib/types';
 
 interface PreviewCanvasProps {
   preview: PreviewState;
@@ -21,6 +21,8 @@ interface PreviewCanvasProps {
   selectedSectionId?: string;
   onSelectSection?: (sectionId: string) => void;
   availableSections?: Array<{ id: string; name: string }>;
+  livePages?: SitePageSummary[];
+  onRefreshPages?: () => void;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -59,6 +61,8 @@ export function PreviewCanvas({
     { id: 'features', name: 'Features' },
     { id: 'metrics', name: 'Metrics' },
   ],
+  livePages = [],
+  onRefreshPages,
 }: PreviewCanvasProps) {
   const {
     targetSite,
@@ -80,6 +84,11 @@ export function PreviewCanvas({
   const [iframeKey, setIframeKey] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
   const [pageSlug, setPageSlug] = useState('');
+  const [selectedLiveUrl, setSelectedLiveUrl] = useState(targetSite);
+
+  useEffect(() => {
+    setSelectedLiveUrl(targetSite);
+  }, [targetSite]);
 
   const refreshIframe = useCallback(() => setIframeKey((value) => value + 1), []);
 
@@ -162,6 +171,7 @@ export function PreviewCanvas({
       : pageData
       ? `${targetSite}/${pageData.slug}`
       : `${targetSite}${currentRoute || '/'}`;
+  const addressUrl = activeCanvasTab === 'live' ? selectedLiveUrl : displayUrl;
 
   const currentCode = builderProposal?.diff?.after
     ? typeof builderProposal.diff.after === 'string'
@@ -188,7 +198,7 @@ export function PreviewCanvas({
 
           <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-line bg-white/80 px-2.5 py-1.5 shadow-inner">
             <Icon d="M6 10V8a6 6 0 1112 0v2 M5 10h14v10H5z" className="h-3 w-3 shrink-0 text-emerald-600" />
-            <span className="truncate font-mono text-[10.5px] text-ink-soft">{displayUrl}</span>
+            <span className="truncate font-mono text-[10.5px] text-ink-soft">{addressUrl}</span>
             <span className="ml-auto hidden shrink-0 rounded bg-paper-deep px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted sm:inline">
               {activeCanvasTab}
             </span>
@@ -254,6 +264,58 @@ export function PreviewCanvas({
           </button>
         </div>
       </div>
+
+      {activeCanvasTab === 'live' ? (
+        <div className="z-10 flex min-h-10 shrink-0 items-center gap-2 border-b border-line bg-white/80 px-3 py-1.5">
+          <label htmlFor="live-page-select" className="shrink-0 text-[10px] font-semibold uppercase text-ink-muted">
+            Page
+          </label>
+          <select
+            id="live-page-select"
+            value={selectedLiveUrl}
+            onChange={(event) => setSelectedLiveUrl(event.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-line bg-white px-2 py-1.5 text-[11px] text-ink"
+          >
+            <option value={targetSite}>Site homepage · {targetSite}</option>
+            {livePages.map((page) => (
+              <option key={page.id} value={page.url}>
+                {page.title} · {page.status}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onRefreshPages}
+            className="focus-ring rounded-md p-1.5 text-ink-muted hover:bg-paper-deep hover:text-ink"
+            title="Refresh page list"
+            aria-label="Refresh page list"
+          >
+            <Icon d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7" className="h-3.5 w-3.5" />
+          </button>
+          <details className="relative shrink-0">
+            <summary className="cursor-pointer rounded-md border border-line bg-white px-2 py-1.5 text-[10px] font-medium text-ink-soft">
+              All URLs ({livePages.length})
+            </summary>
+            <div className="absolute right-0 top-full z-30 mt-1 max-h-64 w-[min(560px,80vw)] overflow-y-auto rounded-md border border-line bg-white p-1 shadow-lift">
+              {livePages.length ? livePages.map((page) => (
+                <button
+                  key={page.id}
+                  type="button"
+                  onClick={() => setSelectedLiveUrl(page.url)}
+                  className="block w-full border-b border-line px-2.5 py-2 text-left last:border-b-0 hover:bg-paper"
+                >
+                  <span className="block text-[11px] font-medium text-ink">
+                    {page.title} <span className="font-normal text-ink-muted">· {page.status}</span>
+                  </span>
+                  <span className="block break-all font-mono text-[10px] text-ink-muted">{page.url}</span>
+                </button>
+              )) : (
+                <p className="px-2.5 py-2 text-[11px] text-ink-muted">No pages found for this site.</p>
+              )}
+            </div>
+          </details>
+        </div>
+      ) : null}
 
       {/* Section scope */}
       {activeCanvasTab === 'preview' ? (
@@ -585,7 +647,7 @@ export function PreviewCanvas({
           <div className="flex h-full w-full justify-center" style={viewportStyle}>
             <iframe
               key={iframeKey}
-              src={targetSite}
+              src={selectedLiveUrl}
               className="h-full min-h-[500px] w-full rounded-xl border border-line bg-white shadow-lift"
               title="Live WordPress preview"
               sandbox="allow-same-origin allow-scripts allow-popups allow-forms"

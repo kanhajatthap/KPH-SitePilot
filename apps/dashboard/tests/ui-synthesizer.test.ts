@@ -24,6 +24,36 @@ describe('About page synthesizer', () => {
     expect(result.gutenbergBlocksHtml).not.toContain('wp:paragraph --><p>Plugin');
   });
 
+  it('generates the exact five-section About KPH SitePilot preview', () => {
+    const result = synthesizeFromPrompt(
+      'Create an About page for KPH SitePilot with exactly five sections: Hero, Our Mission, What We’re Building, Our Principles, Closing CTA.',
+      'http://test.local'
+    );
+
+    expect(result.type).toBe('about');
+    expect(result.title).toBe('About KPH SitePilot');
+    expect(result.route).toBe('/about');
+    expect((result.renderedHtml.match(/<section\b/g) || []).length).toBe(5);
+
+    expect(result.renderedHtml).toContain('Your Ideas. Your Website. Powered by AI.');
+    expect(result.renderedHtml).toContain('Our Mission');
+    expect(result.renderedHtml).toContain('Making website creation simpler.');
+    expect(result.renderedHtml).toContain('What We’re Building');
+    expect(result.renderedHtml).toContain('User Control');
+    expect(result.renderedHtml).toContain('Security First');
+    expect(result.renderedHtml).toContain('Transparency');
+    expect(result.renderedHtml).toContain('Continuous Improvement');
+    expect(result.renderedHtml).toContain('Let’s Build Something Great');
+
+    expect(result.gutenbergBlocksHtml).toContain('<!-- wp:heading {"level":1} -->');
+    expect(result.gutenbergBlocksHtml).toContain('<!-- wp:columns -->');
+    expect(result.gutenbergBlocksHtml).toContain('<!-- wp:list -->');
+    expect(result.gutenbergBlocksHtml).toContain('id="principles"');
+    expect(result.gutenbergBlocksHtml).toContain('Let’s Build Something Great');
+    expect(result.gutenbergBlocksHtml).not.toContain('Our story');
+    expect(result.gutenbergBlocksHtml).not.toContain('How we work');
+  });
+
   it('does not treat trailing instructions as part of the brand name', () => {
     const result = synthesizeFromPrompt(
       'Create an About page for Hearth & Clay with five sections',

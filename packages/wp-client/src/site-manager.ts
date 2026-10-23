@@ -74,6 +74,14 @@ export interface WpPluginInfo {
   update?: string;
 }
 
+export interface WpPageSummary {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  url: string;
+}
+
 export class LocalWpSiteManager {
   private phpBinary: string;
   private wpCliPhar: string;
@@ -190,6 +198,52 @@ export class LocalWpSiteManager {
     } catch (e: any) {
       throw new Error(`Failed to parse plugin list output: ${e.message}`);
     }
+  }
+
+  async listPages(): Promise<WpPageSummary[]> {
+    const listRes = await this.runWpCli([
+      'post',
+      'list',
+      '--post_type=page',
+      '--post_status=any',
+      '--format=json',
+    ]);
+    if (listRes.exitCode !== 0) {
+      throw new Error(`Failed to list pages: ${listRes.stderr || listRes.stdout}`);
+    }
+
+    const jsonStart = listRes.stdout.indexOf('[');
+    if (jsonStart === -1) return [];
+
+    let records: Array<{ ID: number | string }>;
+    try {
+      records = JSON.parse(listRes.stdout.substring(jsonStart)) as Array<{ ID: number | string }>;
+    } catch (error) {
+      throw new Error(`Failed to parse page list output: ${(error as Error).message}`);
+    }
+
+    return Promise.all(
+      records.map(async ({ ID }) => {
+        const pageRes = await this.runWpCli(['post', 'get', String(ID), '--format=json']);
+        if (pageRes.exitCode !== 0) {
+          throw new Error(`Failed to read page #${ID}: ${pageRes.stderr || pageRes.stdout}`);
+        }
+
+        const pageJsonStart = pageRes.stdout.indexOf('{');
+        if (pageJsonStart === -1) {
+          throw new Error(`Failed to parse page #${ID} output.`);
+        }
+
+        const page = JSON.parse(pageRes.stdout.substring(pageJsonStart)) as Record<string, unknown>;
+        return {
+          id: Number(page.ID),
+          title: String(page.post_title || '(Untitled page)'),
+          slug: String(page.post_name || ''),
+          status: String(page.post_status || 'unknown'),
+          url: String(page.url || ''),
+        };
+      })
+    );
   }
 
   async installPlugin(slug: string, activate = true): Promise<{ success: boolean; message: string }> {

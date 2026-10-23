@@ -26,6 +26,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('LocalWpSiteManager page inventory', () => {
+  it('returns page URLs and statuses from WordPress', async () => {
+    const wp = manager();
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      if (args[0] === 'post' && args[1] === 'list') {
+        return { stdout: JSON.stringify([{ ID: 123 }, { ID: 456 }]), stderr: '', exitCode: 0 };
+      }
+      if (args[0] === 'post' && args[1] === 'get' && args[2] === '123') {
+        return { stdout: pageJson(), stderr: '', exitCode: 0 };
+      }
+      if (args[0] === 'post' && args[1] === 'get' && args[2] === '456') {
+        return {
+          stdout: pageJson({
+            ID: 456,
+            post_title: 'Contact',
+            post_status: 'draft',
+            post_name: 'contact',
+            url: 'http://test.local/?page_id=456',
+          }),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      return { stdout: '', stderr: 'Unexpected WP-CLI call', exitCode: 1 };
+    });
+
+    await expect(wp.listPages()).resolves.toEqual([
+      {
+        id: 123,
+        title: 'Ceramics Studio',
+        slug: 'ceramics-studio',
+        status: 'publish',
+        url: 'http://test.local/ceramics-studio/',
+      },
+      {
+        id: 456,
+        title: 'Contact',
+        slug: 'contact',
+        status: 'draft',
+        url: 'http://test.local/?page_id=456',
+      },
+    ]);
+  });
+});
+
 describe('LocalWpSiteManager page writes', () => {
   it('sends page content through a temp payload file, not argv', async () => {
     const wp = manager();

@@ -15,6 +15,7 @@ import {
   AgentExecutionTask,
   TaskStep,
   QueuedTask,
+  SitePageSummary,
   VerifiedResource,
   PublishProposalResponse,
 } from '../lib/types';
@@ -48,6 +49,7 @@ import {
   fetchPageSections,
   proposeSectionEdit,
   applySectionEdit,
+  listSitePages,
 } from '../lib/api-client';
 
 const AVAILABLE_SITES: AvailableSite[] = [
@@ -84,6 +86,7 @@ export default function DashboardPage() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeCanvasTab, setActiveCanvasTab] = useState<'preview' | 'live' | 'code'>('preview');
   const [currentRoute, setCurrentRoute] = useState<string>('/');
+  const [sitePages, setSitePages] = useState<SitePageSummary[]>([]);
 
   // Section selector state for scoped page editing (Live Preview vertical slice)
   const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
@@ -800,6 +803,19 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
       // Keep default sections if fetch fails (site may be offline)
     }
   };
+
+  const handleFetchSitePages = useCallback(async () => {
+    try {
+      const result = await listSitePages(selectedSite);
+      setSitePages(result.pages);
+    } catch {
+      setSitePages([]);
+    }
+  }, [selectedSite]);
+
+  useEffect(() => {
+    void handleFetchSitePages();
+  }, [handleFetchSitePages]);
 
   const handleSendMessage = async (
     prompt: string,
@@ -1871,11 +1887,14 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           activeCanvasTab={activeCanvasTab}
           onCanvasTabChange={(tab) => {
             setActiveCanvasTab(tab);
-            // When user switches to Live tab, fetch the real sections from page 32
+            // Refresh site content when the live view opens.
             if (tab === 'live') {
               handleFetchPageSections(targetPageId);
+              void handleFetchSitePages();
             }
           }}
+          livePages={sitePages}
+          onRefreshPages={handleFetchSitePages}
           currentRoute={currentRoute}
           selectedSectionId={selectedSectionId}
           onSelectSection={handleSelectSection}

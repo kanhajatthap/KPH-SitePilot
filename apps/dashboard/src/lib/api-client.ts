@@ -13,6 +13,7 @@ import {
   PublishProposalResponse,
   PublishApprovalResponse,
   ReviseDraftResponse,
+  SitePageSummary,
 } from './types';
 import {
   SitePlan,
@@ -674,6 +675,23 @@ export async function fetchPageSections(pageId: number = 32): Promise<PageSectio
   const res = await fetch(`/api/site/pages/sections?id=${pageId}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || data.error || `Failed to fetch page sections (${res.status})`);
+  return data;
+}
+
+export async function listSitePages(targetSite: string): Promise<{
+  pages: SitePageSummary[];
+  count: number;
+  verified: boolean;
+}> {
+  const res = await fetch(`/api/site/pages/list?targetSite=${encodeURIComponent(targetSite)}`);
+  const data = await readJsonResponse<{
+    pages: SitePageSummary[];
+    count: number;
+    verified: boolean;
+    message?: string;
+    error?: string;
+  }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Failed to list site pages (${res.status})`);
   return data;
 }
 
