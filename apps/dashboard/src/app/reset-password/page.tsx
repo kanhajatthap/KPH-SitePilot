@@ -1,36 +1,89 @@
 import Link from 'next/link';
-import { requestPasswordReset, updatePassword } from '../auth/actions';
+import { updatePassword } from '../auth/actions';
 import { getSupabasePublicConfig } from '../../lib/supabase/config';
+import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { AuthLayout } from '../../components/auth/AuthLayout';
+import { Alert } from '../../components/auth/Alert';
+import { PasswordField } from '../../components/auth/PasswordField';
+import { SubmitButton } from '../../components/auth/SubmitButton';
+import { authErrorFrom, authInfoFrom } from '../../lib/auth/messages';
+
+export const dynamic = 'force-dynamic';
 
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>;
+  searchParams: Promise<{ message?: string; error?: string }>;
 }) {
-  const { message } = await searchParams;
+  const { message, error } = await searchParams;
   const configured = Boolean(getSupabasePublicConfig());
+  const errorText = authErrorFrom(error);
+  const infoText = authInfoFrom(message);
+
+  let hasRecoverySession = false;
+  if (configured) {
+    const supabase = await createSupabaseServerClient();
+    if (supabase) {
+      const { data } = await supabase.auth.getUser();
+      hasRecoverySession = Boolean(data.user);
+    }
+  }
+
+  const linkInvalid = configured && !hasRecoverySession;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 px-6">
-      <h1 className="text-3xl font-semibold">Reset password</h1>
+    <AuthLayout
+      title="Choose a new password"
+      subtitle="Your reset link signs you in for this one change only."
+      footer={
+        <Link href="/login" className="font-medium text-pink-600 underline-offset-4 hover:text-pink-500 hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
       {!configured ? (
-        <p role="status">Supabase is not configured; password reset is unavailable in local mode.</p>
+        <Alert variant="info">Authentication is not configured on this deployment.</Alert>
+      ) : linkInvalid ? (
+        <>
+          <Alert variant="error">
+            This reset link is invalid or has expired. Request a fresh link to continue.
+          </Alert>
+          <Link
+            href="/forgot-password"
+            className="inline-flex w-full items-center justify-center rounded-xl bg-ink px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          >
+            Request a new reset link
+          </Link>
+        </>
       ) : (
         <>
-          {message ? <p role="status" className="rounded border border-slate-700 p-4">{message}</p> : null}
-          <form action={requestPasswordReset} className="flex flex-col gap-3 rounded border border-slate-700 p-5">
-            <label htmlFor="reset-email">Account email</label>
-            <input id="reset-email" name="email" type="email" autoComplete="email" required className="rounded bg-slate-900 p-2" />
-            <button className="rounded bg-blue-600 p-2" type="submit">Send reset link</button>
-          </form>
-          <form action={updatePassword} className="flex flex-col gap-3 rounded border border-slate-700 p-5">
-            <label htmlFor="new-password">New password (12–128 characters)</label>
-            <input id="new-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required className="rounded bg-slate-900 p-2" />
-            <button className="rounded border border-slate-600 p-2" type="submit">Update password</button>
+          {errorText ? <Alert variant="error">{errorText}</Alert> : null}
+          {infoText ? <Alert variant="success">{infoText}</Alert> : null}
+
+          <form action={updatePassword} className="space-y-4" noValidate>
+            <PasswordField
+              id="reset-password"
+              name="password"
+              label="New password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              hint="12–128 characters"
+            />
+
+            <PasswordField
+              id="reset-confirm-password"
+              name="confirmPassword"
+              label="Confirm new password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+            />
+
+            <SubmitButton pendingLabel="Updating password…">Update password</SubmitButton>
           </form>
         </>
       )}
-      <Link href="/login" className="underline">Back to login</Link>
-    </main>
+    </AuthLayout>
   );
 }

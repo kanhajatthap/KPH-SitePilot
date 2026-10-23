@@ -43,6 +43,63 @@ describe('Supabase RLS & Multi-Tenant Schema Validation', () => {
     }
   });
 
+  it('forces ROW LEVEL SECURITY so table owners cannot bypass policies', () => {
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+
+    for (const table of [
+      'public.profiles',
+      'public.projects',
+      'public.wordpress_connections',
+      'public.change_proposals',
+      'public.audit_events',
+      'public.agent_jobs',
+      'public.model_usage',
+      'public.agent_rate_limits',
+    ]) {
+      const forceRegex = new RegExp(
+        `ALTER\\s+TABLE\\s+${table.replace('.', '\\.')}\\s+FORCE\\s+ROW\\s+LEVEL\\s+SECURITY`,
+        'i'
+      );
+      expect(sql, table).toMatch(forceRegex);
+    }
+  });
+
+  it('publishes exactly the expected owner-scoped policy surface', () => {
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+
+    const expectations: Array<{ table: string; commands: string[] }> = [
+      { table: 'profiles', commands: ['SELECT'] },
+      { table: 'projects', commands: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+      { table: 'wordpress_connections', commands: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+      { table: 'change_proposals', commands: ['SELECT'] },
+      { table: 'audit_events', commands: ['SELECT'] },
+      { table: 'agent_jobs', commands: ['SELECT'] },
+      { table: 'model_usage', commands: ['SELECT'] },
+    ];
+
+    for (const { table, commands } of expectations) {
+      for (const command of commands) {
+        const policyRegex = new RegExp(
+          `CREATE\\s+POLICY\\s+\\w+\\s+ON\\s+public\\.${table}\\s+FOR\\s+${command}`,
+          'i'
+        );
+        expect(sql, `${table} ${command}`).toMatch(policyRegex);
+      }
+    }
+
+    // Agent rate limits are service-role only, never readable by browsers.
+    expect(sql).not.toMatch(/CREATE POLICY .* ON public\.agent_rate_limits/i);
+  });
+
+  it('scopes the connection metadata view to the authenticated owner', () => {
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+    const view = sql.slice(sql.indexOf('CREATE VIEW public.wordpress_connection_metadata'));
+
+    expect(view).toMatch(/security_barrier\s*=\s*true/i);
+    expect(view).toMatch(/WHERE\s+p\.owner_id\s*=\s*\(\s*SELECT\s+auth\.uid\(\)\s*\)/i);
+    expect(view).not.toMatch(/encrypted_credentials/i);
+  });
+
   it('guarantees tenant isolation policies using auth.uid() across tables', () => {
     const resolvedPath = fs.existsSync(migrationPath)
       ? migrationPath

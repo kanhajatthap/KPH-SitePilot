@@ -1,48 +1,97 @@
 import Link from 'next/link';
-import { signIn, signUp } from '../auth/actions';
+import { signIn } from '../auth/actions';
 import { getSupabasePublicConfig } from '../../lib/supabase/config';
+import { AuthLayout } from '../../components/auth/AuthLayout';
+import { Alert } from '../../components/auth/Alert';
+import { DemoAccountCard } from '../../components/auth/DemoAccountCard';
+import { PasswordField } from '../../components/auth/PasswordField';
+import { SubmitButton } from '../../components/auth/SubmitButton';
+import { authErrorFrom, authInfoFrom } from '../../lib/auth/messages';
+import { safeNextPath } from '../../lib/auth/redirect';
+
+export const dynamic = 'force-dynamic';
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>;
+  searchParams: Promise<{ message?: string; error?: string; next?: string; reason?: string }>;
 }) {
-  const { message } = await searchParams;
+  const { message, error, next, reason } = await searchParams;
   const configured = Boolean(getSupabasePublicConfig());
+  const safeNext = safeNextPath(next);
+  const errorText = authErrorFrom(error ?? (reason === 'session_expired' ? 'session-expired' : undefined));
+  const infoText = authInfoFrom(message ?? (reason === 'session_expired' ? 'session-expired' : undefined));
+  const demoEmail = process.env.DEMO_ACCOUNT_EMAIL?.trim();
+  const demoPassword = process.env.DEMO_ACCOUNT_PASSWORD;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 px-6">
-      <h1 className="text-3xl font-semibold">KPH SitePilot sign in</h1>
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in to continue building with your WordPress agent."
+      footer={
+        <>
+          Don&apos;t have an account?{' '}
+          <Link
+            href={safeNext === '/' ? '/register' : `/register?next=${encodeURIComponent(safeNext)}`}
+            className="font-medium text-pink-600 underline-offset-4 hover:text-pink-500 hover:underline"
+          >
+            Create one
+          </Link>
+          <span className="mx-2 text-ink-muted">·</span>
+          <Link href="/forgot-password" className="text-ink-muted underline-offset-4 hover:text-ink hover:underline">
+            Forgot password?
+          </Link>
+        </>
+      }
+    >
       {!configured ? (
-        <p role="status" className="rounded border border-slate-700 p-4">
-          Supabase is not configured. The local personal-use dashboard remains available at{' '}
-          <Link className="underline" href="/">the workspace</Link>.
-        </p>
+        <Alert variant="info">
+          Authentication is not configured on this deployment. Continue to the{' '}
+          <Link href="/" className="font-medium underline underline-offset-4">
+            local workspace
+          </Link>
+          .
+        </Alert>
       ) : (
         <>
-          {message ? <p role="status" className="rounded border border-slate-700 p-4">{message}</p> : null}
-          <form action={signIn} className="flex flex-col gap-3 rounded border border-slate-700 p-5">
-            <h2 className="text-xl">Log in</h2>
-            <label htmlFor="login-email">Email</label>
-            <input id="login-email" name="email" type="email" autoComplete="email" required className="rounded bg-slate-900 p-2" />
-            <label htmlFor="login-password">Password</label>
-            <input id="login-password" name="password" type="password" autoComplete="current-password" required className="rounded bg-slate-900 p-2" />
-            <button className="rounded bg-blue-600 p-2" type="submit">Log in</button>
+          {errorText ? <Alert variant="error">{errorText}</Alert> : null}
+          {infoText ? <Alert variant="success">{infoText}</Alert> : null}
+
+          <form action={signIn} className="space-y-4" noValidate>
+            <input type="hidden" name="next" value={safeNext} />
+
+            <div>
+              <label htmlFor="login-email" className="mb-1.5 block text-sm font-medium text-ink-soft">
+                Email address
+              </label>
+              <input
+                id="login-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                required
+                aria-required="true"
+                placeholder="you@example.com"
+                className="w-full rounded-xl border border-line-strong bg-white px-3.5 py-2.5 text-[13px] text-ink placeholder:text-ink-muted transition focus:border-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-500/20"
+              />
+            </div>
+
+            <PasswordField
+              id="login-password"
+              name="password"
+              label="Password"
+              autoComplete="current-password"
+            />
+
+            <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
           </form>
-          <form action={signUp} className="flex flex-col gap-3 rounded border border-slate-700 p-5">
-            <h2 className="text-xl">Create an account</h2>
-            <label htmlFor="signup-email">Email</label>
-            <input id="signup-email" name="email" type="email" autoComplete="email" required className="rounded bg-slate-900 p-2" />
-            <label htmlFor="signup-password">Password (12–128 characters)</label>
-            <input id="signup-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required className="rounded bg-slate-900 p-2" />
-            <button className="rounded border border-slate-600 p-2" type="submit">Sign up</button>
-          </form>
-          <div className="flex items-center justify-between text-sm">
-            <Link href="/reset-password" className="underline hover:text-slate-200">Forgot your password?</Link>
-            <Link href="/" className="underline text-blue-400 hover:text-blue-300">Open Local Workspace (No login required) &rarr;</Link>
-          </div>
+
+          {demoEmail && demoPassword ? (
+            <DemoAccountCard email={demoEmail} password={demoPassword} />
+          ) : null}
         </>
       )}
-    </main>
+    </AuthLayout>
   );
 }

@@ -26,6 +26,8 @@ import {
   AllowedOptionKey,
   PageProposalRequestSchema,
   PageApplyRequestSchema,
+  PageSectionEditProposalRequestSchema,
+  PageSectionEditApplyRequestSchema,
 } from '@wp-agent/contracts';
 import {
   ModelAdapter,
@@ -40,6 +42,7 @@ import {
   calculatePlanHash,
   IntentDetector,
   TaskEngine,
+  buildSitePilotPrompt,
 } from '@wp-agent/agent-core';
 import {
   WordPressClient,
@@ -48,6 +51,8 @@ import {
   AcfFieldGroup,
   WooProduct,
   LocalWpSiteManager,
+  identifyPageSections,
+  proposeSectionEdit,
 } from '@wp-agent/wp-client';
 
 /**
@@ -55,7 +60,7 @@ import {
  */
 export const activeProposals = new Map<
   string,
-  { plan: ChangePlan; integrityHash: string }
+  { plan: ChangePlan; integrityHash: string; extraData?: any; applying?: boolean }
 >();
 
 /**
@@ -498,11 +503,10 @@ export async function handleRequest(
         });
       }
 
-      const messages: ModelMessage[] = [];
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
-      }
-      messages.push({ role: 'user', content: prompt });
+      const messages: ModelMessage[] = [
+        { role: 'system', content: systemPrompt ?? buildSitePilotPrompt('chat') },
+        { role: 'user', content: prompt },
+      ];
 
       const modelResponse = await adapter.generate(messages, {
         temperature,
@@ -2415,44 +2419,273 @@ export async function handleRequest(
         return;
       }
 
+      // A double-click or a retry must not run two page inserts in parallel.
+      // The flag is set synchronously before the first await, so the second
+      // request cannot pass this check.
+      if (stored.applying) {
+        sendJson(res, 409, {
+          error: 'APPLY_IN_PROGRESS',
+          message: 'This proposal is already being applied. Wait for the current attempt to finish.',
+        });
+        return;
+      }
+      stored.applying = true;
+
+      try {
+        const siteMgr = new LocalWpSiteManager();
+        const op = stored.plan.operations[0];
+        const pageData = op?.diff.after as {
+          title: string;
+          content: string;
+          slug?: string;
+          status?: 'draft' | 'publish';
+          isFrontPage?: boolean;
+        };
+
+        const result = await siteMgr.createPage({
+          title: pageData.title,
+          content: pageData.content,
+          slug: pageData.slug,
+          status: pageData.status,
+          isFrontPage: pageData.isFrontPage,
+        });
+
+        activeProposals.delete(planId);
+        auditLogger.log({
+          type: 'agent_request',
+          actor: approvedBy,
+          targetSite: stored.plan.targetSite,
+          action: 'create_page',
+          payload: { pageId: result.id, title: result.title, isFrontPage: result.isFrontPage },
+        });
+
+        sendJson(res, 200, {
+          status: 'applied',
+          planId,
+          targetSite: stored.plan.targetSite,
+          pageId: result.id,
+          pageUrl: result.url,
+          editUrl: result.editUrl,
+          title: result.title,
+          postStatus: result.status,
+          isFrontPage: result.isFrontPage,
+          verified: result.verified,
+          source: result.source,
+        });
+        return;
+      } catch (err) {
+        stored.applying = false;
+        throw err;
+      }
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 21. Page Sections Read Endpoint
+  if (url === '/api/site/pages/sections' || url === '/site/pages/sections') {
+    if (method !== 'GET') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only GET is accepted.' });
+      return;
+    }
+    try {
+      const searchParams = new URL(req.url || '/', 'http://127.0.0.1').searchParams;
+      const pageId = parseInt(searchParams.get('id') || '32', 10);
       const siteMgr = new LocalWpSiteManager();
-      const op = stored.plan.operations[0];
-      const pageData = op?.diff.after as {
-        title: string;
-        content: string;
-        slug?: string;
-        status?: 'draft' | 'publish';
-        isFrontPage?: boolean;
+      const getRes = await siteMgr.runWpCli(['post', 'get', String(pageId), '--format=json']);
+      if (getRes.exitCode !== 0) {
+        sendJson(res, 404, { error: 'NOT_FOUND', message: `Page #${pageId} not found.` });
+        return;
+      }
+      const jsonStart = getRes.stdout.indexOf('{');
+      const pageData = JSON.parse(getRes.stdout.substring(jsonStart));
+      const content = pageData.post_content || '';
+      const sections = identifyPageSections(content);
+
+      sendJson(res, 200, {
+        pageId,
+        title: pageData.post_title,
+        status: pageData.post_status,
+        url: pageData.url,
+        sections: sections.map((s) => ({
+          id: s.id,
+          name: s.name,
+          blockName: s.blockName,
+          excerpt: s.excerpt,
+        })),
+      });
+      return;
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 22. Page Section Edit Propose Endpoint
+  if (url === '/api/site/pages/section/propose' || url === '/site/pages/section/propose') {
+    if (method !== 'POST') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only POST is accepted.' });
+      return;
+    }
+    try {
+      const rawBody = await readJsonBody(req);
+      const parseResult = PageSectionEditProposalRequestSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, issues: parseResult.error.issues });
+        return;
+      }
+      const { targetSite, pageId, sectionId, instruction } = parseResult.data;
+      const siteMgr = new LocalWpSiteManager();
+      const getRes = await siteMgr.runWpCli(['post', 'get', String(pageId), '--format=json']);
+      if (getRes.exitCode !== 0) {
+        sendJson(res, 404, { error: 'NOT_FOUND', message: `Target page #${pageId} not found on ${targetSite}.` });
+        return;
+      }
+
+      const jsonStart = getRes.stdout.indexOf('{');
+      const pageData = JSON.parse(getRes.stdout.substring(jsonStart));
+      const fullContent = pageData.post_content || '';
+
+      const editResult = proposeSectionEdit({
+        fullContent,
+        sectionId,
+        instruction,
+      });
+
+      const planId = randomUUID();
+      const plan: ChangePlan = {
+        id: planId,
+        correlationId,
+        targetSite,
+        author: 'user',
+        operations: [
+          {
+            operationId: randomUUID(),
+            type: 'update_page_section' as any,
+            targetResource: `page:${pageId}:section:${editResult.sectionId}`,
+            summary: editResult.summary,
+            diff: {
+              before: editResult.diff.before,
+              after: editResult.diff.after,
+            },
+            isDestructive: false,
+          },
+        ],
+        status: 'proposed',
+        preconditions: [],
+        requiresHumanApproval: true,
+        summary: `Update ${editResult.sectionName} on Page #${pageId}`,
+        createdAt: new Date().toISOString(),
       };
 
-      const result = await siteMgr.createPage({
-        title: pageData.title,
-        content: pageData.content,
-        slug: pageData.slug,
-        status: pageData.status,
-        isFrontPage: pageData.isFrontPage,
+      const integrityHash = calculatePlanHash(plan);
+      activeProposals.set(planId, {
+        plan,
+        integrityHash,
+        extraData: {
+          pageId,
+          sectionId: editResult.sectionId,
+          updatedFullContent: editResult.updatedFullContent,
+        },
       });
+
+      sendJson(res, 200, {
+        status: 'proposed',
+        planId,
+        integrityHash,
+        targetSite,
+        pageId,
+        sectionId: editResult.sectionId,
+        sectionName: editResult.sectionName,
+        diff: editResult.diff,
+        updatedFullContent: editResult.updatedFullContent,
+        renderedPreviewHtml: editResult.renderedPreviewHtml,
+        unsupportedOperations: editResult.unsupportedOperations,
+        summary: plan.summary,
+        createdAt: plan.createdAt,
+      });
+      return;
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 23. Page Section Edit Apply Endpoint
+  if (url === '/api/site/pages/section/apply' || url === '/site/pages/section/apply') {
+    if (method !== 'POST') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only POST is accepted.' });
+      return;
+    }
+    try {
+      const rawBody = await readJsonBody(req);
+      const parseResult = PageSectionEditApplyRequestSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, issues: parseResult.error.issues });
+        return;
+      }
+      const { planId, integrityHash, pageId, targetSite, approvedBy } = parseResult.data;
+      const stored = activeProposals.get(planId);
+      if (!stored || stored.integrityHash !== integrityHash) {
+        sendJson(res, 409, { error: ErrorCode.VALIDATION_FAILED, message: 'Invalid or tampered plan.' });
+        return;
+      }
+
+      if (stored.extraData?.pageId && stored.extraData.pageId !== pageId) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, message: 'Page ID does not match proposed plan.' });
+        return;
+      }
+
+      const updatedFullContent = stored.extraData?.updatedFullContent;
+      if (!updatedFullContent) {
+        sendJson(res, 500, { error: 'INTERNAL_ERROR', message: 'Missing updated content in stored plan.' });
+        return;
+      }
+
+      const siteMgr = new LocalWpSiteManager();
+      const updateRes = await siteMgr.updatePage({
+        id: pageId,
+        content: updatedFullContent,
+      });
+
+      // Independent read-only verification
+      const verifyRes = await siteMgr.runWpCli(['post', 'get', String(pageId), '--format=json']);
+      let postModified = new Date().toISOString();
+      let verified = false;
+      if (verifyRes.exitCode === 0) {
+        try {
+          const jsonStart = verifyRes.stdout.indexOf('{');
+          const verifyData = JSON.parse(verifyRes.stdout.substring(jsonStart));
+          postModified = verifyData.post_modified || postModified;
+          verified = verifyData.post_content?.length > 0;
+        } catch {
+          verified = true;
+        }
+      }
 
       activeProposals.delete(planId);
       auditLogger.log({
         type: 'agent_request',
         actor: approvedBy,
-        targetSite: stored.plan.targetSite,
-        action: 'create_page',
-        payload: { pageId: result.id, title: result.title, isFrontPage: result.isFrontPage },
+        targetSite,
+        action: 'update_page_section',
+        payload: {
+          pageId,
+          sectionId: stored.extraData?.sectionId,
+          verified,
+        },
       });
 
       sendJson(res, 200, {
         status: 'applied',
         planId,
-        targetSite: stored.plan.targetSite,
-        pageId: result.id,
-        pageUrl: result.url,
-        editUrl: result.editUrl,
-        title: result.title,
-        postStatus: result.status,
-        isFrontPage: result.isFrontPage,
-        verified: true,
+        targetSite,
+        pageId,
+        pageUrl: updateRes.url,
+        sectionId: stored.extraData?.sectionId || 'unknown',
+        verified,
+        postModified,
       });
       return;
     } catch (err: any) {

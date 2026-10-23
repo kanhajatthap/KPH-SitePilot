@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authenticateApiRequest } from '../../../lib/auth/api';
 
 const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateApiRequest();
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const { prompt, systemPrompt } = body;

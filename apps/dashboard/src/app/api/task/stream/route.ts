@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authenticateApiRequest } from '../../../../lib/auth/api';
 
 export const dynamic = 'force-dynamic';
 
 const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
 
 export async function GET(req: NextRequest) {
+  const auth = await authenticateApiRequest();
+  if (!auth.ok) return auth.response;
+
   try {
     const { searchParams } = new URL(req.url);
     const taskId = searchParams.get('taskId');

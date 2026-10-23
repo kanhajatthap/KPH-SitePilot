@@ -7,6 +7,7 @@ import {
 } from '@wp-agent/contracts';
 import { ModelAdapter } from '@wp-agent/model-adapters';
 import { AuditLogger } from '@wp-agent/audit';
+import { SITEPILOT_PLANNER_PROMPT } from './prompts.js';
 
 export interface PlannerOptions {
   modelAdapter: ModelAdapter;
@@ -199,15 +200,7 @@ export class WebsitePlanner {
       payload: { prompt: validatedRequest.prompt },
     });
 
-    const systemPrompt = [
-      'You are KPH SitePilot Website Architect.',
-      'Generate a comprehensive, structured JSON website plan matching the SitePlanSchema specification.',
-      'MANDATES:',
-      '1. Return ONLY valid JSON wrapped in a codeblock or raw JSON.',
-      '2. Must include: title, purpose, targetAudience, designSystem (palette with hex codes, typography, borderRadius, spacingScale), navigation, pages with sections, accessibility.',
-      '3. Every section must have id, type (hero, features, testimonials, pricing, cta, faq, contact, content), and headline.',
-      '4. Strictly no executable code, no scripts, no HTML tags.',
-    ].join('\n');
+    const systemPrompt = SITEPILOT_PLANNER_PROMPT;
 
     try {
       const response = await this.modelAdapter.generate([

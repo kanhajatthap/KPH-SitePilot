@@ -8,7 +8,12 @@ const { createServerClient, getUser } = vi.hoisted(() => ({
 
 vi.mock('@supabase/ssr', () => ({ createServerClient }));
 
-import { middleware } from '../middleware';
+import { middleware } from '../src/middleware';
+
+function enableSaas() {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-anon-placeholder';
+}
 
 describe('dashboard authentication middleware', () => {
   const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -35,36 +40,92 @@ describe('dashboard authentication middleware', () => {
     expect(createServerClient).not.toHaveBeenCalled();
   });
 
-  it('rejects unauthenticated API requests when SaaS mode is enabled', async () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-anon-placeholder';
+  it('redirects unauthenticated page requests to login with a safe return path', async () => {
+    enableSaas();
+    getUser.mockResolvedValue({ data: { user: null }, error: new Error('expired') });
+
+    const response = await middleware(new NextRequest('http://localhost:3002/projects?tab=active'));
+    expect(response.status).toBe(307);
+    const location = response.headers.get('location') ?? '';
+    expect(location).toContain('/login?');
+    expect(location).toContain('next=%2Fprojects%3Ftab%3Dactive');
+  });
+
+  it('marks expired sessions when a Supabase cookie is present', async () => {
+    enableSaas();
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: Object.assign(new Error('invalid refresh token'), { code: 'refresh_token_not_found' }),
+    });
+
+    const response = await middleware(
+      new NextRequest('http://localhost:3002/', {
+        headers: { cookie: 'sb-example-auth-token=stale' },
+      })
+    );
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('reason=session_expired');
+  });
+
+  it('rejects unauthenticated API requests with 401 JSON', async () => {
+    enableSaas();
     getUser.mockResolvedValue({ data: { user: null }, error: new Error('expired') });
 
     const response = await middleware(new NextRequest('http://localhost:3002/api/agent'));
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'UNAUTHORIZED',
+      code: 'UNAUTHORIZED',
       message: 'Sign in to access this resource.',
     });
   });
 
-  it('blocks authenticated SaaS requests from falling through to the local privileged API', async () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-anon-placeholder';
+  it('lets authenticated API requests reach the route-level guard', async () => {
+    enableSaas();
 
     const response = await middleware(new NextRequest('http://localhost:3002/api/mutate/apply'));
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: 'EDGE_FUNCTION_REQUIRED' });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
   });
 
-  it('allows login and the public health route without an authenticated session', async () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-anon-placeholder';
+  it('allows all public authentication pages and the health probe', async () => {
+    enableSaas();
     getUser.mockResolvedValue({ data: { user: null }, error: new Error('expired') });
 
-    const login = await middleware(new NextRequest('http://localhost:3002/login'));
-    const health = await middleware(new NextRequest('http://localhost:3002/api/health'));
-    expect(login.status).toBe(200);
-    expect(health.status).toBe(200);
+    for (const path of ['/login', '/register', '/forgot-password', '/reset-password', '/auth/confirm', '/auth/callback', '/api/health']) {
+      const response = await middleware(new NextRequest(`http://localhost:3002${path}`));
+      expect(response.status, path).toBe(200);
+    }
+  });
+
+  it('sends signed-in users away from login/register but keeps recovery pages open', async () => {
+    enableSaas();
+
+    const login = await middleware(new NextRequest('http://localhost:3002/login?next=%2Fprojects'));
+    expect(login.status).toBe(307);
+    expect(login.headers.get('location')).toBe('http://localhost:3002/projects');
+
+    const reset = await middleware(new NextRequest('http://localhost:3002/reset-password'));
+    expect(reset.status).toBe(200);
+  });
+
+  it('ignores unsafe return paths when bouncing a signed-in user', async () => {
+    enableSaas();
+
+    const response = await middleware(
+      new NextRequest('http://localhost:3002/login?next=https%3A%2F%2Fevil.example')
+    );
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3002/');
+  });
+
+  it('never redirects to protocol-relative paths from the next parameter', async () => {
+    enableSaas();
+    getUser.mockResolvedValue({ data: { user: null }, error: new Error('expired') });
+
+    const response = await middleware(
+      new NextRequest('http://localhost:3002/login?next=%2F%2Fevil.example')
+    );
+    expect(response.status).toBe(200);
   });
 });

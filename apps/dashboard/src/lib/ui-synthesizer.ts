@@ -6,13 +6,37 @@
 
 export interface SynthesizedComponent {
   title: string;
-  type: 'auth' | 'hero' | 'products' | 'pricing' | 'contact' | 'plugins' | 'settings' | 'code' | 'blog' | 'custom';
+  type: 'about' | 'auth' | 'hero' | 'ceramics' | 'products' | 'pricing' | 'contact' | 'plugins' | 'settings' | 'code' | 'blog' | 'custom';
   route: string;
   summary: string;
   bulletPoints: string[];
   codeSnippet: string;
   renderedHtml: string;
   gutenbergBlocksHtml: string;
+}
+
+/**
+ * Escapes user-controlled prompt text before it is embedded in preview HTML
+ * or Gutenberg block markup. The synthesizer must never turn a prompt into
+ * executable markup.
+ */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return char;
+    }
+  });
 }
 
 export function synthesizeFromPrompt(
@@ -275,8 +299,338 @@ export function synthesizeFromPrompt(
     };
   }
 
+  // 0d. About page — a real five-section page, not an auth/products fallback.
+  // Keep this before the auth branch: prompts such as "About Hearth & Clay"
+  // used to match the auth branch because it contains the word "hearth".
+  const isAboutPageRequest =
+    /\babout\s+page\b/i.test(p) ||
+    /\babout\s+us\b/i.test(p) ||
+    /\babout\s+(?:our|the)\s+(?:story|mission|team|company|studio)\b/i.test(p) ||
+    /\babout\s+["“'`]?[A-Z]/.test(prompt);
+
+  if (isAboutPageRequest) {
+    const quotedSubject = prompt.match(/(?:about|for)\s+["“'`](.+?)["”'`]/i)?.[1];
+    const brandSubject = prompt.match(/\bfor\s+([A-Z][A-Za-z0-9&' -]{1,60})/)?.[1];
+    const aboutSubject = (quotedSubject || brandSubject || 'SitePilot')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/\s+(?:with|that|including|featuring|using|containing)\s+.*$/i, '')
+      .replace(/\s+(?:store|website|site|page|brand)$/i, '')
+      .trim() || 'SitePilot';
+    const safeSubject = escapeHtml(aboutSubject);
+    const safeSiteUrl = escapeHtml(siteUrl);
+    const aboutTitle = `About ${aboutSubject}`;
+
+    const renderedHtml = `
+<div class="min-h-[620px] bg-[#fbf8f4] font-sans text-stone-900">
+  <header class="border-b border-stone-200/80 bg-[#fbf8f4]/90 px-5 py-4 sm:px-8">
+    <div class="mx-auto flex max-w-5xl items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 via-pink-500 to-violet-500 text-sm font-bold text-white">${safeSubject.slice(0, 1).toUpperCase()}</span>
+        <span class="text-sm font-semibold tracking-tight">${safeSubject}</span>
+      </div>
+      <nav class="hidden items-center gap-5 text-[11px] font-medium text-stone-500 sm:flex" aria-label="Preview navigation">
+        <span class="text-stone-900">About</span>
+        <span>Work</span>
+        <span>Journal</span>
+        <span>Contact</span>
+      </nav>
+      <span class="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">Local-first</span>
+    </div>
+  </header>
+
+  <!-- 1. Hero -->
+  <section class="relative overflow-hidden px-5 py-14 sm:px-8 sm:py-20">
+    <div class="pointer-events-none absolute inset-0" style="background-image: radial-gradient(ellipse at 8% 0%, rgba(255,138,91,0.18), transparent 45%), radial-gradient(ellipse at 88% 18%, rgba(255,77,141,0.14), transparent 45%), radial-gradient(ellipse at 55% 100%, rgba(168,85,247,0.10), transparent 55%);"></div>
+    <div class="relative mx-auto grid max-w-5xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+      <div>
+        <span class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-stone-600 shadow-sm">
+          <span class="h-1.5 w-1.5 rounded-full bg-pink-500"></span>
+          About ${safeSubject}
+        </span>
+        <h1 class="mt-5 max-w-xl text-[38px] font-semibold leading-[1.06] tracking-tight sm:text-5xl">
+          We make thoughtful work for people who care about the details.
+        </h1>
+        <p class="mt-5 max-w-lg text-[13.5px] leading-7 text-stone-600">
+          ${safeSubject} is a small, independent studio building calm digital experiences. We believe good work is equal parts craft, clarity and respect for the people using it.
+        </p>
+        <div class="mt-7 flex flex-wrap items-center gap-2.5">
+          <a href="#" class="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-[12px] font-semibold text-white shadow-sm">Start a conversation <span aria-hidden="true">→</span></a>
+          <a href="#" class="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-[12px] font-semibold text-stone-700">See our work</a>
+        </div>
+        <p class="mt-6 text-[10.5px] text-stone-400">Based everywhere · Working worldwide · Since 2018</p>
+      </div>
+
+      <div class="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+        <div class="flex items-center justify-between border-b border-stone-100 pb-3">
+          <span class="text-[11px] font-semibold text-stone-800">A few things about us</span>
+          <span class="rounded-md bg-stone-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-stone-500">studio notes</span>
+        </div>
+        <dl class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-2xl bg-[#fbf8f4] p-3.5">
+            <dt class="font-mono text-2xl font-semibold tracking-tight">12</dt>
+            <dd class="mt-0.5 text-[10px] leading-4 text-stone-500">years of making useful things</dd>
+          </div>
+          <div class="rounded-2xl bg-[#fbf8f4] p-3.5">
+            <dt class="font-mono text-2xl font-semibold tracking-tight">48</dt>
+            <dd class="mt-0.5 text-[10px] leading-4 text-stone-500">products, sites and stories shipped</dd>
+          </div>
+          <div class="rounded-2xl bg-[#fbf8f4] p-3.5">
+            <dt class="font-mono text-2xl font-semibold tracking-tight">9</dt>
+            <dd class="mt-0.5 text-[10px] leading-4 text-stone-500">countries we have worked with</dd>
+          </div>
+          <div class="rounded-2xl bg-[#fbf8f4] p-3.5">
+            <dt class="font-mono text-2xl font-semibold tracking-tight">1</dt>
+            <dd class="mt-0.5 text-[10px] leading-4 text-stone-500">simple promise: tell the truth</dd>
+          </div>
+        </dl>
+        <p class="mt-4 rounded-xl border border-stone-100 bg-white px-3 py-2.5 text-[10.5px] leading-5 text-stone-500">
+          This is a staged preview for <span class="font-mono text-stone-700">${safeSiteUrl}</span>. Nothing is saved until you approve it.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Story / mission -->
+  <section class="border-y border-stone-200/80 bg-white/50 px-5 py-12 sm:px-8">
+    <div class="mx-auto grid max-w-5xl gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:gap-14">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">Our story</p>
+        <h2 class="mt-2.5 max-w-xs text-3xl font-semibold leading-tight tracking-tight">Started with a simple frustration.</h2>
+      </div>
+      <div>
+        <p class="max-w-2xl text-[13px] leading-7 text-stone-600">
+          Too much of the web feels assembled rather than made. Too many teams are asked to choose between speed and care, between a polished surface and a solid foundation. We started ${safeSubject} to prove that those choices are false.
+        </p>
+        <p class="mt-4 max-w-2xl text-[13px] leading-7 text-stone-500">
+          We work in small, focused teams. We ask better questions before we open a design tool. And we leave every project a little clearer than we found it — for the people who use it and the people who maintain it.
+        </p>
+        <div class="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Craft</div>
+            <div class="mt-1 text-[11px] text-stone-600">Details are the product.</div>
+          </div>
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Clarity</div>
+            <div class="mt-1 text-[11px] text-stone-600">Plain language, no theatre.</div>
+          </div>
+          <div class="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Care</div>
+            <div class="mt-1 text-[11px] text-stone-600">Respect the end user.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Values -->
+  <section class="px-5 py-12 sm:px-8">
+    <div class="mx-auto max-w-5xl">
+      <div class="max-w-2xl">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">What we value</p>
+        <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight">Three ideas we keep coming back to.</h2>
+      </div>
+      <div class="mt-7 grid gap-3.5 md:grid-cols-3">
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-lg">◌</span>
+          <h3 class="mt-4 text-sm font-semibold">Make it feel inevitable</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">The best interface is the one that disappears. We remove friction until the next step feels obvious.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-pink-50 text-lg">◇</span>
+          <h3 class="mt-4 text-sm font-semibold">Show your work</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">We explain the trade-offs, share the rough drafts and leave a trail that the next person can follow.</p>
+        </article>
+        <article class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-lg">○</span>
+          <h3 class="mt-4 text-sm font-semibold">Build for the long run</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">A launch is the beginning, not the finish line. We choose foundations that are easy to maintain and improve.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Process -->
+  <section class="border-y border-stone-200/80 bg-white/60 px-5 py-12 sm:px-8">
+    <div class="mx-auto max-w-5xl">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div class="max-w-xl">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-600">How we work</p>
+          <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight">A small process with no black boxes.</h2>
+        </div>
+        <span class="w-fit rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] text-stone-500">4 steps · 2–6 weeks</span>
+      </div>
+      <ol class="mt-7 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <li class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">01</span>
+          <h3 class="mt-3 text-sm font-semibold">Listen</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">We start with the people, the constraints and the one outcome that matters most.</p>
+        </li>
+        <li class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">02</span>
+          <h3 class="mt-3 text-sm font-semibold">Shape</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">We sketch the smallest useful version, then make the important parts unmistakable.</p>
+        </li>
+        <li class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">03</span>
+          <h3 class="mt-3 text-sm font-semibold">Build</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">We design in the browser and build with real content, real states and real constraints.</p>
+        </li>
+        <li class="rounded-2xl border border-stone-200 bg-white p-5">
+          <span class="font-mono text-[10px] font-semibold text-pink-600">04</span>
+          <h3 class="mt-3 text-sm font-semibold">Hand over</h3>
+          <p class="mt-1.5 text-[11.5px] leading-6 text-stone-500">You get the work, the reasoning and a clear path to keep improving it.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 5. CTA -->
+  <section class="px-5 py-12 sm:px-8">
+    <div class="relative mx-auto max-w-5xl overflow-hidden rounded-3xl bg-stone-900 px-6 py-9 text-white sm:px-10 sm:py-11">
+      <div class="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full opacity-30 blur-2xl" style="background-image: radial-gradient(circle, rgba(255,77,141,0.9), rgba(168,85,247,0.35), transparent 70%);"></div>
+      <div class="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div class="max-w-xl">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-pink-300">Say hello</p>
+          <h2 class="mt-2.5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Have something thoughtful in mind?</h2>
+          <p class="mt-3 text-[12px] leading-6 text-stone-300">Tell us what you are making. We will reply with a real point of view, not a sales deck.</p>
+        </div>
+        <a href="#" class="inline-flex w-fit shrink-0 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[12px] font-semibold text-stone-900">Start a conversation <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="border-t border-stone-200/80 px-5 py-5 sm:px-8">
+    <div class="mx-auto flex max-w-5xl flex-col gap-1.5 text-[10px] text-stone-400 sm:flex-row sm:items-center sm:justify-between">
+      <span>© ${new Date().getFullYear()} ${safeSubject}. Made with care.</span>
+      <span>Preview staged for ${safeSiteUrl} · not published</span>
+    </div>
+  </footer>
+</div>`;
+
+    const gutenbergBlocksHtml = `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} -->
+  <h1 class="wp-block-heading">About ${safeSubject}</h1>
+  <!-- /wp:heading -->
+  <!-- wp:paragraph -->
+  <p>${safeSubject} is a small, independent studio building calm digital experiences. We believe good work is equal parts craft, clarity and respect for the people using it.</p>
+  <!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#">Start a conversation</a></div><!-- /wp:button --><!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="#">See our work</a></div><!-- /wp:button --></div>
+  <!-- /wp:buttons -->
+
+  <!-- wp:heading {"level":2} -->
+  <h2 class="wp-block-heading">Our story</h2>
+  <!-- /wp:heading -->
+  <!-- wp:paragraph -->
+  <p>Too much of the web feels assembled rather than made. Too many teams are asked to choose between speed and care, between a polished surface and a solid foundation. We started ${safeSubject} to prove that those choices are false.</p>
+  <!-- /wp:paragraph -->
+  <!-- wp:paragraph -->
+  <p>We work in small, focused teams. We ask better questions before we open a design tool. And we leave every project a little clearer than we found it — for the people who use it and the people who maintain it.</p>
+  <!-- /wp:paragraph -->
+
+  <!-- wp:heading {"level":2} -->
+  <h2 class="wp-block-heading">What we value</h2>
+  <!-- /wp:heading -->
+  <!-- wp:columns -->
+  <div class="wp-block-columns">
+    <!-- wp:column -->
+    <div class="wp-block-column">
+      <!-- wp:heading {"level":3} -->
+      <h3 class="wp-block-heading">Make it feel inevitable</h3>
+      <!-- /wp:heading -->
+      <!-- wp:paragraph -->
+      <p>The best interface is the one that disappears. We remove friction until the next step feels obvious.</p>
+      <!-- /wp:paragraph -->
+    </div>
+    <!-- /wp:column -->
+    <!-- wp:column -->
+    <div class="wp-block-column">
+      <!-- wp:heading {"level":3} -->
+      <h3 class="wp-block-heading">Show your work</h3>
+      <!-- /wp:heading -->
+      <!-- wp:paragraph -->
+      <p>We explain the trade-offs, share the rough drafts and leave a trail that the next person can follow.</p>
+      <!-- /wp:paragraph -->
+    </div>
+    <!-- /wp:column -->
+    <!-- wp:column -->
+    <div class="wp-block-column">
+      <!-- wp:heading {"level":3} -->
+      <h3 class="wp-block-heading">Build for the long run</h3>
+      <!-- /wp:heading -->
+      <!-- wp:paragraph -->
+      <p>A launch is the beginning, not the finish line. We choose foundations that are easy to maintain and improve.</p>
+      <!-- /wp:paragraph -->
+    </div>
+    <!-- /wp:column -->
+  </div>
+  <!-- /wp:columns -->
+
+  <!-- wp:heading {"level":2} -->
+  <h2 class="wp-block-heading">How we work</h2>
+  <!-- /wp:heading -->
+  <!-- wp:list {"ordered":true} -->
+  <ol class="wp-block-list"><!-- wp:list-item --><li><strong>Listen.</strong> We start with the people, the constraints and the one outcome that matters most.</li><!-- /wp:list-item --><!-- wp:list-item --><li><strong>Shape.</strong> We sketch the smallest useful version, then make the important parts unmistakable.</li><!-- /wp:list-item --><!-- wp:list-item --><li><strong>Build.</strong> We design in the browser and build with real content, real states and real constraints.</li><!-- /wp:list-item --><!-- wp:list-item --><li><strong>Hand over.</strong> You get the work, the reasoning and a clear path to keep improving it.</li><!-- /wp:list-item --></ol>
+  <!-- /wp:list -->
+
+  <!-- wp:heading {"level":2} -->
+  <h2 class="wp-block-heading">Have something thoughtful in mind?</h2>
+  <!-- /wp:heading -->
+  <!-- wp:paragraph -->
+  <p>Tell us what you are making. We will reply with a real point of view, not a sales deck.</p>
+  <!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#">Start a conversation</a></div><!-- /wp:button --></div>
+  <!-- /wp:buttons -->
+</main>
+<!-- /wp:group -->`;
+
+    return {
+      title: aboutTitle,
+      type: 'about',
+      route: '/about',
+      summary: `Staged a five-section responsive About page for ${aboutSubject} with Gutenberg blocks.`,
+      bulletPoints: [
+        'Section 1 — Hero with brand statement, primary CTA and studio proof points',
+        'Section 2 — Story and mission with a clear point of view',
+        'Section 3 — Values presented as three scannable cards',
+        'Section 4 — Four-step working process with no black boxes',
+        'Section 5 — Contact CTA and footer, ready for review before publishing',
+        `Target: ${siteUrl} · Builder: Gutenberg core blocks · Status: staged, not published`,
+      ],
+      codeSnippet: `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} -->
+  <h1 class="wp-block-heading">About ${safeSubject}</h1>
+  <!-- /wp:heading -->
+  <!-- wp:paragraph -->
+  <p>${safeSubject} is a small, independent studio building calm digital experiences.</p>
+  <!-- /wp:paragraph -->
+  <!-- wp:heading {"level":2} -->
+  <h2 class="wp-block-heading">Our story</h2>
+  <!-- /wp:heading -->
+  <!-- ... values, process and CTA sections ... -->
+</main>
+<!-- /wp:group -->`,
+      renderedHtml,
+      gutenbergBlocksHtml,
+    };
+  }
+
+  // A ceramics studio landing page can mention "Hearth & Clay", which would
+  // otherwise hit the auth branch below. Classify it once, before auth.
+  const isCeramicsStudioRequest =
+    (p.includes('ceramic') || p.includes('pottery') || p.includes('clay')) &&
+    (p.includes('landing') ||
+      p.includes('studio') ||
+      p.includes('hero') ||
+      p.includes('testimonial') ||
+      p.includes('contact'));
+
   // 1. Auth / Login / Sign-up page (matches user's screenshot exactly!)
-  if (p.includes('auth') || p.includes('login') || p.includes('sign in') || p.includes('signup') || p.includes('account') || p.includes('credentials') || p.includes('hearth')) {
+  if (!isCeramicsStudioRequest && (p.includes('auth') || p.includes('login') || p.includes('sign in') || p.includes('signup') || p.includes('account') || p.includes('credentials') || p.includes('hearth'))) {
     const brandName = prompt.match(/for ["“'`](.+?)["”'`]/i)?.[1] || 
                       prompt.match(/([A-Z][a-zA-Z0-9& ]+?)(?:store|auth|login|app)/i)?.[1]?.trim() || 
                       'Hearth & Clay';
@@ -363,10 +717,337 @@ export function synthesizeFromPrompt(
         `Integrated "Back to store" navigation breadcrumb and "Sign up" toggle`,
         `Gutenberg core/group compatible serialization ready for WordPress ${siteUrl}`,
       ],
-      codeSnippet: `// 4. UPDATE INVENTORY & AUTH ACCESS
-UPDATE public.inventory SET quantity_on_hand = 24 WHERE item = 'Ceramic Vessel';
-UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Candle';
--- Auth routes initialized on /auth`,
+      codeSnippet: `<!-- wp:group {"layout":{"type":"constrained"}} -->
+<div class="wp-block-group">
+  <!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Welcome back</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Sign in to continue.</p><!-- /wp:paragraph -->
+</div>
+<!-- /wp:group -->`,
+      renderedHtml,
+      gutenbergBlocksHtml,
+    };
+  }
+
+  // 1b. Ceramics studio landing page: hero, collection, testimonials, contact.
+  // This must run before the product branch. "ceramics studio landing page"
+  // used to fall through to the product grid, which dropped the hero,
+  // testimonials and contact section.
+  if (isCeramicsStudioRequest) {
+    const quotedStudio = prompt.match(/(?:for|at)\s+["“'`](.+?)["”'`]/i)?.[1];
+    const namedStudio = prompt.match(
+      /\b(?:for|at)\s+([A-Z][A-Za-z0-9&' -]{1,50}?)(?=\s+(?:with|featuring|including|in|on|—|-|,|\.|$))/
+    )?.[1];
+    const rawStudioName = (quotedStudio || namedStudio || 'Kiln & Clay').trim();
+    const studioName =
+      rawStudioName.replace(/\s+(?:studio|ceramics|pottery)$/i, '').trim() || 'Kiln & Clay';
+    const safeStudioName = escapeHtml(studioName);
+    const safeSiteUrl = escapeHtml(siteUrl);
+    const year = new Date().getFullYear();
+
+    // The preview canvas narrows a container; it does not change the browser
+    // viewport, so `sm:`/`lg:` classes would still use the desktop viewport.
+    // Container queries make this page respond to the canvas width (and to
+    // the real WordPress content width) instead.
+    const ceramicsCss = `
+.ceramics-preview { container-type: inline-size; }
+.ceramics-preview .cp-header { padding: 1rem 1.25rem; }
+.ceramics-preview .cp-nav { display: none; }
+.ceramics-preview .cp-hero { padding: 3.5rem 1.25rem; }
+.ceramics-preview .cp-hero-grid { display: grid; gap: 2.5rem; }
+.ceramics-preview .cp-hero-title { font-size: 42px; line-height: 0.98; }
+.ceramics-preview .cp-section { padding: 3rem 1.25rem; }
+.ceramics-preview .cp-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+.ceramics-preview .cp-contact { display: grid; gap: 2rem; grid-template-columns: 1fr; }
+.ceramics-preview .cp-footer { padding: 1.25rem; }
+@container (min-width: 640px) {
+  .ceramics-preview .cp-header { padding: 1rem 2rem; }
+  .ceramics-preview .cp-nav { display: flex; }
+  .ceramics-preview .cp-hero { padding: 5rem 2rem; }
+  .ceramics-preview .cp-hero-title { font-size: 60px; }
+  .ceramics-preview .cp-section { padding: 3rem 2rem; }
+  .ceramics-preview .cp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ceramics-preview .cp-footer { padding: 1.25rem 2rem; }
+}
+@container (min-width: 900px) {
+  .ceramics-preview .cp-hero-grid { grid-template-columns: 1.05fr 0.95fr; align-items: center; }
+  .ceramics-preview .cp-contact { grid-template-columns: 0.9fr 1.1fr; }
+}
+`;
+
+    const renderedHtml = `
+<div class="ceramics-preview min-h-[680px] bg-[#f7f1e8] font-sans text-stone-900">
+  <style>${ceramicsCss}</style>
+  <header class="cp-header border-b border-stone-300/60">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#a85a38] text-sm font-semibold text-white">K</span>
+        <span class="text-sm font-semibold tracking-tight">${safeStudioName}</span>
+      </div>
+      <nav class="cp-nav items-center gap-6 text-[11px] font-medium text-stone-600" aria-label="Preview navigation">
+        <a href="#collection" class="hover:text-stone-900">Collection</a>
+        <a href="#story" class="hover:text-stone-900">Kind words</a>
+        <a href="#visit" class="hover:text-stone-900">Visit</a>
+      </nav>
+      <a href="#collection" class="rounded-full border border-stone-300 bg-white/70 px-3 py-1.5 text-[10px] font-semibold text-stone-700">Shop small batch</a>
+    </div>
+  </header>
+
+  <section class="cp-hero relative overflow-hidden">
+    <div class="pointer-events-none absolute inset-0 opacity-70" style="background-image: radial-gradient(circle at 15% 20%, rgba(201,123,90,0.16), transparent 38%), radial-gradient(circle at 85% 10%, rgba(143,155,122,0.18), transparent 42%);"></div>
+    <div class="cp-hero-grid relative mx-auto max-w-5xl">
+      <div>
+        <span class="inline-flex items-center gap-2 rounded-full border border-[#a85a38]/25 bg-[#a85a38]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8f4a2c]">
+          <span class="h-1.5 w-1.5 rounded-full bg-[#a85a38]"></span>
+          Local ceramics studio · Small batch
+        </span>
+        <h1 class="cp-hero-title mt-5 max-w-xl font-semibold tracking-tight text-stone-950">
+          Made slowly.<br />Used daily.
+        </h1>
+        <p class="mt-5 max-w-lg text-[13px] leading-6 text-stone-600">
+          Hand-thrown ceramics for the rituals of everyday life. Each piece is shaped, glazed and fired in our small studio, so no two are exactly alike.
+        </p>
+        <div class="mt-7 flex flex-wrap gap-2.5">
+          <a href="#collection" class="inline-flex items-center gap-2 rounded-xl bg-[#a85a38] px-4 py-2.5 text-[11.5px] font-semibold text-white shadow-sm transition hover:bg-[#8f4a2c]">Shop the collection <span aria-hidden="true">→</span></a>
+          <a href="#visit" class="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white/70 px-4 py-2.5 text-[11.5px] font-semibold text-stone-700 transition hover:bg-white">Visit the studio</a>
+        </div>
+        <p class="mt-6 text-[10.5px] text-stone-500">Small-batch · Local clay · Food-safe glazes</p>
+      </div>
+
+      <div class="relative rounded-[2rem] border border-stone-300/70 bg-[#efe4d4] p-4 shadow-sm">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2 rounded-2xl bg-[#fbf8f4] p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a85a38]">This week in the studio</span>
+              <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+            </div>
+            <div class="mt-4 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p class="font-serif text-2xl font-semibold">The morning set</p>
+                <p class="mt-1 max-w-[210px] text-[11px] leading-5 text-stone-500">A cup, a plate, a small vase. Made to be used, not just admired.</p>
+              </div>
+              <svg viewBox="0 0 120 120" class="h-24 w-24 shrink-0" aria-hidden="true">
+                <path d="M48 18h24v10c0 6 4 9 10 15 8 8 12 18 12 29 0 18-14 30-34 30S26 90 26 72c0-11 4-21 12-29 6-6 10-9 10-15V18Z" fill="#c97b5a" />
+                <path d="M48 18h24v10H48z" fill="#a85a38" />
+                <path d="M34 66c10 5 42 5 52 0" fill="none" stroke="#f7f1e8" stroke-width="4" stroke-linecap="round" />
+              </svg>
+            </div>
+          </div>
+          <div class="rounded-2xl bg-[#fbf8f4] p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">Stoneware</p>
+            <p class="mt-2 font-serif text-lg font-semibold">Warm, heavy, honest.</p>
+          </div>
+          <div class="rounded-2xl bg-[#fbf8f4] p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">Glaze tests</p>
+            <p class="mt-2 font-serif text-lg font-semibold">Ash, oat &amp; rust.</p>
+          </div>
+        </div>
+        <p class="mt-3 text-center text-[10px] text-stone-500">Preview only · Nothing is saved until you approve</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="collection" class="cp-section border-y border-stone-300/60 bg-[#fbf8f4]/70">
+    <div class="mx-auto max-w-5xl">
+      <div class="flex flex-col gap-3">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a85a38]">The collection</p>
+          <h2 class="mt-2 text-3xl font-semibold tracking-tight">Pieces for the everyday table.</h2>
+        </div>
+        <span class="text-[10px] text-stone-500">3 pieces · small batch</span>
+      </div>
+
+      <div class="cp-grid mt-7">
+        <article class="group rounded-2xl border border-stone-300/70 bg-white p-4">
+          <div class="flex h-40 items-center justify-center rounded-xl bg-[#efe4d4]">
+            <svg viewBox="0 0 120 120" class="h-28 w-28 transition-transform duration-300 group-hover:scale-105" aria-hidden="true">
+              <path d="M48 18h24v10c0 6 4 9 10 15 8 8 12 18 12 29 0 18-14 30-34 30S26 90 26 72c0-11 4-21 12-29 6-6 10-9 10-15V18Z" fill="#c97b5a" />
+              <path d="M48 18h24v10H48z" fill="#a85a38" />
+              <path d="M34 66c10 5 42 5 52 0" fill="none" stroke="#f7f1e8" stroke-width="4" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="mt-4 flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-400">
+            <span>Vases</span><span>In stock · 12</span>
+          </div>
+          <h3 class="mt-2 font-serif text-lg font-semibold">Fluted terracotta vase</h3>
+          <p class="mt-1 text-[11.5px] leading-6 text-stone-500">Hand-thrown in local red clay with a soft matte glaze.</p>
+          <div class="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+            <span class="font-mono text-sm font-semibold">&#8377;1,899</span>
+            <a href="#visit" class="text-[10.5px] font-semibold text-[#a85a38]">View piece →</a>
+          </div>
+        </article>
+
+        <article class="group rounded-2xl border border-stone-300/70 bg-white p-4">
+          <div class="flex h-40 items-center justify-center rounded-xl bg-[#efe4d4]">
+            <svg viewBox="0 0 120 120" class="h-28 w-28 transition-transform duration-300 group-hover:scale-105" aria-hidden="true">
+              <rect x="26" y="34" width="56" height="60" rx="12" fill="#d9b382" />
+              <path d="M82 46h7c10 0 16 8 16 18s-6 18-16 18h-7" fill="none" stroke="#b98a5e" stroke-width="7" />
+              <path d="M26 48h56" stroke="#f7f1e8" stroke-width="4" />
+              <path d="M40 62h28" stroke="#f7f1e8" stroke-width="3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="mt-4 flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-400">
+            <span>Tableware</span><span>In stock · 20</span>
+          </div>
+          <h3 class="mt-2 font-serif text-lg font-semibold">Everyday oat mug</h3>
+          <p class="mt-1 text-[11.5px] leading-6 text-stone-500">A generous handle, a satin glaze, and room for a proper pour.</p>
+          <div class="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+            <span class="font-mono text-sm font-semibold">&#8377;899</span>
+            <a href="#visit" class="text-[10.5px] font-semibold text-[#a85a38]">View piece →</a>
+          </div>
+        </article>
+
+        <article class="group rounded-2xl border border-stone-300/70 bg-white p-4">
+          <div class="flex h-40 items-center justify-center rounded-xl bg-[#efe4d4]">
+            <svg viewBox="0 0 120 120" class="h-28 w-28 transition-transform duration-300 group-hover:scale-105" aria-hidden="true">
+              <path d="M20 52h80c0 30-18 48-40 48S20 82 20 52Z" fill="#8f9b7a" />
+              <path d="M20 52h80" stroke="#6f7b5c" stroke-width="5" stroke-linecap="round" />
+              <path d="M36 70c10 4 38 4 48 0" fill="none" stroke="#f7f1e8" stroke-width="3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="mt-4 flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-400">
+            <span>Serving</span><span>In stock · 8</span>
+          </div>
+          <h3 class="mt-2 font-serif text-lg font-semibold">Low ash serving bowl</h3>
+          <p class="mt-1 text-[11.5px] leading-6 text-stone-500">Wide and shallow, with an ash glaze that pools at the rim.</p>
+          <div class="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+            <span class="font-mono text-sm font-semibold">&#8377;1,499</span>
+            <a href="#visit" class="text-[10.5px] font-semibold text-[#a85a38]">View piece →</a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="story" class="cp-section">
+    <div class="mx-auto max-w-5xl">
+      <div class="max-w-2xl">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a85a38]">Kind words</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight">Made for people who notice the small things.</h2>
+      </div>
+      <div class="cp-grid mt-7">
+        <figure class="rounded-2xl border border-stone-300/70 bg-white p-5">
+          <blockquote class="text-[12px] leading-6 text-stone-600">“The mug has become my morning ritual. You can feel the hand in it.”</blockquote>
+          <figcaption class="mt-4 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Maya R. · Bengaluru</figcaption>
+        </figure>
+        <figure class="rounded-2xl border border-stone-300/70 bg-white p-5">
+          <blockquote class="text-[12px] leading-6 text-stone-600">“We bought the serving bowl for a dinner and now use it every day. It feels like it belongs here.”</blockquote>
+          <figcaption class="mt-4 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Arjun &amp; Neha · Pune</figcaption>
+        </figure>
+        <figure class="rounded-2xl border border-stone-300/70 bg-white p-5">
+          <blockquote class="text-[12px] leading-6 text-stone-600">“The studio visit was the best part. Warm people, honest work, no hard sell.”</blockquote>
+          <figcaption class="mt-4 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Sara K. · Chennai</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="visit" class="cp-section border-y border-stone-300/60 bg-[#efe4d4]/60">
+    <div class="cp-contact mx-auto max-w-5xl">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a85a38]">Visit the studio</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight">Come see the work in person.</h2>
+        <p class="mt-3 max-w-md text-[12.5px] leading-6 text-stone-600">The studio is open to visitors on Thursday to Saturday. Come by to see the kiln, try a cup, or talk through a custom piece.</p>
+        <div class="mt-6 space-y-3 text-[11.5px] text-stone-600">
+          <p><span class="font-semibold text-stone-900">Address</span><br />14 Kiln Lane, Indiranagar, Bengaluru 560038</p>
+          <p><span class="font-semibold text-stone-900">Hours</span><br />Thu–Sat · 11am–6pm</p>
+        </div>
+      </div>
+      <div class="rounded-3xl border border-stone-300/70 bg-white p-6">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a85a38]">Say hello</p>
+        <h3 class="mt-2 font-serif text-2xl font-semibold">Planning a visit or a custom piece?</h3>
+        <p class="mt-2 text-[11.5px] leading-6 text-stone-500">Write to us and we will reply with a real answer, usually within two working days.</p>
+        <div class="mt-5 space-y-3 text-[11.5px]">
+          <a href="mailto:hello@kilnandclay.studio" class="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
+            <span>hello@kilnandclay.studio</span><span aria-hidden="true">↗</span>
+          </a>
+          <a href="tel:+919876543210" class="flex items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
+            <span>+91 98765 43210</span><span aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <a href="mailto:hello@kilnandclay.studio?subject=Studio%20visit" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-[11.5px] font-semibold text-white transition hover:bg-stone-800">Plan a visit <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="cp-footer">
+    <div class="mx-auto flex max-w-5xl flex-col gap-1.5 text-[10px] text-stone-500">
+      <span>© ${year} ${safeStudioName}. Made with local clay.</span>
+      <span>Preview staged for ${safeSiteUrl} · not published</span>
+    </div>
+  </footer>
+</div>`;
+
+    const gutenbergBlocksHtml = `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Made slowly. Used daily.</h1><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Hand-thrown ceramics for the rituals of everyday life. Each piece is shaped, glazed and fired in our small studio, so no two are exactly alike.</p><!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons">
+    <!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#collection">Shop the collection</a></div><!-- /wp:button -->
+    <!-- wp:button {"className":"is-style-outline"} --><div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="#visit">Visit the studio</a></div><!-- /wp:button -->
+  </div>
+  <!-- /wp:buttons -->
+  <!-- wp:heading {"level":2,"anchor":"collection"} --><h2 id="collection" class="wp-block-heading">The collection</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Pieces for the everyday table, made in small batches.</p><!-- /wp:paragraph -->
+  <!-- wp:columns -->
+  <div class="wp-block-columns">
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Fluted terracotta vase</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>Hand-thrown in local red clay with a soft matte glaze.</p><!-- /wp:paragraph -->
+      <!-- wp:paragraph --><p><strong>&#8377;1,899</strong></p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Everyday oat mug</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>A generous handle, a satin glaze, and room for a proper pour.</p><!-- /wp:paragraph -->
+      <!-- wp:paragraph --><p><strong>&#8377;899</strong></p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+    <!-- wp:column --><div class="wp-block-column">
+      <!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Low ash serving bowl</h3><!-- /wp:heading -->
+      <!-- wp:paragraph --><p>Wide and shallow, with an ash glaze that pools at the rim.</p><!-- /wp:paragraph -->
+      <!-- wp:paragraph --><p><strong>&#8377;1,499</strong></p><!-- /wp:paragraph -->
+    </div><!-- /wp:column -->
+  </div>
+  <!-- /wp:columns -->
+  <!-- wp:heading {"level":2,"anchor":"story"} --><h2 id="story" class="wp-block-heading">Kind words</h2><!-- /wp:heading -->
+  <!-- wp:quote --><blockquote class="wp-block-quote"><p>“The mug has become my morning ritual. You can feel the hand in it.”</p><cite>Maya R. · Bengaluru</cite></blockquote><!-- /wp:quote -->
+  <!-- wp:quote --><blockquote class="wp-block-quote"><p>“We bought the serving bowl for a dinner and now use it every day. It feels like it belongs here.”</p><cite>Arjun &amp; Neha · Pune</cite></blockquote><!-- /wp:quote -->
+  <!-- wp:quote --><blockquote class="wp-block-quote"><p>“The studio visit was the best part. Warm people, honest work, no hard sell.”</p><cite>Sara K. · Chennai</cite></blockquote><!-- /wp:quote -->
+  <!-- wp:heading {"level":2,"anchor":"visit"} --><h2 id="visit" class="wp-block-heading">Visit the studio</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>14 Kiln Lane, Indiranagar, Bengaluru 560038<br />Thu–Sat · 11am–6pm</p><!-- /wp:paragraph -->
+  <!-- wp:paragraph --><p><a href="mailto:hello@kilnandclay.studio">hello@kilnandclay.studio</a> · <a href="tel:+919876543210">+91 98765 43210</a></p><!-- /wp:paragraph -->
+  <!-- wp:buttons -->
+  <div class="wp-block-buttons">
+    <!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="mailto:hello@kilnandclay.studio?subject=Studio%20visit">Plan a visit</a></div><!-- /wp:button -->
+  </div>
+  <!-- /wp:buttons -->
+</main>
+<!-- /wp:group -->`;
+
+    return {
+      title: `${studioName} - Handmade Ceramics`,
+      type: 'ceramics',
+      route: '/ceramics',
+      summary: `Staged a responsive ceramics studio landing page for ${studioName} with a hero, product collection, testimonials and contact section.`,
+      bulletPoints: [
+        'Hero with a clear studio promise, two calls to action and a small-batch note',
+        'Product collection with three core-block pieces, INR pricing and honest stock labels',
+        'Testimonials from real-sounding customers, with no fake star ratings',
+        'Contact section with address, studio hours, email, phone and a mailto visit link',
+        'Core Gutenberg blocks only — no WooCommerce dependency and no SQL inventory statements',
+        'Preview only: nothing is written to WordPress until you approve the staged page',
+      ],
+      codeSnippet: `<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
+<main class="wp-block-group">
+  <!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Made slowly. Used daily.</h1><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Hand-thrown ceramics for the rituals of everyday life.</p><!-- /wp:paragraph -->
+  <!-- wp:heading {"level":2} --><h2 class="wp-block-heading">The collection</h2><!-- /wp:heading -->
+  <!-- wp:columns --><div class="wp-block-columns"><!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Fluted terracotta vase</h3><!-- /wp:heading --></div><!-- /wp:column --><!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Everyday oat mug</h3><!-- /wp:heading --></div><!-- /wp:column --><!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Low ash serving bowl</h3><!-- /wp:heading --></div><!-- /wp:column --></div><!-- /wp:columns -->
+  <!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Kind words</h2><!-- /wp:heading -->
+  <!-- wp:quote --><blockquote class="wp-block-quote"><p>“The mug has become my morning ritual.”</p><cite>Maya R. · Bengaluru</cite></blockquote><!-- /wp:quote -->
+  <!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Visit the studio</h2><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>14 Kiln Lane, Indiranagar, Bengaluru 560038</p><!-- /wp:paragraph -->
+</main>
+<!-- /wp:group -->`,
       renderedHtml,
       gutenbergBlocksHtml,
     };
@@ -407,7 +1088,7 @@ UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Cand
           <p class="text-xs text-stone-500 leading-relaxed">Hand-thrown clay with matte mineral glaze finish.</p>
           <div class="flex items-center justify-between pt-2 border-t border-stone-100">
             <span class="text-base font-bold text-stone-900 font-mono">₹1,899</span>
-            <button onclick="alert('Item added to cart!')" class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium hover:bg-[#8f4a2c]">Add to Cart</button>
+            <span class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium">Preview item</span>
           </div>
         </div>
       </div>
@@ -426,7 +1107,7 @@ UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Cand
           <p class="text-xs text-stone-500 leading-relaxed">Infused with sandalwood, wild fig, and clove essential oils.</p>
           <div class="flex items-center justify-between pt-2 border-t border-stone-100">
             <span class="text-base font-bold text-stone-900 font-mono">₹899</span>
-            <button onclick="alert('Item added to cart!')" class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium hover:bg-[#8f4a2c]">Add to Cart</button>
+            <span class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium">Preview item</span>
           </div>
         </div>
       </div>
@@ -445,7 +1126,7 @@ UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Cand
           <p class="text-xs text-stone-500 leading-relaxed">Woven by coastal artisans with natural cotton cord handles.</p>
           <div class="flex items-center justify-between pt-2 border-t border-stone-100">
             <span class="text-base font-bold text-stone-900 font-mono">₹2,499</span>
-            <button onclick="alert('Item added to cart!')" class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium hover:bg-[#8f4a2c]">Add to Cart</button>
+            <span class="px-3 py-1.5 rounded-lg bg-[#a85a38] text-white text-xs font-medium">Preview item</span>
           </div>
         </div>
       </div>
@@ -464,11 +1145,17 @@ UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Cand
         'Category filter pills (Ceramics, Textiles, Aromatherapy, Living & Decor) synchronized with collection cards',
         'Set realistic artisanal pricing (₹899 to ₹2,499) with live inventory counts',
       ],
-      codeSnippet: `UPDATE public.inventory SET quantity_on_hand = 24 WHERE item = 'Terracotta Vase';
-UPDATE public.inventory SET quantity_on_hand = 18 WHERE item = 'Amber Glass Candle';
-UPDATE public.inventory SET quantity_on_hand = 9 WHERE item = 'Seagrass Basket';`,
+      codeSnippet: `<!-- wp:group {"layout":{"type":"constrained"}} -->
+<div class="wp-block-group">
+  <!-- wp:heading {"level":1} --><h1 class="wp-block-heading">Handcrafted Ceramics &amp; Living</h1><!-- /wp:heading -->
+  <!-- wp:paragraph --><p>Small-batch pieces for the everyday table.</p><!-- /wp:paragraph -->
+</div>
+<!-- /wp:group -->`,
       renderedHtml,
-      gutenbergBlocksHtml: `<!-- wp:woocommerce/all-products {"columns":3} -->\n${renderedHtml}\n<!-- /wp:woocommerce/all-products -->`,
+      // This is custom HTML, not a WooCommerce block. The test site does not
+      // have WooCommerce installed, so wrapping it in wp:woocommerce would
+      // render an empty page even though the preview looks correct.
+      gutenbergBlocksHtml: `<!-- wp:html -->\n${renderedHtml}\n<!-- /wp:html -->`,
     };
   }
 

@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { DraftProposal, BuilderProposal, PreviewState } from '../lib/types';
-import { Section } from '@wp-agent/contracts';
 
 interface PreviewCanvasProps {
   preview: PreviewState;
@@ -19,6 +18,26 @@ interface PreviewCanvasProps {
   activeCanvasTab?: 'preview' | 'live' | 'code';
   onCanvasTabChange?: (tab: 'preview' | 'live' | 'code') => void;
   currentRoute?: string;
+  selectedSectionId?: string;
+  onSelectSection?: (sectionId: string) => void;
+  availableSections?: Array<{ id: string; name: string }>;
+}
+
+function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  );
 }
 
 export function PreviewCanvas({
@@ -30,12 +49,16 @@ export function PreviewCanvas({
   onRejectProposal,
   onApproveBuilderProposal,
   onRejectBuilderProposal,
-  onRefreshPost,
-  onPublishNow,
   onStartRevise,
   activeCanvasTab = 'preview',
-  onCanvasTabChange,
   currentRoute = '/',
+  selectedSectionId = 'hero',
+  onSelectSection,
+  availableSections = [
+    { id: 'hero', name: 'Hero' },
+    { id: 'features', name: 'Features' },
+    { id: 'metrics', name: 'Metrics' },
+  ],
 }: PreviewCanvasProps) {
   const {
     targetSite,
@@ -53,12 +76,12 @@ export function PreviewCanvas({
     errorMessage,
   } = preview;
 
-  const [activeTab, setActiveTab] = useState<'preview' | 'design-tokens' | 'seo-a11y'>('preview');
   const [approving, setApproving] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [pageSlug, setPageSlug] = useState('');
 
-  const refreshIframe = useCallback(() => setIframeKey((k) => k + 1), []);
+  const refreshIframe = useCallback(() => setIframeKey((value) => value + 1), []);
 
   const handleApprove = async () => {
     if (!proposal || !onApproveProposal) return;
@@ -80,368 +103,519 @@ export function PreviewCanvas({
     }
   };
 
-  // Viewport width constraints for the canvas container
   const viewportStyle: React.CSSProperties =
     viewport === 'tablet'
-      ? { maxWidth: '768px', margin: '20px auto', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 60px -15px rgba(0,0,0,0.25)', border: '1px solid #e2e8f0' }
+      ? {
+          width: '768px',
+          maxWidth: '100%',
+          height: '100%',
+          margin: '0 auto',
+          borderRadius: '18px',
+          overflow: 'hidden',
+          border: '1px solid #d9d2c7',
+          boxShadow: '0 1px 2px rgba(27,25,23,.05), 0 30px 60px -35px rgba(27,25,23,.45)',
+        }
       : viewport === 'mobile'
-      ? { maxWidth: '375px', margin: '20px auto', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 25px 60px -15px rgba(0,0,0,0.3)', border: '2px solid #cbd5e1' }
+      ? {
+          width: '390px',
+          maxWidth: '100%',
+          height: '100%',
+          margin: '0 auto',
+          borderRadius: '28px',
+          overflow: 'hidden',
+          border: '1px solid #d9d2c7',
+          boxShadow: '0 1px 2px rgba(27,25,23,.05), 0 30px 60px -35px rgba(27,25,23,.45)',
+        }
       : { width: '100%', height: '100%' };
 
-  // Active page within the plan
   const activePlanPage =
-    plan?.pages.find((p) => p.slug === (selectedPlanPageSlug || 'home')) ||
-    plan?.pages[0];
+    plan?.pages.find((page) => page.slug === (selectedPlanPageSlug || 'home')) || plan?.pages[0];
 
-  // Determine the verified/applied resource
-  const res = verifiedResource || (appliedPost ? {
-    id: appliedPost.id,
-    title: appliedPost.title,
-    slug: appliedPost.slug,
-    status: appliedPost.status,
-    content: proposal?.post.content || builderProposal?.renderedPreviewHtml || '',
-    excerpt: proposal?.post.excerpt || '',
-    editLink: appliedPost.editLink,
-    targetSite,
-    lastVerifiedAt: preview.lastUpdated || new Date().toISOString(),
-    isLivePublished: appliedPost.status === 'publish',
-  } : null);
+  const res =
+    verifiedResource ||
+    (appliedPost
+      ? {
+          id: appliedPost.id,
+          title: appliedPost.title,
+          slug: appliedPost.slug,
+          status: appliedPost.status,
+          content: proposal?.post.content || builderProposal?.renderedPreviewHtml || '',
+          excerpt: proposal?.post.excerpt || '',
+          editLink: appliedPost.editLink,
+          targetSite,
+          lastVerifiedAt: preview.lastUpdated || new Date().toISOString(),
+          isLivePublished: appliedPost.status === 'publish',
+        }
+      : null);
 
-  const isLive = res ? (res.status === 'publish' || res.isLivePublished) : false;
+  const isLive = res ? res.status === 'publish' || Boolean(res.isLivePublished) : false;
 
-  // ── Address bar URL display ──
   const displayUrl =
     activeView === 'builder' && builderProposal
-      ? `${targetSite}${currentRoute || '/'} (${builderProposal.builderType.toUpperCase()} Staged)`
+      ? `${targetSite}${currentRoute || '/'}`
       : activeView === 'proposal' && proposal
-      ? `${targetSite}${currentRoute || '/'} (Staged Proposal)`
+      ? `${targetSite}${currentRoute || '/'}`
       : (activeView === 'applied' || activeView === 'verified_post') && res
       ? `${targetSite}/wp-admin/post.php?post=${res.id}&action=edit`
       : activeView === 'plan' && plan
-      ? `http://plan.local/${activePlanPage?.slug || ''}`
+      ? `plan://${activePlanPage?.slug || 'home'}`
       : pageData
       ? `${targetSite}/${pageData.slug}`
       : `${targetSite}${currentRoute || '/'}`;
 
-  // Current serialized code content for Code view
-  const currentCode =
-    builderProposal?.diff?.after
-      ? (typeof builderProposal.diff.after === 'string'
-          ? builderProposal.diff.after
-          : JSON.stringify(builderProposal.diff.after, null, 2))
-      : proposal?.post.content
-      ? proposal.post.content
-      : res?.content
-      ? res.content
-      : `<!-- WordPress Site: ${targetSite} -->\n<div class="site-wrapper">\n  <header>KPH SitePilot Workspace</header>\n  <main>Connected to ${targetSite}</main>\n</div>`;
+  const currentCode = builderProposal?.diff?.after
+    ? typeof builderProposal.diff.after === 'string'
+      ? builderProposal.diff.after
+      : JSON.stringify(builderProposal.diff.after, null, 2)
+    : proposal?.post.content
+    ? proposal.post.content
+    : res?.content
+    ? res.content
+    : `<!-- ${targetSite} -->\n<!-- Ask the agent to generate a page or draft a post. -->\n<div class="site-wrapper">\n  <main>Nothing staged yet.</main>\n</div>`;
+
+  const canEdit = Boolean(res || proposal || builderProposal);
 
   return (
-    <main className="flex-1 h-full flex flex-col bg-[#f5f5f7] overflow-hidden select-none">
-      {/* ── Sub-header: Lovable-style browser chrome bar ── */}
-      <div className="h-10 border-b border-slate-200 bg-white px-4 flex items-center justify-between text-xs text-slate-500 shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-2 flex-1 max-w-2xl">
-          {/* Window control dots */}
-          <div className="flex items-center gap-1.5 mr-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-300 hover:bg-rose-400 transition-colors" />
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-300 hover:bg-amber-400 transition-colors" />
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-300 hover:bg-emerald-400 transition-colors" />
+    <main className="hidden h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f1ea] md:flex">
+      {/* Browser chrome */}
+      <div className="glass z-10 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="hidden items-center gap-1.5 sm:flex" aria-hidden="true">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#e8b4a8]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#e8d5a8]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#b7d4b0]" />
           </div>
 
-          {/* Route & Address pill */}
-          <div className="flex-1 flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-md px-3 py-1 text-[11px] font-mono text-slate-600 shadow-inner">
-            <span className="text-emerald-500">🔒</span>
-            <span className="truncate">{displayUrl}</span>
-            <span className="ml-auto text-[10px] px-1.5 py-0.2 rounded font-sans font-medium bg-slate-200 text-slate-700">
-              {activeCanvasTab.toUpperCase()}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-line bg-white/80 px-2.5 py-1.5 shadow-inner">
+            <Icon d="M6 10V8a6 6 0 1112 0v2 M5 10h14v10H5z" className="h-3 w-3 shrink-0 text-emerald-600" />
+            <span className="truncate font-mono text-[10.5px] text-ink-soft">{displayUrl}</span>
+            <span className="ml-auto hidden shrink-0 rounded bg-paper-deep px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted sm:inline">
+              {activeCanvasTab}
             </span>
           </div>
         </div>
 
-        {/* Right status badges & refresh */}
-        <div className="flex items-center gap-2.5 ml-4">
-          {isLoading && (
-            <span className="text-[11px] text-indigo-600 font-medium flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
-              Generating…
+        <div className="flex shrink-0 items-center gap-1.5">
+          {isLoading ? (
+            <span className="hidden items-center gap-1.5 text-[10px] font-medium text-pink-600 sm:flex">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-pink-500" />
+              Generating
             </span>
-          )}
+          ) : null}
 
-          {/* Post ID & Status Badge */}
-          {res && (
+          {res ? (
             <span
-              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+              className={`hidden rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-semibold sm:inline ${
                 isLive
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                  : 'bg-amber-50 text-amber-700 border-amber-300'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-700'
               }`}
             >
-              {isLive ? '● PUBLISHED LIVE' : '○ DRAFT'} #{res.id}
+              {isLive ? 'LIVE' : 'DRAFT'} #{res.id}
             </span>
-          )}
+          ) : null}
 
-          {/* Refresh preview */}
-          <button
-            onClick={refreshIframe}
-            className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-            title="Reload canvas"
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (!onStartRevise) return;
+                const id = res?.id ?? 0;
+                const title = builderProposal?.title || proposal?.post.title || res?.title || 'Draft content';
+                onStartRevise(id, title);
+              }}
+              className="focus-ring rounded-lg p-1.5 text-ink-muted transition hover:bg-white hover:text-ink"
+              title="Revise staged content"
+              aria-label="Revise staged content"
+            >
+              <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+
+          <a
+            href={targetSite}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="focus-ring rounded-lg p-1.5 text-ink-muted transition hover:bg-white hover:text-ink"
+            title="Open site in a new tab"
+            aria-label="Open site in a new tab"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <Icon d="M7 17L17 7M9 7h8v8" className="h-3.5 w-3.5" />
+          </a>
+
+          <button
+            type="button"
+            onClick={refreshIframe}
+            className="focus-ring rounded-lg p-1.5 text-ink-muted transition hover:bg-white hover:text-ink"
+            title="Reload canvas"
+            aria-label="Reload canvas"
+          >
+            <Icon d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7" className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
-      {/* ── Proposal Amber/Sky Alert Banner (Unapproved Staged State) ── */}
-      {proposal && !proposal.isApplied && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between text-xs text-amber-800 shrink-0">
-          <div className="flex items-center gap-2 font-medium">
-            <span>⚠️</span>
-            <span>
-              <strong>PREVIEW (NOT SAVED)</strong> — Staged changes for &ldquo;{proposal.post.title}&rdquo;. Click <strong>Publish</strong> at top right or approve below.
+      {/* Section scope */}
+      {activeCanvasTab === 'preview' ? (
+        <div className="no-scrollbar flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line bg-white/60 px-3">
+          <span className="mr-1 shrink-0 text-[9px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+            Scope
+          </span>
+          <button
+            type="button"
+            onClick={() => onSelectSection?.('all')}
+            className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+              !selectedSectionId || selectedSectionId === 'all'
+                ? 'bg-ink text-white'
+                : 'border border-line bg-white text-ink-soft hover:bg-paper-deep'
+            }`}
+          >
+            Whole page
+          </button>
+          {availableSections.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => onSelectSection?.(section.id)}
+              className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                selectedSectionId === section.id
+                  ? 'bg-ink text-white'
+                  : 'border border-line bg-white text-ink-soft hover:bg-paper-deep'
+              }`}
+            >
+              {section.name}
+            </button>
+          ))}
+          {selectedSectionId && selectedSectionId !== 'all' ? (
+            <span className="ml-auto hidden shrink-0 rounded-md border border-line bg-white px-1.5 py-0.5 font-mono text-[9px] text-ink-muted lg:inline">
+              chat targets “{selectedSectionId}”
             </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {onRejectProposal && (
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Staged banners */}
+      {proposal && !proposal.isApplied ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="min-w-0 truncate text-[11px] text-amber-800">
+            <strong className="font-semibold">Staged draft.</strong> “{proposal.post.title}” is not saved yet.
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onRejectProposal ? (
               <button
+                type="button"
                 onClick={() => onRejectProposal(proposal)}
-                className="px-2.5 py-1 rounded bg-white hover:bg-amber-100 border border-amber-300 text-amber-800 text-[11px] font-medium transition-colors"
+                className="rounded-lg px-2.5 py-1 text-[10px] font-medium text-amber-800 transition hover:bg-amber-100"
               >
                 Reject
               </button>
-            )}
+            ) : null}
             <button
+              type="button"
               onClick={handleApprove}
               disabled={approving}
-              className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold transition-all shadow-sm"
+              className="rounded-lg bg-amber-600 px-2.5 py-1 text-[10px] font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
             >
-              {approving ? 'Saving Draft…' : '✓ Approve & Save Draft'}
+              {approving ? 'Saving…' : 'Approve & save'}
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {builderProposal && !builderProposal.isApplied && (
-        <div className="px-4 py-2 bg-sky-50 border-b border-sky-200 flex items-center justify-between text-xs text-sky-800 shrink-0">
-          <div className="flex items-center gap-2 font-medium">
-            <span>🧱</span>
-            <span>
-              <strong>PREVIEW (NOT SAVED)</strong> — Staged {builderProposal.builderType.toUpperCase()} content: &ldquo;{builderProposal.title}&rdquo;.
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {onRejectBuilderProposal && (
+      {builderProposal && !builderProposal.isApplied ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-3 py-2">
+          <p className="min-w-0 truncate text-[11px] text-violet-800">
+            <strong className="font-semibold">Staged {builderProposal.builderType}.</strong>{' '}
+            “{builderProposal.title}” is not saved yet.
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onRejectBuilderProposal ? (
               <button
+                type="button"
                 onClick={() => onRejectBuilderProposal(builderProposal)}
-                className="px-2.5 py-1 rounded bg-white hover:bg-sky-100 border border-sky-300 text-sky-800 text-[11px] font-medium transition-colors"
+                className="rounded-lg px-2.5 py-1 text-[10px] font-medium text-violet-800 transition hover:bg-violet-100"
               >
                 Reject
               </button>
-            )}
+            ) : null}
             <button
+              type="button"
               onClick={handleApproveBuilder}
               disabled={approving}
-              className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold transition-all shadow-sm"
+              className="rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
             >
-              {approving ? 'Saving Draft…' : '✓ Approve & Save Draft'}
+              {approving ? 'Saving…' : 'Approve & save'}
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Main Canvas Viewport Area ── */}
-      <div className="flex-1 overflow-auto flex flex-col items-center justify-start p-4 relative bg-[#f8f7f4]">
-        {/* TAB 1: VISUAL INTERACTIVE PREVIEW (Default & Primary Lovable View) */}
-        {activeCanvasTab === 'preview' && (
-          <div
-            className="w-full h-full transition-all duration-300 flex flex-col justify-center items-center select-text"
-            style={viewportStyle}
-          >
-            {/* If Builder Proposal is active */}
-            {builderProposal && (
-              <div className="w-full h-full bg-white rounded-xl shadow-lg border border-slate-200/80 overflow-y-auto">
+      {/* Canvas */}
+      <div className="dots-bg relative flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
+        {activeCanvasTab === 'preview' ? (
+          <div className="flex h-full w-full flex-col" style={viewportStyle}>
+            {builderProposal ? (
+              <div className="h-full w-full overflow-y-auto rounded-xl border border-line bg-white shadow-lift">
                 <div
-                  className="builder-canvas-preview text-slate-800"
+                  className="builder-canvas-preview text-ink"
                   dangerouslySetInnerHTML={{ __html: builderProposal.renderedPreviewHtml }}
                 />
               </div>
-            )}
-
-            {/* If Post Proposal is active */}
-            {!builderProposal && proposal && (
-              <div className="w-full h-full bg-white rounded-xl shadow-lg border border-slate-200/80 p-8 overflow-y-auto max-w-3xl">
-                <div className="border-b border-slate-100 pb-4 mb-6">
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">Staged Draft Proposal</span>
-                  <h1 className="text-3xl font-bold text-slate-900 mt-2">{proposal.post.title}</h1>
-                  {proposal.post.excerpt && <p className="text-xs text-slate-500 mt-1 italic">&ldquo;{proposal.post.excerpt}&rdquo;</p>}
+            ) : proposal ? (
+              <article className="mx-auto h-full w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-9">
+                <div className="border-b border-line pb-4">
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                    Staged draft
+                  </span>
+                  <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+                    {proposal.post.title}
+                  </h1>
+                  {proposal.post.excerpt ? (
+                    <p className="mt-1 text-[12px] italic text-ink-muted">“{proposal.post.excerpt}”</p>
+                  ) : null}
                 </div>
-                <div className="prose prose-slate prose-sm max-w-none text-slate-700 leading-relaxed whitespace-pre-wrap">
+                <div className="mt-5 whitespace-pre-wrap text-[13.5px] leading-7 text-ink-soft">
                   {proposal.post.content}
                 </div>
-              </div>
-            )}
-
-            {/* If Verified / Applied Post is active */}
-            {!builderProposal && !proposal && res && (
-              <div className="w-full h-full bg-white rounded-xl shadow-lg border border-slate-200/80 p-8 overflow-y-auto max-w-4xl space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              </article>
+            ) : res ? (
+              <article className="mx-auto h-full w-full max-w-4xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-9">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
                   <div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${isLive ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {isLive ? 'Live WordPress Post' : 'Verified Draft Post'}
-                    </span>
-                    <h1 className="text-3xl font-bold text-slate-900 mt-2">{res.title}</h1>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={res.editLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors"
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        isLive
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
                     >
-                      Open in WP Admin ↗
-                    </a>
+                      {isLive ? 'Live on WordPress' : 'Verified draft'}
+                    </span>
+                    <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+                      {res.title}
+                    </h1>
                   </div>
+                  <a
+                    href={res.editLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink-soft transition hover:bg-paper-deep"
+                  >
+                    Open in WP Admin
+                    <Icon d="M7 17L17 7M9 7h8v8" className="h-3 w-3" />
+                  </a>
                 </div>
-
                 <div
-                  className="prose prose-slate max-w-none text-slate-700 leading-relaxed"
+                  className="prose prose-stone mt-5 max-w-none text-[13.5px] leading-7 text-ink-soft"
                   dangerouslySetInnerHTML={{ __html: res.content }}
                 />
-              </div>
-            )}
-
-            {/* If Plan is active */}
-            {!builderProposal && !proposal && !res && plan && (
-              <div className="w-full h-full bg-white rounded-xl shadow-lg border border-slate-200/80 p-8 overflow-y-auto">
-                <h2 className="text-2xl font-bold text-slate-900 mb-4">{plan.title}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {plan.pages.map((pg) => (
-                    <div key={pg.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-                      <h3 className="font-bold text-slate-800 text-sm">{pg.title}</h3>
-                      <p className="text-xs text-slate-500 mt-1">{pg.sections.length} interactive sections designed.</p>
-                    </div>
+              </article>
+            ) : plan ? (
+              <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-8">
+                <span className="rounded-full border border-line bg-paper px-2 py-0.5 text-[10px] font-semibold text-ink-muted">
+                  Site plan
+                </span>
+                <h2 className="mt-2.5 text-2xl font-semibold tracking-tight text-ink">{plan.title}</h2>
+                <p className="mt-1 text-[12px] text-ink-muted">
+                  {plan.pages.length} page{plan.pages.length === 1 ? '' : 's'} planned. Select one to focus the
+                  canvas.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {plan.pages.map((page) => (
+                    <button
+                      key={page.id}
+                      type="button"
+                      onClick={() => onSelectPlanPage?.(page.slug)}
+                      className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                        activePlanPage?.slug === page.slug
+                          ? 'border-pink-200 bg-pink-50/50'
+                          : 'border-line bg-paper/60'
+                      }`}
+                    >
+                      <div className="text-[13px] font-medium text-ink">{page.title}</div>
+                      <div className="mt-0.5 text-[10.5px] text-ink-muted">
+                        {page.sections.length} section{page.sections.length === 1 ? '' : 's'}
+                      </div>
+                      <div className="mt-2 font-mono text-[9px] text-ink-muted">/{page.slug}</div>
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Welcome / Empty Canvas State (matches Hearth & Clay demo preview!) */}
-            {!builderProposal && !proposal && !res && !plan && (
-              <div className="w-full max-w-md bg-white rounded-2xl shadow-xl shadow-stone-200/60 p-8 border border-stone-200/80 font-serif text-[#2c241e] text-center">
-                <a href="#" className="inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-800 transition-colors font-sans mb-6">
-                  <span>←</span> Back to store
-                </a>
-                <h2 className="text-2xl font-serif font-bold text-stone-900 tracking-tight">Hearth &amp; Clay</h2>
-                <h3 className="text-lg font-serif font-medium text-stone-800 mt-2">Welcome back</h3>
-                <p className="text-xs text-stone-500 font-sans mt-1">Enter your credentials to access your orders</p>
-
-                <div className="space-y-4 font-sans text-xs mt-6 text-left">
-                  <div>
-                    <label className="block font-medium text-stone-700 mb-1.5">Email address</label>
-                    <input
-                      type="email"
-                      defaultValue="you@example.com"
-                      className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 bg-stone-50/50 text-stone-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#a85a38]/30"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-stone-700 mb-1.5">Password</label>
-                    <input
-                      type="password"
-                      defaultValue="••••••••"
-                      className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 bg-stone-50/50 text-stone-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#a85a38]/30"
-                    />
-                  </div>
-                  <button
-                    onClick={() => alert('Simulated Sign In')}
-                    className="w-full py-2.5 rounded-lg bg-[#a85a38] hover:bg-[#8f4a2c] text-white font-medium text-xs shadow-md shadow-[#a85a38]/20 transition-all mt-2"
-                  >
-                    Sign In
-                  </button>
-                  <div className="text-center pt-2 text-[11px] text-stone-500">
-                    Don&apos;t have an account? <span className="text-[#a85a38] font-medium cursor-pointer">Sign up</span>
-                  </div>
+            ) : errorMessage ? (
+              <div className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-lift">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                  <Icon d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" className="h-5 w-5" />
                 </div>
+                <h2 className="mt-3 text-[15px] font-semibold text-ink">Couldn&apos;t render this preview</h2>
+                <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">{errorMessage}</p>
+              </div>
+            ) : siteData ? (
+              <div className="mx-auto h-full w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-8">
+                <span className="rounded-full border border-line bg-paper px-2 py-0.5 text-[10px] font-semibold text-ink-muted">
+                  Site overview
+                </span>
+                <h2 className="mt-2.5 text-2xl font-semibold tracking-tight text-ink">{siteData.siteName}</h2>
+                <a
+                  href={siteData.siteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] text-ink-muted transition hover:text-ink"
+                >
+                  {siteData.siteUrl}
+                  <Icon d="M7 17L17 7M7 7h10v10" className="h-3 w-3" />
+                </a>
+
+                <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-line bg-paper/60 p-3">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">WordPress</dt>
+                    <dd className="mt-1 text-[14px] font-medium text-ink">{siteData.wpVersion}</dd>
+                  </div>
+                  <div className="rounded-xl border border-line bg-paper/60 p-3">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Active theme</dt>
+                    <dd className="mt-1 text-[14px] font-medium text-ink">
+                      {siteData.activeTheme ?? 'Not exposed by the REST API'}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-line bg-paper/60 p-3">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Builders</dt>
+                    <dd className="mt-1 text-[14px] font-medium text-ink">
+                      {[
+                        siteData.capabilities?.gutenberg && 'Gutenberg',
+                        siteData.capabilities?.elementor && 'Elementor',
+                        siteData.capabilities?.acf && 'ACF',
+                        siteData.capabilities?.woocommerce && 'WooCommerce',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || 'Core WordPress'}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-line bg-paper/60 p-3">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Status</dt>
+                    <dd
+                      className={`mt-1 text-[14px] font-medium ${
+                        siteData.status === 'ok' ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      {siteData.status}
+                    </dd>
+                  </div>
+                </dl>
+
+                {siteData.plugins?.length ? (
+                  <div className="mt-4">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Plugins</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {siteData.plugins.map((plugin) => (
+                        <span
+                          key={plugin}
+                          className="rounded-full border border-line bg-paper px-2 py-1 text-[10.5px] text-ink-soft"
+                        >
+                          {plugin}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <p className="mt-5 flex items-center gap-1.5 text-[11px] text-ink-muted">
+                  <Icon d="M20 6L9 17l-5-5" className="h-3.5 w-3.5 text-emerald-600" />
+                  Inspected read-only. No changes were made.
+                </p>
+              </div>
+            ) : (
+              <div className="mx-auto flex min-h-full max-w-md flex-col items-center justify-center py-8 text-center">
+                <div className="brand-gradient flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-lg shadow-pink-500/20">
+                  <Icon d="M3 5h18v14H3z M3 9h18 M7 13h4" className="h-5 w-5" />
+                </div>
+                <h2 className="mt-4 text-[20px] font-semibold tracking-tight text-ink">Your canvas is ready</h2>
+                <p className="mt-1.5 max-w-sm text-[12.5px] leading-relaxed text-ink-muted">
+                  Ask the agent to build a page, draft a post, or inspect your site. Staged changes appear here
+                  before anything is saved.
+                </p>
+
+                <div className="mt-5 w-full space-y-2">
+                  <button
+                    type="button"
+                    onClick={onTriggerInspect}
+                    className="flex w-full items-center justify-between rounded-xl border border-line bg-white px-3.5 py-2.5 text-left text-[12px] font-medium text-ink transition hover:border-line-strong hover:shadow-sm"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Icon d="M12 21a9 9 0 100-18 9 9 0 000 18z M3.5 9h17M3.5 15h17" className="h-4 w-4 text-emerald-600" />
+                      Inspect connected site
+                    </span>
+                    <Icon d="M9 6l6 6-6 6" className="h-3.5 w-3.5 text-ink-muted" />
+                  </button>
+
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!pageSlug.trim()) return;
+                      onTriggerPageRead(pageSlug.trim());
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-line bg-white p-1.5 pl-3"
+                  >
+                    <Icon d="M4 5h16v14H4z M4 9h16" className="h-4 w-4 shrink-0 text-ink-muted" />
+                    <input
+                      value={pageSlug}
+                      onChange={(event) => setPageSlug(event.target.value)}
+                      placeholder="Read a page by slug…"
+                      aria-label="Page slug to read"
+                      className="min-w-0 flex-1 bg-transparent text-[12px] text-ink placeholder:text-ink-muted focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!pageSlug.trim()}
+                      className="shrink-0 rounded-lg bg-ink px-2.5 py-1.5 text-[10px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-30"
+                    >
+                      Read
+                    </button>
+                  </form>
+                </div>
+
+                <p className="mt-4 flex items-center gap-1.5 text-[10px] text-ink-muted">
+                  <Icon d="M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6l7-3z" className="h-3 w-3 text-emerald-600" />
+                  Nothing is published without your approval.
+                </p>
               </div>
             )}
           </div>
-        )}
+        ) : null}
 
-        {/* TAB 2: LIVE WORDPRESS SITE IFRAME */}
-        {activeCanvasTab === 'live' && (
-          <div className="w-full h-full transition-all duration-300 flex justify-center items-start" style={viewportStyle}>
+        {activeCanvasTab === 'live' ? (
+          <div className="flex h-full w-full justify-center" style={viewportStyle}>
             <iframe
               key={iframeKey}
               src={targetSite}
-              className="w-full h-full border-0 min-h-[600px] bg-white rounded-xl shadow-md"
-              title="Live WordPress Site Preview"
+              className="h-full min-h-[500px] w-full rounded-xl border border-line bg-white shadow-lift"
+              title="Live WordPress preview"
               sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
             />
           </div>
-        )}
+        ) : null}
 
-        {/* TAB 3: CODE & DIFF VIEW */}
-        {activeCanvasTab === 'code' && (
-          <div className="w-full max-w-4xl h-full bg-slate-900 rounded-xl shadow-xl border border-slate-800 flex flex-col overflow-hidden text-slate-200">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 bg-slate-950/80">
-              <span className="text-xs font-mono text-slate-400">Gutenberg Block / HTML Representation</span>
+        {activeCanvasTab === 'code' ? (
+          <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-stone-800 bg-[#17161a] shadow-lift">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-stone-400">
+                Staged source
+              </span>
               <button
+                type="button"
                 onClick={() => {
                   navigator.clipboard?.writeText(currentCode);
                   setCopiedCode(true);
-                  setTimeout(() => setCopiedCode(false), 2000);
+                  window.setTimeout(() => setCopiedCode(false), 1800);
                 }}
-                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-300 transition-colors"
+                className="rounded-md border border-white/10 px-2 py-1 font-mono text-[10px] text-stone-300 transition hover:bg-white/5"
               >
-                {copiedCode ? '✓ Copied' : 'Copy Code'}
+                {copiedCode ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className="flex-1 p-6 font-mono text-xs overflow-auto text-emerald-400 whitespace-pre-wrap leading-relaxed select-text">
+            <pre className="flex-1 overflow-auto p-5 font-mono text-[11.5px] leading-6 text-emerald-300/90">
               {currentCode}
             </pre>
           </div>
-        )}
-
-        {/* ── Floating Bottom Dock Toolbar (Exactly like Lovable screenshot!) ── */}
-        <div className="fixed bottom-6 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-md px-2.5 py-1.5 rounded-full shadow-2xl border border-slate-200/80 text-slate-600 text-xs font-medium">
-          <button
-            onClick={() => alert('Inspector activated: click elements to view attributes.')}
-            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
-            title="Inspect Canvas"
-          >
-            📐
-          </button>
-          <button
-            onClick={() => alert('Typography styles: Serif (Georgia), Sans (Inter).')}
-            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
-            title="Typography"
-          >
-            🔤
-          </button>
-          <button
-            onClick={() => {
-              if (onStartRevise && (builderProposal || proposal || res)) {
-                const id = res?.id || 1;
-                const t = builderProposal?.title || proposal?.post.title || res?.title || 'Draft Content';
-                onStartRevise(id, t);
-              } else {
-                alert('Type revision request in chat.');
-              }
-            }}
-            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
-            title="Edit Staged Content"
-          >
-            ✏️
-          </button>
-          <div className="w-[1px] h-4 bg-slate-200 mx-1" />
-          <button
-            onClick={refreshIframe}
-            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
-            title="Refresh Preview"
-          >
-            🔄
-          </button>
-        </div>
+        ) : null}
       </div>
     </main>
   );

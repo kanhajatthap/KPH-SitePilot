@@ -8,6 +8,7 @@ import {
 import { WordPressClient } from '@wp-agent/wp-client';
 import { ModelAdapter } from '@wp-agent/model-adapters';
 import { AuditLogger } from '@wp-agent/audit';
+import { SITEPILOT_SYNTHESIS_PROMPT } from './prompts.js';
 
 export interface TaskEngineOptions {
   modelAdapter: ModelAdapter;
@@ -499,7 +500,7 @@ export class TaskEngine {
         const response = await this.modelAdapter.generate([
           {
             role: 'system',
-            content: 'You are KPH SitePilot, an AI WordPress assistant. Synthesize a concise, helpful response.',
+            content: SITEPILOT_SYNTHESIS_PROMPT,
           },
           { role: 'user', content: task.prompt },
         ]);

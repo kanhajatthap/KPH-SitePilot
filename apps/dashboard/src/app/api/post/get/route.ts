@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authenticateApiRequest } from '../../../../lib/auth/api';
+import { authorizeTargetSite } from '../../../../lib/auth/site-access';
 
 const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
 
@@ -9,6 +11,9 @@ const ALLOWED_TARGET_PATTERNS = [
 ];
 
 export async function POST(req: NextRequest) {
+  const auth = await authenticateApiRequest();
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const { siteUrlOrSlug, postId } = body;
@@ -43,6 +48,9 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
+
+    const siteAccess = await authorizeTargetSite(auth.context, siteUrlOrSlug);
+    if (!siteAccess.ok) return siteAccess.response;
 
     const response = await fetch(`${API_SERVER_URL}/api/post/get`, {
       method: 'POST',

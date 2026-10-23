@@ -1038,4 +1038,61 @@ export const PageApplyResponseSchema = z.object({
 
 export type PageApplyResponse = z.infer<typeof PageApplyResponseSchema>;
 
+/**
+ * Scoped Page Section Edit Contracts
+ */
+export const PageSectionEditProposalRequestSchema = z.object({
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  sectionId: z.string().min(1),
+  instruction: z.string().min(1).max(2000),
+  targetSectionName: z.string().optional(),
+});
+
+export type PageSectionEditProposalRequest = z.infer<typeof PageSectionEditProposalRequestSchema>;
+
+export const PageSectionEditProposalResponseSchema = z.object({
+  status: z.literal('proposed'),
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int(),
+  sectionId: z.string(),
+  sectionName: z.string(),
+  diff: z.object({
+    before: z.string(),
+    after: z.string(),
+  }),
+  updatedFullContent: z.string(),
+  renderedPreviewHtml: z.string(),
+  unsupportedOperations: z.array(z.string()),
+  summary: z.string(),
+  createdAt: z.string(),
+});
+
+export type PageSectionEditProposalResponse = z.infer<typeof PageSectionEditProposalResponseSchema>;
+
+export const PageSectionEditApplyRequestSchema = z.object({
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  approvedBy: z.string().default('user'),
+});
+
+export type PageSectionEditApplyRequest = z.infer<typeof PageSectionEditApplyRequestSchema>;
+
+export const PageSectionEditApplyResponseSchema = z.object({
+  status: z.literal('applied'),
+  planId: z.string().uuid(),
+  targetSite: z.string().url(),
+  pageId: z.number().int(),
+  pageUrl: z.string(),
+  sectionId: z.string(),
+  verified: z.boolean(),
+  postModified: z.string(),
+});
+
+export type PageSectionEditApplyResponse = z.infer<typeof PageSectionEditApplyResponseSchema>;
+
 

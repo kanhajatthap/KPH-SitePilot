@@ -4,6 +4,8 @@
 **Status:** **INCOMPLETE**  
 **Deployment:** None. No remote Supabase project was linked or changed; no services were purchased and no WordPress mutations were performed.
 
+> **Superseded note (2026-10-23):** the blanket `503` for authenticated API proxies described below has been replaced by per-request session verification plus site-ownership checks. See [authentication-implementation-report.md](./authentication-implementation-report.md).
+
 ## Implemented
 
 - Supabase SSR signup, email confirmation, password login, logout, password-reset request, recovery callback, and password update actions in the dashboard. Sessions use server-managed `HttpOnly`, `SameSite=Lax` cookies; the dashboard uses only the public anon key.

@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(9);
+SELECT plan(11);
 
 INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
 VALUES
@@ -35,6 +35,25 @@ SELECT is(
   ) SELECT count(*)::integer FROM changed),
   0,
   'user A cannot transfer project ownership'
+);
+SELECT is(
+  (WITH changed AS (
+    UPDATE public.projects
+    SET name = 'hijacked'
+    WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    RETURNING id
+  ) SELECT count(*)::integer FROM changed),
+  0,
+  'user A cannot update user B project'
+);
+SELECT is(
+  (WITH removed AS (
+    DELETE FROM public.projects
+    WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    RETURNING id
+  ) SELECT count(*)::integer FROM removed),
+  0,
+  'user A cannot delete user B project'
 );
 SELECT throws_ok(
   $$SELECT encrypted_credentials FROM public.wordpress_connections$$,

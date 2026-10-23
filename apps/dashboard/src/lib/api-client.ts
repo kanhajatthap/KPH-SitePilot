@@ -31,6 +31,30 @@ export interface AgentApiResponse {
   message?: string;
 }
 
+/**
+ * Reads a JSON API response without assuming the body is JSON.
+ *
+ * A missing Next.js route returns an HTML 404. Calling `res.json()` on that
+ * body produces the unhelpful "Unexpected token '<'" error, which hides the
+ * real status and URL. This helper keeps the failure actionable.
+ */
+export async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
+  const text = await res.text();
+  const contentType = res.headers.get('content-type') || 'unknown content type';
+
+  if (!text.trim()) return {} as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const endpoint = res.url || 'the API';
+    throw new Error(
+      `Expected JSON from ${endpoint} but received ${contentType} (HTTP ${res.status}). ` +
+        'The API route may be missing or the upstream service returned an HTML error page.'
+    );
+  }
+}
+
 export async function checkApiHealth(): Promise<boolean> {
   try {
     const res = await fetch('/api/health');
@@ -247,14 +271,22 @@ export function extractPreviewData(
 
   let site: InspectedSiteData | undefined;
   let page: InspectedPageData | undefined;
+  let capabilities: BuilderCapabilities | undefined;
 
   for (const tool of executedTools) {
     if (tool.name === 'site.inspect' && !tool.error && tool.output) {
       site = tool.output as InspectedSiteData;
     }
+    if (tool.name === 'builder.detect' && !tool.error && tool.output) {
+      capabilities = tool.output as BuilderCapabilities;
+    }
     if (tool.name === 'page.read' && !tool.error && tool.output) {
       page = tool.output as InspectedPageData;
     }
+  }
+
+  if (site && capabilities) {
+    site = { ...site, capabilities };
   }
 
   return { site, page };
@@ -555,5 +587,155 @@ export async function applyCodeInjection(params: {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || data.error || `Code injection apply failed (${res.status})`);
+  return data;
+}
+
+export interface PageProposalResult {
+  status: 'proposed';
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  page: {
+    title: string;
+    content: string;
+    slug?: string;
+    status: 'draft' | 'publish';
+    isFrontPage: boolean;
+    builder: 'gutenberg' | 'elementor';
+  };
+  renderedPreviewHtml: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface PageApplyResult {
+  status: 'applied';
+  planId: string;
+  targetSite: string;
+  pageId: number;
+  pageUrl: string;
+  editUrl: string;
+  title: string;
+  postStatus: string;
+  isFrontPage: boolean;
+  verified: boolean;
+  source?: 'created' | 'existing' | 'recovered';
+}
+
+export async function proposePageCreation(params: {
+  targetSite: string;
+  title: string;
+  content: string;
+  slug?: string;
+  status?: 'draft' | 'publish';
+  isFrontPage?: boolean;
+  builder?: 'gutenberg' | 'elementor';
+}): Promise<PageProposalResult> {
+  const res = await fetch('/api/site/pages/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await readJsonResponse<PageProposalResult & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page proposal failed (${res.status})`);
+  return data;
+}
+
+export async function applyPageCreation(params: {
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  approvedBy?: string;
+}): Promise<PageApplyResult> {
+  const res = await fetch('/api/site/pages/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, approvedBy: params.approvedBy || 'user' }),
+  });
+  const data = await readJsonResponse<PageApplyResult & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page creation apply failed (${res.status})`);
+  return data;
+}
+
+export interface PageSectionsResult {
+  pageId: number;
+  title: string;
+  status: string;
+  url: string;
+  sections: Array<{
+    id: string;
+    name: string;
+    blockName: string;
+    excerpt: string;
+  }>;
+}
+
+export async function fetchPageSections(pageId: number = 32): Promise<PageSectionsResult> {
+  const res = await fetch(`/api/site/pages/sections?id=${pageId}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || `Failed to fetch page sections (${res.status})`);
+  return data;
+}
+
+export interface SectionEditProposalResult {
+  status: 'proposed';
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  pageId: number;
+  sectionId: string;
+  sectionName: string;
+  diff: {
+    before: string;
+    after: string;
+  };
+  updatedFullContent: string;
+  renderedPreviewHtml: string;
+  unsupportedOperations: string[];
+  summary: string;
+  createdAt: string;
+}
+
+export async function proposeSectionEdit(params: {
+  targetSite: string;
+  pageId: number;
+  sectionId: string;
+  instruction: string;
+}): Promise<SectionEditProposalResult> {
+  const res = await fetch('/api/site/pages/section/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || `Section proposal failed (${res.status})`);
+  return data;
+}
+
+export interface SectionEditApplyResult {
+  status: 'applied';
+  planId: string;
+  targetSite: string;
+  pageId: number;
+  pageUrl: string;
+  sectionId: string;
+  verified: boolean;
+  postModified: string;
+}
+
+export async function applySectionEdit(params: {
+  planId: string;
+  integrityHash: string;
+  pageId: number;
+  targetSite: string;
+  approvedBy?: string;
+}): Promise<SectionEditApplyResult> {
+  const res = await fetch('/api/site/pages/section/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, approvedBy: params.approvedBy || 'user' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || `Section apply failed (${res.status})`);
   return data;
 }

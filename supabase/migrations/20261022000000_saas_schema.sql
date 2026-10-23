@@ -95,6 +95,12 @@ CREATE INDEX audit_events_project_created_idx ON public.audit_events(project_id,
 CREATE INDEX agent_jobs_owner_created_idx ON public.agent_jobs(owner_id, created_at DESC);
 CREATE INDEX model_usage_owner_created_idx ON public.model_usage(owner_id, created_at DESC);
 
+-- Backfill profiles for accounts that already exist in auth.users. Safe to
+-- re-run: existing rows are left untouched. Runs before RLS is enabled.
+INSERT INTO public.profiles (id, email)
+SELECT id, email FROM auth.users WHERE email IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wordpress_connections ENABLE ROW LEVEL SECURITY;
@@ -213,7 +219,8 @@ AS
 
 REVOKE ALL ON public.profiles, public.projects, public.wordpress_connections,
   public.change_proposals, public.audit_events, public.agent_jobs,
-  public.model_usage, public.agent_rate_limits FROM PUBLIC, anon, authenticated;
+  public.model_usage, public.agent_rate_limits,
+  public.wordpress_connection_metadata FROM PUBLIC, anon, authenticated;
 
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.projects TO authenticated;

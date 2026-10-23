@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { SessionGuard } from '../components/SessionGuard';
+import { getSupabasePublicConfig } from '../lib/supabase/config';
 
 export const metadata: Metadata = {
   title: 'KPH SitePilot — AI WordPress Agent Workspace',
-  description: 'Provider-independent, security-first read-only AI WordPress agent dashboard',
+  description:
+    'A Lovable-class conversational workspace for inspecting, designing and publishing WordPress sites safely.',
 };
 
 export default function RootLayout({
@@ -11,9 +14,12 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const authEnabled = Boolean(getSupabasePublicConfig());
+
   return (
-    <html lang="en" className="dark">
-      <body className="bg-slate-950 text-slate-100 antialiased h-screen overflow-hidden">
+    <html lang="en">
+      <body className="min-h-dvh bg-paper text-ink antialiased">
+        <SessionGuard enabled={authEnabled} />
         {children}
       </body>
     </html>

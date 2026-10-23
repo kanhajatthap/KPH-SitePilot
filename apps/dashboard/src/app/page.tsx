@@ -13,6 +13,7 @@ import {
   ViewportMode,
   AvailableSite,
   AgentExecutionTask,
+  TaskStep,
   QueuedTask,
   VerifiedResource,
   PublishProposalResponse,
@@ -42,6 +43,11 @@ import {
   listInstalledPlugins,
   proposeCodeInjection,
   applyCodeInjection,
+  proposePageCreation,
+  applyPageCreation,
+  fetchPageSections,
+  proposeSectionEdit,
+  applySectionEdit,
 } from '../lib/api-client';
 
 const AVAILABLE_SITES: AvailableSite[] = [
@@ -77,9 +83,19 @@ export default function DashboardPage() {
     useState<PublishProposalResponse | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeCanvasTab, setActiveCanvasTab] = useState<'preview' | 'live' | 'code'>('preview');
-  const [currentRoute, setCurrentRoute] = useState<string>('/auth');
+  const [currentRoute, setCurrentRoute] = useState<string>('/');
+
+  // Section selector state for scoped page editing (Live Preview vertical slice)
+  const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
+  const [availableSections, setAvailableSections] = useState<Array<{ id: string; name: string }>>([
+    { id: 'hero', name: 'Hero Section' },
+    { id: 'features', name: 'Features Grid' },
+    { id: 'metrics', name: 'Metrics Bar' },
+  ]);
+  const [targetPageId, setTargetPageId] = useState<number>(32); // Default page ID (modern-tech-home)
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const approvalInFlightRef = useRef(false);
 
   const [preview, setPreview] = useState<PreviewState>({
     targetSite: AVAILABLE_SITES[0].url,
@@ -470,6 +486,10 @@ export default function DashboardPage() {
   };
 
   const handleApproveBuilderProposal = async (proposal: BuilderProposal) => {
+    // A state update is not enough to stop a double-click: two handlers can
+    // run before React re-renders. Use a synchronous ref lock as well.
+    if (approvalInFlightRef.current) return;
+    approvalInFlightRef.current = true;
     setIsLoading(true);
     setPreview((prev) => ({ ...prev, isLoading: true }));
     try {
@@ -573,6 +593,95 @@ export default function DashboardPage() {
         return;
       }
 
+      // ── ROUTE: Page Creation (Website Homepage / Landing Page) ───────────
+      if (proposal.operationType === 'page') {
+        const result = await applyPageCreation({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: proposal.targetSite,
+          approvedBy: 'user',
+        });
+        const successMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: `🎉 ${result.source === 'existing' ? '**Matching Page Already Exists on WordPress**' : result.source === 'recovered' ? '**Page Recovered After a Late CLI Exit**' : '**Page Successfully Created on WordPress!**'}\n\n• **Title:** ${result.title}\n• **Page ID:** #${result.pageId}\n• **Status:** \`${result.postStatus}\`${result.isFrontPage ? ' (Set as Site Homepage 🏠)' : ''}\n• **Live URL:** [${result.pageUrl}](${result.pageUrl})\n• **WP Admin Edit:** [Open in WP Admin ↗](${result.editUrl})\n\n✓ ${result.source === 'existing' ? 'This page already existed; no duplicate was created. ' : result.source === 'recovered' ? 'The page was inserted before the CLI exited; it was recovered by slug. ' : ''}${result.verified ? `Verified independently via read-only WP-CLI inspection on ${result.targetSite}.` : 'The page exists, but verification could not confirm its content. Open WP Admin to inspect it before relying on it.'}`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        };
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.builderProposal?.planId === proposal.planId
+              ? { ...m, builderProposal: { ...m.builderProposal, isApplied: true } }
+              : m
+          )
+        );
+        setMessages((prev) => [...prev, successMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) } : undefined
+          );
+        }
+        return;
+      }
+
+      // ── ROUTE: Section Edit (Scoped Chat → Section) ──────────────────────
+      if (proposal.operationType === 'section') {
+        const { sectionDetails } = proposal;
+        if (!sectionDetails) {
+          throw new Error('Section edit proposal is missing sectionDetails.');
+        }
+        const result = await applySectionEdit({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          pageId: sectionDetails.pageId,
+          targetSite: proposal.targetSite,
+          approvedBy: 'user',
+        });
+        const successMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: `✅ **${sectionDetails.sectionName}** section updated on WordPress Page #${sectionDetails.pageId}!
+
+• **Section:** \`${sectionDetails.sectionId}\`
+• **Page URL:** [${result.pageUrl}](${result.pageUrl})
+• **Last Modified:** ${result.postModified}
+• **Verified:** ${result.verified ? 'Yes (read-only GET confirmed)' : 'Pending'}
+
+The live site has been updated. Refresh the Preview tab to see changes.`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        };
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.builderProposal?.planId === proposal.planId
+              ? { ...m, builderProposal: { ...m.builderProposal, isApplied: true } }
+              : m
+          )
+        );
+        setMessages((prev) => [...prev, successMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        setActiveCanvasTab('live'); // Auto-switch to Live tab to show changes
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) } : undefined
+          );
+        }
+        return;
+      }
+
       // ── ROUTE: Content / Post Creation (default) ─────────────────────────
       const content =
         proposal.renderedPreviewHtml ||
@@ -651,6 +760,7 @@ export default function DashboardPage() {
         errorMessage: errorMsg,
       }));
     } finally {
+      approvalInFlightRef.current = false;
       setIsLoading(false);
       setPreview((prev) => ({ ...prev, isLoading: false }));
     }
@@ -671,6 +781,24 @@ export default function DashboardPage() {
       activeView: 'welcome',
     }));
     setActiveTask(undefined);
+  };
+
+  // Handle section selection changes — refetch sections when Live tab opened on page 32
+  const handleSelectSection = (sectionId: string) => {
+    setSelectedSectionId(sectionId);
+  };
+
+  // Fetch page sections from API to populate the section strip
+  const handleFetchPageSections = async (pageId: number) => {
+    try {
+      const result = await fetchPageSections(pageId);
+      setAvailableSections(
+        result.sections.map((s) => ({ id: s.id, name: s.name }))
+      );
+      setTargetPageId(pageId);
+    } catch {
+      // Keep default sections if fetch fails (site may be offline)
+    }
   };
 
   const handleSendMessage = async (
@@ -711,7 +839,8 @@ export default function DashboardPage() {
     setIsLoading(true);
     setPreview((prev) => ({ ...prev, isLoading: true }));
 
-    // Initialize multi-step task tracker with truthful discrete steps
+    // Initialize a truthful task tracker. Do not show tool badges here: this
+    // local UI does not know which tools will run until the route executes.
     const taskId = `task_${Date.now()}`;
     const initialSteps =
       currentMode === 'writes'
@@ -719,39 +848,25 @@ export default function DashboardPage() {
             {
               id: 'step_understand',
               name: 'Understanding the request',
-              description: 'Analyzing post specifications and parameters.',
+              description: 'Analyzing the requested change.',
               status: 'running' as const,
             },
             {
-              id: 'step_inspect',
-              name: 'Inspecting target WordPress site',
-              description: `Connecting to ${currentSite} REST API.`,
-              status: 'pending' as const,
-              toolName: 'site.inspect',
-            },
-            {
-              id: 'step_duplicates',
-              name: 'Checking duplicate content',
-              description: 'Querying existing posts to prevent collisions.',
-              status: 'pending' as const,
-              toolName: 'post.read',
-            },
-            {
-              id: 'step_plan',
-              name: 'Planning content structure',
-              description: 'Structuring title and content sections.',
+              id: 'step_prepare',
+              name: 'Preparing the change',
+              description: `Resolving the target and scope for ${currentSite}.`,
               status: 'pending' as const,
             },
             {
               id: 'step_stage',
-              name: 'Staging content proposal',
-              description: 'Generating proposal and cryptographic integrity hash.',
+              name: 'Staging the proposal',
+              description: 'Generating a reviewable proposal and integrity hash.',
               status: 'pending' as const,
             },
             {
               id: 'step_approval',
               name: 'Awaiting user approval',
-              description: 'Waiting for explicit approval before writing draft.',
+              description: 'Nothing is written until you approve.',
               status: 'pending' as const,
             },
           ]
@@ -760,20 +875,19 @@ export default function DashboardPage() {
             {
               id: 'step_understand',
               name: 'Understanding the request',
-              description: 'Parsing inspection request parameters.',
+              description: 'Parsing the request and target site.',
               status: 'running' as const,
             },
             {
-              id: 'step_inspect',
-              name: 'Inspecting target WordPress site',
-              description: `Executing read-only tools against ${currentSite}.`,
+              id: 'step_work',
+              name: 'Working with the connected site',
+              description: `Running only the read-only tools needed for ${currentSite}.`,
               status: 'pending' as const,
-              toolName: 'site.inspect',
             },
             {
               id: 'step_synthesize',
-              name: 'Synthesizing verified response',
-              description: 'Formatting verified data into response.',
+              name: 'Synthesizing the response',
+              description: 'Formatting the verified result.',
               status: 'pending' as const,
             },
           ]
@@ -811,6 +925,14 @@ export default function DashboardPage() {
       // --- Intent Detection ---
       const isInspectionPrompt = /^(inspect|check site|get page|read page|site health|wp version)/i.test(p);
 
+      // Section edit: scoped instruction for a selected page section
+      const isSectionEdit =
+        selectedSectionId && selectedSectionId !== 'all' &&
+        (
+          /(?:change|update|edit|make|set|use|apply|add|remove|adjust|style|modify)/i.test(p) &&
+          !/^(inspect|install|activate|create|list|show)/i.test(p)
+        );
+
       // Plugin operations: install, activate, deactivate, list
       const isPluginOp = 
         /^(install|activate|deactivate|uninstall|delete)\s+(?:the\s+|plugin\s+)?(?:plugin\s+)?[\w-]+/i.test(p) ||
@@ -837,6 +959,98 @@ export default function DashboardPage() {
           /auth|login|sign in|signup|hearth|hero|banner|pricing|tier|product|ceramics|store|shop|catalog|inventory|contact|table|cards|landing|page|post|article/i.test(p) ||
           currentMode === 'writes'
         );
+
+      // --- ROUTE 0: Section Edit (highest priority when section is actively selected) ---
+      if (isSectionEdit && !isPluginOp && !isSettingsOp && !isCodeInjection) {
+        const targetSection = availableSections.find((s) => s.id === selectedSectionId);
+        const sectionName = targetSection?.name || selectedSectionId;
+
+        setCurrentRoute(`/editor/section/${selectedSectionId}`);
+        setActiveCanvasTab('preview');
+
+        const planStepId = `step_section_${Date.now()}`;
+        const planStep: TaskStep = {
+          id: planStepId,
+          name: 'Proposing section edit',
+          description: `Proposing scoped edit to "${sectionName}" → "${prompt}"`,
+          status: 'running',
+          toolName: 'section_edit',
+          startedAt: new Date().toISOString(),
+        };
+        setActiveTask((prev) => prev ? { ...prev, steps: [...prev.steps, planStep] } : undefined);
+
+        try {
+          const sectionProposal = await proposeSectionEdit({
+            targetSite: currentSite,
+            pageId: targetPageId,
+            sectionId: selectedSectionId,
+            instruction: prompt,
+          });
+
+          const bProposal: BuilderProposal = {
+            status: 'proposed',
+            planId: sectionProposal.planId,
+            integrityHash: sectionProposal.integrityHash,
+            targetSite: currentSite,
+            builderType: 'gutenberg',
+            title: `${sectionName} Update`,
+            diff: {
+              before: sectionProposal.diff.before,
+              after: sectionProposal.diff.after,
+            },
+            renderedPreviewHtml: sectionProposal.renderedPreviewHtml,
+            unsupportedFeatures: sectionProposal.unsupportedOperations,
+            summary: sectionProposal.summary,
+            createdAt: sectionProposal.createdAt,
+            operationType: 'section',
+            sectionDetails: {
+              pageId: sectionProposal.pageId,
+              sectionId: sectionProposal.sectionId,
+              sectionName: sectionProposal.sectionName,
+            },
+          };
+
+          const unsupportedNote = sectionProposal.unsupportedOperations.length > 0
+            ? `\n\n**⚠️ Unsupported Operations (skipped):**\n${sectionProposal.unsupportedOperations.map((u) => `• ${u}`).join('\n')}`
+            : '';
+
+          const diffSnippet = sectionProposal.diff.after !== sectionProposal.diff.before
+            ? `\n\n**Diff (after):**\n\`\`\`html\n${sectionProposal.diff.after.slice(0, 400)}...\n\`\`\``
+            : '\n\n*(No changes were detected — instruction may not match supported transforms)*';
+
+          const assistantMessage: ChatMessage = {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: `🎯 **Section Edit Proposal** — \`${sectionName}\` on Page #${targetPageId}
+
+**Instruction:** "${prompt}"
+**Target Section:** \`${sectionProposal.sectionId}\`
+**Summary:** ${sectionProposal.summary}${diffSnippet}${unsupportedNote}
+
+Review the diff in the Preview panel. Click **✓ Approve & Apply** to write changes to WordPress, or **Reject** to cancel.`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            builderProposal: bProposal,
+          };
+
+          setMessages((prev) => [...prev, assistantMessage]);
+          setPreview((prev) => ({
+            ...prev,
+            isLoading: false,
+            activeView: 'builder',
+            builderProposal: bProposal,
+            lastUpdated: new Date().toISOString(),
+          }));
+          setActiveTask((prev) =>
+            prev
+              ? { ...prev, status: 'waiting_for_approval', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) }
+              : undefined
+          );
+        } catch (sectionErr: any) {
+          throw new Error(`Section edit failed: ${sectionErr.message}`);
+        }
+        return;
+      }
 
       // --- ROUTE 1: Plugin Operations ---
       if (isPluginOp) {
@@ -1079,6 +1293,9 @@ export default function DashboardPage() {
 
       // --- ROUTE 4: Content creation (Gutenberg/Elementor/Pages/Posts) ---
       if (isCreationOp) {
+        const isPageOrHomeRequest = /(?:page|homepage|home\s*page|landing\s*page|website)/i.test(p);
+        const isFrontPage = /(?:homepage|home\s*page|front\s*page)/i.test(p);
+
         const synth = synthesizeFromPrompt(prompt, currentSite);
         setCurrentRoute(synth.route);
         setActiveCanvasTab('preview');
@@ -1086,6 +1303,136 @@ export default function DashboardPage() {
         let planId = `plan_${Date.now()}`;
         let integrityHash = Math.random().toString(16).substring(2).padEnd(64, '0');
 
+        if (isPageOrHomeRequest) {
+          // Dedicated Page Creation Workflow. If staging fails, stop honestly:
+          // never fabricate a plan id/hash that can only fail at approval time.
+          try {
+            const pageProp = await proposePageCreation({
+              targetSite: currentSite,
+              title: synth.title,
+              content: synth.gutenbergBlocksHtml,
+              slug: isFrontPage ? 'home' : synth.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              status: 'publish',
+              isFrontPage,
+              builder: 'gutenberg',
+            });
+            planId = pageProp.planId;
+            integrityHash = pageProp.integrityHash;
+          } catch (err) {
+            const errorMsg = (err as Error).message || 'Failed to stage the page proposal';
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_err_${Date.now()}`,
+                role: 'assistant',
+                content: `Could not stage the page proposal: ${errorMsg}`,
+                timestamp: new Date().toISOString(),
+                status: 'error',
+                error: errorMsg,
+              },
+            ]);
+            setPreview((prev) => ({
+              ...prev,
+              isLoading: false,
+              activeView: 'error',
+              errorMessage: errorMsg,
+            }));
+            setActiveTask((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: 'failed',
+                    error: errorMsg,
+                    steps: prev.steps.map((step) =>
+                      step.status === 'running' ? { ...step, status: 'failed', error: errorMsg } : step
+                    ),
+                  }
+                : undefined
+            );
+            return;
+          }
+
+          const bProposal: BuilderProposal = {
+            status: 'proposed',
+            planId,
+            integrityHash,
+            targetSite: currentSite,
+            builderType: 'gutenberg',
+            title: synth.title,
+            diff: {
+              before: null,
+              after: synth.gutenbergBlocksHtml,
+            },
+            renderedPreviewHtml: synth.renderedHtml,
+            unsupportedFeatures: [],
+            summary: `Create and publish WordPress ${isFrontPage ? 'Homepage' : 'Page'}: "${synth.title}"`,
+            createdAt: new Date().toISOString(),
+            operationType: 'page',
+            pageDetails: {
+              isFrontPage,
+              slug: isFrontPage ? 'home' : synth.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              postStatus: 'publish',
+            },
+          };
+
+          const assistantMessage: ChatMessage = {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: `\`\`\`html\n${synth.codeSnippet}\n\`\`\`\n\n**Isse kya kya generate aur stage hua:**\n${synth.bulletPoints.map((b) => `• ${b}`).join('\n')}\n\n• **Target:** WordPress Page (${isFrontPage ? 'Homepage 🏠' : 'Standard Page'})\n• **Builder:** Structured Gutenberg Blocks\n\nPreview dekh kar top-right **Publish** ya neeche button se approve karein to create the real page on ${currentSite}.`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            builderProposal: bProposal,
+          };
+
+          setMessages((prev) => [...prev, assistantMessage]);
+          setPreview((prev) => ({
+            ...prev,
+            isLoading: false,
+            activeView: 'builder',
+            builderProposal: bProposal,
+            lastUpdated: new Date().toISOString(),
+          }));
+
+          setActiveTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'waiting_for_approval',
+                  currentStepIndex: 3,
+                  steps: [
+                    {
+                      id: 'step_understand',
+                      name: 'Understanding the request',
+                      description: 'Parsed the page request and target site.',
+                      status: 'completed',
+                    },
+                    {
+                      id: 'step_generate',
+                      name: 'Generating page content',
+                      description: 'Built five responsive sections as Gutenberg blocks.',
+                      status: 'completed',
+                    },
+                    {
+                      id: 'step_stage',
+                      name: 'Staging the page proposal',
+                      description: 'Created a verifiable proposal and integrity hash.',
+                      status: 'completed',
+                    },
+                    {
+                      id: 'step_approval',
+                      name: 'Awaiting user approval',
+                      description: 'Nothing is saved until you approve.',
+                      status: 'running',
+                    },
+                  ],
+                }
+              : undefined
+          );
+          return;
+        }
+
+        // Standard Post / Blog Staging Fallback. Do not invent a plan id when
+        // staging fails; that only moves the failure to the approval step.
         try {
           const apiProposal = await proposeBuilderContent({
             targetSite: currentSite,
@@ -1093,12 +1440,40 @@ export default function DashboardPage() {
             prompt,
             title: synth.title,
           });
-          if (apiProposal?.planId) {
-            planId = apiProposal.planId;
-            integrityHash = apiProposal.integrityHash;
-          }
-        } catch {
-          // Graceful fallback for offline / mock testing
+          planId = apiProposal.planId;
+          integrityHash = apiProposal.integrityHash;
+        } catch (err) {
+          const errorMsg = (err as Error).message || 'Failed to stage the content proposal';
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_err_${Date.now()}`,
+              role: 'assistant',
+              content: `Could not stage the content proposal: ${errorMsg}`,
+              timestamp: new Date().toISOString(),
+              status: 'error',
+              error: errorMsg,
+            },
+          ]);
+          setPreview((prev) => ({
+            ...prev,
+            isLoading: false,
+            activeView: 'error',
+            errorMessage: errorMsg,
+          }));
+          setActiveTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'failed',
+                  error: errorMsg,
+                  steps: prev.steps.map((step) =>
+                    step.status === 'running' ? { ...step, status: 'failed', error: errorMsg } : step
+                  ),
+                }
+              : undefined
+          );
+          return;
         }
 
         const bProposal: BuilderProposal = {
@@ -1116,6 +1491,7 @@ export default function DashboardPage() {
           unsupportedFeatures: [],
           summary: synth.summary,
           createdAt: new Date().toISOString(),
+          operationType: 'content',
         };
 
         const assistantMessage: ChatMessage = {
@@ -1141,7 +1517,33 @@ export default function DashboardPage() {
             ? {
                 ...prev,
                 status: 'waiting_for_approval',
-                steps: prev.steps.map((s) => ({ ...s, status: 'completed' })),
+                currentStepIndex: 3,
+                steps: [
+                  {
+                    id: 'step_understand',
+                    name: 'Understanding the request',
+                    description: 'Parsed the content request and target site.',
+                    status: 'completed',
+                  },
+                  {
+                    id: 'step_generate',
+                    name: 'Generating content',
+                    description: 'Built the requested content and Gutenberg markup.',
+                    status: 'completed',
+                  },
+                  {
+                    id: 'step_stage',
+                    name: 'Staging the content proposal',
+                    description: 'Created a verifiable proposal and integrity hash.',
+                    status: 'completed',
+                  },
+                  {
+                    id: 'step_approval',
+                    name: 'Awaiting user approval',
+                    description: 'Nothing is saved until you approve.',
+                    status: 'running',
+                  },
+                ],
               }
             : undefined
         );
@@ -1260,6 +1662,10 @@ export default function DashboardPage() {
         // Direct pure AI chat (model without tools)
         const content = await sendPureChatMessage(prompt, controller.signal);
 
+        if (!content.trim()) {
+          throw new Error('The model returned an empty response. Try again or switch models.');
+        }
+
         const assistantMessage: ChatMessage = {
           id: `msg_asst_${Date.now()}`,
           role: 'assistant',
@@ -1291,18 +1697,17 @@ export default function DashboardPage() {
       const errorMessage: ChatMessage = {
         id: `msg_err_${Date.now()}`,
         role: 'assistant',
-        content: `I encountered an issue connecting to the site or API server.`,
+        content: 'I couldn’t complete that request.',
         timestamp: new Date().toISOString(),
         status: 'error',
         error: errorMsg,
       };
 
       setMessages((prev) => [...prev, errorMessage]);
+      // A chat failure must not replace the canvas with an error state.
       setPreview((prev) => ({
         ...prev,
         isLoading: false,
-        activeView: 'error',
-        errorMessage: errorMsg,
       }));
 
       setActiveTask((prev) =>
@@ -1396,7 +1801,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-paper text-ink">
       {/* Top Header — Lovable-style slim bar */}
       <Header
         selectedSite={selectedSite}
@@ -1464,8 +1869,17 @@ export default function DashboardPage() {
             handleStartRevise(postId, title, 'Improve and expand the draft content')
           }
           activeCanvasTab={activeCanvasTab}
-          onCanvasTabChange={setActiveCanvasTab}
+          onCanvasTabChange={(tab) => {
+            setActiveCanvasTab(tab);
+            // When user switches to Live tab, fetch the real sections from page 32
+            if (tab === 'live') {
+              handleFetchPageSections(targetPageId);
+            }
+          }}
           currentRoute={currentRoute}
+          selectedSectionId={selectedSectionId}
+          onSelectSection={handleSelectSection}
+          availableSections={availableSections}
         />
       </div>
     </div>

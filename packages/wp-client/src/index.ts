@@ -212,9 +212,54 @@ export class WordPressClient {
   }
 
   /**
-   * Inspects site health and metadata (read-only).
+   * Performs a read-only GET request and returns text (used for version probes).
    */
-  async inspectSite(siteUrlOrSlug: string): Promise<SiteInspectResult> {
+  private async getText(
+    url: URL,
+    path: string,
+    accept = 'text/html,application/xhtml+xml'
+  ): Promise<string> {
+    const endpoint = new URL(path, url).toString();
+
+    const headers: Record<string, string> = { Accept: accept };
+    if (this.authHeader) {
+      headers['Authorization'] = this.authHeader;
+    }
+
+    let response: Response;
+    try {
+      response = await this.transport(endpoint, { method: 'GET', headers });
+    } catch (err) {
+      throw new AgentError(
+        ErrorCode.NETWORK_ERROR,
+        `Failed to reach WordPress target: ${(err as Error).message}`,
+        { endpoint }
+      );
+    }
+
+    if (!response.ok) {
+      throw new AgentError(
+        ErrorCode.NETWORK_ERROR,
+        `WordPress responded with HTTP error: ${response.status}`,
+        { endpoint, status: response.status }
+      );
+    }
+
+    return response.text();
+  }
+
+  /**
+   * Inspects site health and metadata (read-only).
+   *
+   * Version is read from the public generator meta (with a feed fallback).
+   * Theme and plugin data are best-effort: the REST endpoints require
+   * capabilities, so a missing field is reported as undefined rather than
+   * invented.
+   */
+  async inspectSite(
+    siteUrlOrSlug: string,
+    options: { includePlugins?: boolean } = {}
+  ): Promise<SiteInspectResult> {
     const validatedUrl = this.resolveUrl(siteUrlOrSlug);
     const data = (await this.get(validatedUrl, '/wp-json/')) as {
       name?: string;
@@ -223,10 +268,69 @@ export class WordPressClient {
       namespaces?: string[];
     };
 
+    let wpVersion = 'unknown';
+    for (const path of ['/', '/feed/']) {
+      try {
+        const text = await this.getText(validatedUrl, path);
+        const meta = text.match(
+          /<meta[^>]+name=["']generator["'][^>]+content=["']WordPress\s+([0-9][^"']*)["']/i
+        );
+        const feed = text.match(
+          /<generator[^>]*>https?:\/\/wordpress\.org\/\?v=([^<]+)<\/generator>/i
+        );
+        const match = meta?.[1] ?? feed?.[1];
+        if (match) {
+          wpVersion = match.trim();
+          break;
+        }
+      } catch {
+        // Best-effort probe; the REST index already confirmed reachability.
+      }
+    }
+
+    let activeTheme: string | undefined;
+    try {
+      const themes = await this.get(
+        validatedUrl,
+        '/wp-json/wp/v2/themes?status=active'
+      );
+      const theme = Array.isArray(themes) ? themes[0] : themes;
+      if (theme && typeof theme === 'object') {
+        const typed = theme as {
+          name?: string | { rendered?: string };
+          stylesheet?: string;
+        };
+        activeTheme =
+          (typeof typed.name === 'string' ? typed.name : typed.name?.rendered) ||
+          typed.stylesheet;
+      }
+    } catch {
+      // Theme endpoint may require capabilities; leave it undefined.
+    }
+
+    let plugins: string[] | undefined;
+    if (options.includePlugins) {
+      try {
+        const list = await this.get(validatedUrl, '/wp-json/wp/v2/plugins');
+        if (Array.isArray(list)) {
+          plugins = list
+            .map((item) => {
+              const plugin = item as { name?: string; plugin?: string };
+              return plugin.name || plugin.plugin;
+            })
+            .filter((name): name is string => Boolean(name));
+        }
+      } catch {
+        // Plugin endpoint may require capabilities; leave it undefined.
+      }
+    }
+
     return {
       siteName: data.name ?? 'WordPress Site',
       siteUrl: data.url ?? validatedUrl.origin,
-      wpVersion: '6.7',
+      wpVersion,
+      activeTheme,
+      plugins,
       status: 'ok',
     };
   }
@@ -954,3 +1058,4 @@ export class WordPressClient {
 
 export * from './integrations/index.js';
 export * from './site-manager.js';
+export * from './section-editor.js';

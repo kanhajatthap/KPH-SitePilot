@@ -45,3 +45,7 @@ Thumbs.db
 # WordPress local / temporary files
 wp-content/debug.log
 vendor/
+
+# Local verification artifacts (never commit)
+.dummy-account.local.txt
+.playwright-mcp/

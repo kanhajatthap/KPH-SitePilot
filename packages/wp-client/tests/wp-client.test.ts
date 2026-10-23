@@ -63,23 +63,48 @@ describe('WordPressClient & Target Validation', () => {
   describe('WordPressClient mocked requests', () => {
     it('executes read-only site inspection with injected mock transport', async () => {
       const mockTransport: HttpTransport = async (url) => {
-        expect(url).toBe('http://plugin-test.local/wp-json/');
-        return new Response(
-          JSON.stringify({
-            name: 'LocalWP Test Site',
-            url: 'http://plugin-test.local',
-            description: 'Local development environment',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+        if (url === 'http://plugin-test.local/wp-json/') {
+          return new Response(
+            JSON.stringify({
+              name: 'LocalWP Test Site',
+              url: 'http://plugin-test.local',
+              description: 'Local development environment',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (url === 'http://plugin-test.local/') {
+          return new Response(
+            '<html><head><meta name="generator" content="WordPress 6.7.1" /></head></html>',
+            { status: 200, headers: { 'Content-Type': 'text/html' } }
+          );
+        }
+        if (url.includes('/wp-json/wp/v2/themes')) {
+          return new Response(
+            JSON.stringify([
+              { name: { rendered: 'Twenty Twenty-Five' }, stylesheet: 'twentytwentyfive' },
+            ]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (url.includes('/wp-json/wp/v2/plugins')) {
+          return new Response(
+            JSON.stringify([{ name: 'Akismet Anti-spam', plugin: 'akismet/akismet.php' }]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response('Not found', { status: 404 });
       };
 
       const client = new WordPressClient({
         transport: mockTransport,
       });
 
-      const result = await client.inspectSite('plugin-test');
+      const result = await client.inspectSite('plugin-test', { includePlugins: true });
       expect(result.siteName).toBe('LocalWP Test Site');
+      expect(result.wpVersion).toBe('6.7.1');
+      expect(result.activeTheme).toBe('Twenty Twenty-Five');
+      expect(result.plugins).toEqual(['Akismet Anti-spam']);
       expect(result.status).toBe('ok');
     });
 

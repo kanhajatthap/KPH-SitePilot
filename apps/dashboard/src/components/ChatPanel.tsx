@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   AgentMode,
   ChatMessage,
@@ -9,9 +9,6 @@ import {
   AvailableSite,
   AgentExecutionTask,
   QueuedTask,
-  IntentDetectionResult,
-  VerifiedResource,
-  AppliedDraftPost,
   PublishProposalResponse,
 } from '../lib/types';
 
@@ -43,6 +40,345 @@ interface ChatPanelProps {
   isPublishing?: boolean;
 }
 
+function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+/** Minimal inline formatter: **bold** and `code` only. */
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    const token = match[0];
+    if (token.startsWith('**')) {
+      nodes.push(
+        <strong key={`${keyPrefix}-b-${index}`} className="font-semibold text-ink">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else {
+      nodes.push(
+        <code key={`${keyPrefix}-c-${index}`} className="rounded bg-paper-deep px-1 py-0.5 font-mono text-[11px] text-ink">
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    cursor = pattern.lastIndex;
+    index += 1;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+/** Lightweight markdown for assistant answers: paragraphs, bullets, headings, bold, code. */
+function RichText({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/);
+  const blocks: React.ReactNode[] = [];
+  let list: string[] = [];
+  let listType: 'ul' | 'ol' | null = null;
+
+  const flush = () => {
+    if (!list.length) return;
+    const items = list.map((item, index) => (
+      <li key={`li-${blocks.length}-${index}`} className="leading-6">
+        {renderInline(item, `li-${blocks.length}-${index}`)}
+      </li>
+    ));
+    blocks.push(
+      listType === 'ol' ? (
+        <ol key={`ol-${blocks.length}`} className="ml-4 list-decimal space-y-0.5 text-[13px] text-ink-soft">
+          {items}
+        </ol>
+      ) : (
+        <ul key={`ul-${blocks.length}`} className="ml-4 list-disc space-y-0.5 text-[13px] text-ink-soft">
+          {items}
+        </ul>
+      )
+    );
+    list = [];
+    listType = null;
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (listType !== 'ul') {
+        flush();
+        listType = 'ul';
+      }
+      list.push(trimmed.replace(/^[-*]\s+/, ''));
+      return;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (listType !== 'ol') {
+        flush();
+        listType = 'ol';
+      }
+      list.push(trimmed.replace(/^\d+\.\s+/, ''));
+      return;
+    }
+
+    flush();
+
+    if (!trimmed) {
+      blocks.push(<div key={`sp-${index}`} className="h-1.5" />);
+      return;
+    }
+
+    if (/^#{1,4}\s+/.test(trimmed)) {
+      blocks.push(
+        <p key={`h-${index}`} className="pt-1 text-[13px] font-semibold text-ink">
+          {renderInline(trimmed.replace(/^#{1,4}\s+/, ''), `h-${index}`)}
+        </p>
+      );
+      return;
+    }
+
+    blocks.push(
+      <p key={`p-${index}`} className="text-[13px] leading-6 text-ink-soft">
+        {renderInline(line, `p-${index}`)}
+      </p>
+    );
+  });
+
+  flush();
+
+  return <div className="space-y-1">{blocks}</div>;
+}
+
+const MODE_META: Record<AgentMode, { label: string; icon: string; hint: string }> = {
+  agent: {
+    label: 'Agent',
+    icon: 'M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6l7-3z',
+    hint: 'Read-only inspection and planning',
+  },
+  writes: {
+    label: 'Writes',
+    icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z',
+    hint: 'Stage changes with human approval',
+  },
+  chat: {
+    label: 'Chat',
+    icon: 'M21 12a8 8 0 01-8 8H5l-2 2V12a8 8 0 018-8h2a8 8 0 018 8z',
+    hint: 'Direct model conversation, no tools',
+  },
+};
+
+function ToolActivityCard({
+  tool,
+  open,
+  onToggle,
+}: {
+  tool: NonNullable<ChatMessage['executedTools']>[number];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const denied = tool.status === 'denied';
+  const failed = tool.status === 'error';
+  const tone = denied
+    ? 'border-rose-200 bg-rose-50/70 text-rose-700'
+    : failed
+    ? 'border-amber-200 bg-amber-50/70 text-amber-700'
+    : 'border-line bg-white text-ink-soft';
+
+  return (
+    <div className={`overflow-hidden rounded-xl border text-[11px] ${tone}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-black/[0.02]"
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              denied ? 'bg-rose-500' : failed ? 'bg-amber-500' : 'bg-emerald-500'
+            }`}
+          />
+          <span className="truncate font-mono text-[10px] font-medium">{tool.name}</span>
+          <span className="rounded-md bg-paper-deep px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted">
+            {denied ? 'blocked' : failed ? 'failed' : 'read'}
+          </span>
+        </span>
+        <Icon d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} className="h-3 w-3 shrink-0 text-ink-muted" />
+      </button>
+      {open ? (
+        <div className="space-y-1.5 border-t border-line/80 bg-paper/70 px-3 py-2 font-mono text-[10px] leading-relaxed">
+          {tool.arguments ? (
+            <div>
+              <span className="text-ink-muted">args </span>
+              <span className="break-all text-ink-soft">{JSON.stringify(tool.arguments)}</span>
+            </div>
+          ) : null}
+          {tool.error ? (
+            <div className="text-rose-600">
+              {tool.error.code}: {tool.error.message}
+            </div>
+          ) : null}
+          {tool.output !== undefined && !tool.error ? (
+            <div className="max-h-40 overflow-auto text-emerald-700">
+              {JSON.stringify(tool.output, null, 1)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DraftProposalCard({
+  proposal,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  proposal: DraftProposal;
+  busy: boolean;
+  onApprove?: () => void;
+  onReject?: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+          <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-3.5 w-3.5" />
+          Draft proposal
+        </span>
+        <span className="rounded-md border border-amber-200 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700">
+          Not saved
+        </span>
+      </div>
+      <div className="mt-2 text-[13px] font-medium text-ink">{proposal.post.title}</div>
+      {proposal.post.excerpt ? (
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">{proposal.post.excerpt}</p>
+      ) : null}
+      {proposal.duplicateWarning ? (
+        <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-[10px] text-rose-700">
+          {proposal.duplicateWarning}
+        </div>
+      ) : null}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/70 pt-2.5">
+        <span className="truncate font-mono text-[9px] text-ink-muted">
+          {proposal.targetSite.replace(/https?:\/\//, '')}
+        </span>
+        {proposal.isApplied ? (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-700">
+            <Icon d="M20 6L9 17l-5-5" className="h-3 w-3" /> Saved
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            {onReject ? (
+              <button
+                type="button"
+                onClick={onReject}
+                disabled={busy}
+                className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-ink-muted transition hover:bg-white hover:text-ink disabled:opacity-50"
+              >
+                Reject
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onApprove}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50"
+            >
+              {busy ? <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" /> : null}
+              Approve draft
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BuilderProposalCard({
+  proposal,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  proposal: BuilderProposal;
+  busy: boolean;
+  onApprove?: () => void;
+  onReject?: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold capitalize text-violet-800">
+          <Icon d="M4 5h16v14H4z M4 9h16" className="h-3.5 w-3.5" />
+          {proposal.builderType} proposal
+        </span>
+        <span className="rounded-md border border-violet-200 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-700">
+          Staged
+        </span>
+      </div>
+      <div className="mt-2 text-[13px] font-medium text-ink">{proposal.title}</div>
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">{proposal.summary}</p>
+      {proposal.unsupportedFeatures.length > 0 ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] text-amber-800">
+          Preserved verbatim: {proposal.unsupportedFeatures.join(', ')}
+        </div>
+      ) : null}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-violet-200/70 pt-2.5">
+        <span className="truncate font-mono text-[9px] text-ink-muted">
+          {proposal.targetSite.replace(/https?:\/\//, '')}
+        </span>
+        {proposal.isApplied ? (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-700">
+            <Icon d="M20 6L9 17l-5-5" className="h-3 w-3" /> Saved
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            {onReject ? (
+              <button
+                type="button"
+                onClick={onReject}
+                disabled={busy}
+                className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-ink-muted transition hover:bg-white hover:text-ink disabled:opacity-50"
+              >
+                Reject
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onApprove}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50"
+            >
+              {busy ? <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" /> : null}
+              Approve change
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ChatPanel({
   messages,
   isLoading,
@@ -72,10 +408,8 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
-  const [showActivityDetails, setShowActivityDetails] = useState(true);
   const [approvingPlanId, setApprovingPlanId] = useState<string | null>(null);
   const [revisionState, setRevisionState] = useState<{
-    open: boolean;
     postId: number;
     currentTitle: string;
     prompt: string;
@@ -83,12 +417,19 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom of messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, isLoading, activeTask]);
 
-  // Client-side quick intent detection for proactive mode suggestion pills
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [input]);
+
+  const siteLabel = selectedSite.replace(/https?:\/\//, '').replace(/\/$/, '');
+
   const contextualSuggestion = useMemo(() => {
     const trimmed = input.trim().toLowerCase();
     if (trimmed.length < 5) return null;
@@ -105,619 +446,714 @@ export function ChatPanel({
     if (isMutation && agentMode !== 'writes') {
       return {
         targetMode: 'writes' as AgentMode,
-        label: 'Switch to Controlled Writes',
-        reason: 'This request involves creating or updating WordPress content.',
+        label: 'Switch to Writes',
+        reason: 'This request changes WordPress content.',
       };
     }
     if (isInspect && agentMode === 'chat') {
       return {
         targetMode: 'agent' as AgentMode,
-        label: 'Switch to WP Agent',
-        reason: 'This request asks to inspect or query the WordPress site.',
+        label: 'Switch to Agent',
+        reason: 'This request needs read-only site tools.',
       };
     }
     return null;
   }, [input, agentMode]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (!input.trim()) return;
     onSendMessage(input.trim());
     setInput('');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit(event);
     }
   };
 
-  const toggleToolExpand = (toolId: string) => {
-    setExpandedTools((prev) => ({ ...prev, [toolId]: !prev[toolId] }));
+  const toggleTool = (key: string) => {
+    setExpandedTools((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleApprove = async (proposal: DraftProposal) => {
-    setApprovingPlanId(proposal.planId);
+  const runApproval = async (id: string, action?: () => Promise<void> | void) => {
+    setApprovingPlanId(id);
     try {
-      if (onApproveProposal) await onApproveProposal(proposal);
+      await action?.();
     } finally {
       setApprovingPlanId(null);
     }
   };
 
-  const handleApproveBuilder = async (proposal: BuilderProposal) => {
-    setApprovingPlanId(proposal.planId);
-    try {
-      if (onApproveBuilderProposal) await onApproveBuilderProposal(proposal);
-    } finally {
-      setApprovingPlanId(null);
-    }
-  };
-
-  const quickPrompts = [
-    { label: '🔑 Hearth & Clay Auth Card', prompt: 'Hearth & Clay store ke liye authentication page banao with email aur password fields' },
-    { label: '🏺 Handcrafted Ceramics & Store', prompt: 'Create handcrafted ceramics, organic throws, candles aur baskets collection with realistic pricing in INR' },
-    { label: '🚀 Agency Hero Section', prompt: 'Create an Elementor hero section structure for "Digital Innovation Agency"' },
-    { label: '💎 3-Tier Flexible Pricing Table', prompt: 'Create a 3-tier pricing table for WordPress agency services' },
-    { label: '📝 Post: "How to Make a Simple Website Using AI"', prompt: 'Create a WordPress post titled "How to Make a Simple Website Using AI" with beginner-friendly step-by-step instructions. Check for duplicates first and show me the content for approval.' },
-    { label: '🔍 Inspect site health', prompt: `Inspect the site ${selectedSite.replace(/https?:\/\//, '').replace(/\.local$/, '')} and report its version` },
+  const suggestions = [
+    {
+      label: 'Build a landing page',
+      hint: 'Hero, products, testimonials, contact',
+      icon: 'M3 5h18v14H3z M3 9h18 M7 13h4',
+      prompt:
+        'Create a modern landing page for a local ceramics studio with a hero, product collection, testimonials and contact section. Show me a preview before saving anything.',
+    },
+    {
+      label: 'Draft a blog post',
+      hint: 'SEO summary, duplicate check, approval',
+      icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z',
+      prompt:
+        'Draft a WordPress post titled "How to Make a Simple Website Using AI" with beginner-friendly steps. Check for duplicates first and show me the content for approval.',
+    },
+    {
+      label: 'Inspect my site',
+      hint: 'WP version, theme, active builders',
+      icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M3.5 9h17M3.5 15h17',
+      prompt: `Inspect ${siteLabel} and report the WordPress version, active theme and available page builders.`,
+    },
+    {
+      label: 'Improve this page',
+      hint: 'Rewrite copy, then stage a preview',
+      icon: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z',
+      prompt:
+        'Improve the hero section copy and layout of the current page. Keep the brand tone, then show a staged preview before saving.',
+    },
   ];
 
+  const statusLabel =
+    activeTask?.status === 'planning'
+      ? 'Planning'
+      : activeTask?.status === 'running'
+      ? 'Working'
+      : activeTask?.status === 'waiting_for_approval'
+      ? 'Waiting for approval'
+      : activeTask?.status === 'completed'
+      ? 'Completed'
+      : activeTask?.status === 'cancelled'
+      ? 'Stopped'
+      : 'Thinking';
+
   return (
-    <aside className="w-[420px] h-full flex flex-col border-r border-slate-800 bg-[#1a1a2e] shrink-0">
-      {/* ── Chat Header ── */}
-      <div className="h-11 border-b border-slate-800 px-4 flex items-center justify-between text-xs shrink-0 bg-[#13131f]">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span className="font-semibold text-slate-200">AI WordPress Copilot</span>
-          <span className="text-slate-600">•</span>
-          <span className="text-[11px] text-slate-500 font-mono">Autonomous Engine</span>
+    <aside className="flex h-full w-full shrink-0 flex-col border-r border-line bg-white/60 md:w-[420px] lg:w-[460px]">
+      {/* Header */}
+      <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-line px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="brand-gradient flex h-6 w-6 items-center justify-center rounded-lg text-white">
+            <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-3.5 w-3.5" />
+          </span>
+          <span className="truncate text-[13px] font-semibold tracking-tight">SitePilot Agent</span>
+          <span className="hidden items-center gap-1 rounded-full border border-line bg-paper px-1.5 py-0.5 text-[9px] font-medium text-ink-muted sm:flex">
+            <span className="h-1 w-1 rounded-full bg-emerald-500" />
+            autonomous
+          </span>
         </div>
-        {messages.length > 0 && (
+        {messages.length > 0 ? (
           <button
+            type="button"
             onClick={onClearChat}
-            className="text-[11px] text-slate-500 hover:text-rose-400 transition-colors"
-            title="Clear conversation"
+            className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+            title="Start a new conversation"
           >
-            Clear chat
+            New chat
           </button>
-        )}
+        ) : null}
       </div>
 
-      {/* ── Messages Scroll Area ── */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Conversation */}
+      <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col justify-center items-center text-center p-6">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-950/60 border border-emerald-800/40 flex items-center justify-center text-emerald-400 mb-3">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
+          <div className="mx-auto flex min-h-full max-w-md flex-col justify-center py-6">
+            <div className="animate-fade-up">
+              <div className="brand-gradient mb-4 flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-lg shadow-pink-500/20">
+                <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-5 w-5" />
+              </div>
+              <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-ink">
+                What should we build?
+              </h1>
+              <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-muted">
+                Describe a page, a post, or a change. I&apos;ll inspect your site, show a plan, and stage
+                everything for your approval before anything is saved.
+              </p>
             </div>
-            <h3 className="font-medium text-slate-200 text-sm mb-1">How can I assist your WordPress site?</h3>
-            <p className="text-xs text-slate-500 max-w-[280px] mb-6">
-              Ask questions, inspect site versions, or create draft posts safely with explicit approval.
-            </p>
-            <div className="w-full space-y-1.5">
-              <p className="text-[11px] font-medium text-slate-600 uppercase tracking-wider text-left px-1 mb-2">Suggested Actions</p>
-              {quickPrompts.map((item, idx) => (
+
+            <div className="mt-6 grid gap-2 sm:grid-cols-2">
+              {suggestions.map((item) => (
                 <button
-                  key={idx}
-                  onClick={() => { setInput(item.prompt); textareaRef.current?.focus(); }}
-                  className="w-full text-left p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-700/60 border border-slate-700/60 hover:border-emerald-500/40 text-xs text-slate-300 transition-all flex items-center justify-between group"
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    setInput(item.prompt);
+                    textareaRef.current?.focus();
+                  }}
+                  className="group rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500/30"
                 >
-                  <span className="truncate pr-2">{item.label}</span>
-                  <span className="text-slate-600 group-hover:text-emerald-400 text-sm">➔</span>
+                  <span className="flex items-center gap-2 text-[12px] font-medium text-ink">
+                    <Icon d={item.icon} className="h-3.5 w-3.5 text-pink-500" />
+                    {item.label}
+                  </span>
+                  <span className="mt-1 block text-[10.5px] leading-relaxed text-ink-muted">{item.hint}</span>
                 </button>
               ))}
             </div>
+
+            <p className="mt-4 flex items-center gap-1.5 text-[10px] text-ink-muted">
+              <Icon d="M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6l7-3z" className="h-3 w-3 text-emerald-600" />
+              Read-only by default. Writes always require your approval.
+            </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div
-                className={`max-w-[92%] rounded-2xl p-3 text-xs leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-emerald-600/80 text-white rounded-br-none shadow-md'
-                    : 'bg-slate-800/80 text-slate-200 rounded-bl-none border border-slate-700/50 shadow-md'
-                }`}
-              >
-                {/* Executed Tools Badges */}
-                {msg.executedTools && msg.executedTools.length > 0 && (
-                  <div className="mb-2 space-y-1.5 pt-0.5">
-                    {msg.executedTools.map((tool, idx) => {
-                      const toolKey = `${msg.id}_tool_${idx}`;
-                      const isExpanded = expandedTools[toolKey];
-                      const isDenied = tool.status === 'denied';
-                      const isError = tool.status === 'error';
-                      return (
-                        <div
-                          key={idx}
-                          className={`rounded-lg border text-[11px] overflow-hidden ${
-                            isDenied
-                              ? 'bg-rose-950/40 border-rose-800/60 text-rose-200'
-                              : isError
-                              ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
-                              : 'bg-slate-900/80 border-slate-700 text-slate-300'
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => toggleToolExpand(toolKey)}
-                            className="w-full px-2.5 py-1.5 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              {isDenied ? <span className="text-rose-400" title="Blocked by security guard">🛡️ Denied:</span>
-                                : isError ? <span className="text-amber-400">⚠️ Error:</span>
-                                : <span className="text-emerald-400">⚡ Tool:</span>}
-                              <span className="font-mono font-medium">{tool.name}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                              <span>{isDenied ? 'BLOCKED' : isError ? 'FAILED' : 'READ_ONLY'}</span>
-                              <span>{isExpanded ? '▲' : '▼'}</span>
-                            </div>
-                          </button>
-                          {isExpanded && (
-                            <div className="p-2 border-t border-slate-700/60 bg-black/30 font-mono text-[10px] space-y-1">
-                              {tool.arguments && <div><span className="text-slate-400">Args: </span><span>{JSON.stringify(tool.arguments)}</span></div>}
-                              {tool.error && <div className="text-rose-400"><span>Error [{tool.error.code}]: </span><span>{tool.error.message}</span></div>}
-                              {tool.output !== undefined && !tool.error && (
-                                <div className="text-emerald-400/90 overflow-x-auto"><span>Output: </span><span>{JSON.stringify(tool.output, null, 1)}</span></div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Main content */}
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-
-                {/* Draft Proposal Card */}
-                {msg.proposal && (
-                  <div className="mt-3 p-3.5 rounded-xl bg-slate-950/90 border border-amber-500/40 shadow-lg space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-xs">
-                        <span>📝</span><span>WordPress Draft Proposal</span>
-                      </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/60 font-semibold">STATUS: DRAFT ONLY</span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-[11px] font-medium text-slate-200">{msg.proposal.post.title}</div>
-                      {msg.proposal.post.excerpt && <p className="text-[10px] text-slate-400 italic">&ldquo;{msg.proposal.post.excerpt}&rdquo;</p>}
-                    </div>
-                    {msg.proposal.duplicateWarning && (
-                      <div className="p-2 rounded-lg bg-rose-950/50 border border-rose-800/80 text-[10px] text-rose-300 flex items-start gap-1.5">
-                        <span className="text-rose-400">⚠️</span><span>{msg.proposal.duplicateWarning}</span>
-                      </div>
-                    )}
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                      <span className="text-[9px] font-mono text-slate-500 truncate max-w-[150px]">Target: {msg.proposal.targetSite.replace(/https?:\/\//, '')}</span>
-                      {msg.proposal.isApplied ? (
-                        <span className="text-[10px] font-medium text-emerald-400 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Approved &amp; Created
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {onRejectProposal && (
-                            <button type="button" onClick={() => onRejectProposal(msg.proposal!)} disabled={approvingPlanId === msg.proposal.planId}
-                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-colors disabled:opacity-50">
-                              Reject
-                            </button>
-                          )}
-                          <button type="button" onClick={() => handleApprove(msg.proposal!)} disabled={approvingPlanId === msg.proposal.planId}
-                            className="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50">
-                            {approvingPlanId === msg.proposal.planId ? (
-                              <><span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Saving...</span></>
-                            ) : '✓ Approve Changes'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Builder Proposal Card */}
-                {msg.builderProposal && (
-                  <div className="mt-3 p-3.5 rounded-xl bg-sky-950/40 border border-sky-700/60 shadow-lg space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-sky-400 font-semibold text-xs">
-                        <span>🧱</span><span className="capitalize">{msg.builderProposal.builderType} Builder Proposal</span>
-                      </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-900/60 text-sky-300 border border-sky-600/50 uppercase font-bold">{msg.builderProposal.builderType}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-slate-100">{msg.builderProposal.title}</p>
-                      <p className="text-[11px] text-slate-300">{msg.builderProposal.summary}</p>
-                    </div>
-                    {msg.builderProposal.unsupportedFeatures && msg.builderProposal.unsupportedFeatures.length > 0 && (
-                      <div className="p-2 rounded-lg bg-amber-950/50 border border-amber-800/80 text-[10px] text-amber-300">
-                        ⚠️ Preserved verbatim: {msg.builderProposal.unsupportedFeatures.join(', ')}
-                      </div>
-                    )}
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                      <span className="text-[9px] font-mono text-slate-500 truncate max-w-[150px]">Target: {msg.builderProposal.targetSite.replace(/https?:\/\//, '')}</span>
-                      {msg.builderProposal.isApplied ? (
-                        <span className="text-[10px] font-medium text-emerald-400 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Approved &amp; Saved
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {onRejectBuilderProposal && (
-                            <button type="button" onClick={() => onRejectBuilderProposal(msg.builderProposal!)} disabled={approvingPlanId === msg.builderProposal.planId}
-                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition-colors disabled:opacity-50">
-                              Reject
-                            </button>
-                          )}
-                          <button type="button" onClick={() => handleApproveBuilder(msg.builderProposal!)} disabled={approvingPlanId === msg.builderProposal.planId}
-                            className="px-3 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50">
-                            {approvingPlanId === msg.builderProposal.planId ? (
-                              <><span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Saving...</span></>
-                            ) : '✓ Approve Changes'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Draft Completion Card */}
-                {msg.appliedPost && (
-                  <div className="mt-3 p-4 rounded-xl bg-gradient-to-b from-emerald-950/70 to-slate-950/90 border border-emerald-500/50 shadow-xl space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">🎉</span>
-                        <div>
-                          <div className="text-xs font-bold text-emerald-300">Your draft is ready!</div>
-                          <div className="text-[10px] text-slate-400">Created and independently verified on WordPress</div>
-                        </div>
-                      </div>
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ${
-                        msg.appliedPost.status === 'publish'
-                          ? 'bg-emerald-900/80 text-emerald-200 border-emerald-600'
-                          : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
-                      }`}>
-                        {msg.appliedPost.status === 'publish' ? '● PUBLISHED LIVE' : '○ DRAFT'} (ID #{msg.appliedPost.id})
+          <div className="space-y-5">
+            {messages.map((msg) => {
+              const isUser = msg.role === 'user';
+              return (
+                <div
+                  key={msg.id}
+                  className={`animate-fade-up flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+                >
+                  <div className={`flex w-full gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    {!isUser ? (
+                      <span className="brand-gradient mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white">
+                        <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-3.5 w-3.5" />
                       </span>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-black/40 border border-slate-800 text-slate-200 text-xs">
-                      <div className="font-semibold text-white truncate">{msg.appliedPost.title}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center justify-between">
-                        <span>Target: {selectedSite.replace(/https?:\/\//, '')}</span>
-                        <a href={msg.appliedPost.editLink} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 hover:underline">
-                          <span>Open in WP Admin</span><span>↗</span>
-                        </a>
+                    ) : null}
+
+                    <div className={`min-w-0 ${isUser ? 'max-w-[86%]' : 'max-w-[calc(100%-2.4rem)] flex-1'}`}>
+                      {!isUser && msg.executedTools?.length ? (
+                        <div className="mb-2 space-y-1.5">
+                          {msg.executedTools.map((tool, index) => {
+                            const key = `${msg.id}_tool_${index}`;
+                            return (
+                              <ToolActivityCard
+                                key={key}
+                                tool={tool}
+                                open={Boolean(expandedTools[key])}
+                                onToggle={() => toggleTool(key)}
+                              />
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      <div
+                        className={
+                          isUser
+                            ? 'rounded-2xl rounded-br-md bg-[#f1ede6] px-3.5 py-2.5 text-[13px] leading-relaxed text-ink'
+                            : 'text-[13px] leading-6 text-ink-soft'
+                        }
+                      >
+                        {isUser ? (
+                          <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                        ) : (
+                          <RichText content={msg.content} />
+                        )}
+
+                        {msg.proposal ? (
+                          <DraftProposalCard
+                            proposal={msg.proposal}
+                            busy={approvingPlanId === msg.proposal.planId}
+                            onApprove={
+                              onApproveProposal
+                                ? () =>
+                                    runApproval(msg.proposal!.planId, () => onApproveProposal(msg.proposal!))
+                                : undefined
+                            }
+                            onReject={
+                              onRejectProposal ? () => onRejectProposal(msg.proposal!) : undefined
+                            }
+                          />
+                        ) : null}
+
+                        {msg.builderProposal ? (
+                          <BuilderProposalCard
+                            proposal={msg.builderProposal}
+                            busy={approvingPlanId === msg.builderProposal.planId}
+                            onApprove={
+                              onApproveBuilderProposal
+                                ? () =>
+                                    runApproval(msg.builderProposal!.planId, () =>
+                                      onApproveBuilderProposal(msg.builderProposal!)
+                                    )
+                                : undefined
+                            }
+                            onReject={
+                              onRejectBuilderProposal
+                                ? () => onRejectBuilderProposal(msg.builderProposal!)
+                                : undefined
+                            }
+                          />
+                        ) : null}
+
+                        {msg.appliedPost ? (
+                          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                  <Icon d="M20 6L9 17l-5-5" className="h-4 w-4" />
+                                </span>
+                                <div>
+                                  <div className="text-[12px] font-semibold text-emerald-900">
+                                    {msg.appliedPost.status === 'publish' ? 'Published live' : 'Draft saved'}
+                                  </div>
+                                  <div className="text-[10px] text-emerald-700/80">
+                                    Verified on {siteLabel}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="rounded-md border border-emerald-200 bg-white/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-700">
+                                #{msg.appliedPost.id}
+                              </span>
+                            </div>
+
+                            <div className="mt-2.5 rounded-xl border border-emerald-200/70 bg-white/70 p-2.5">
+                              <div className="truncate text-[12px] font-medium text-ink">
+                                {msg.appliedPost.title}
+                              </div>
+                              <a
+                                href={msg.appliedPost.editLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 hover:underline"
+                              >
+                                Open in WP Admin
+                                <Icon d="M7 17L17 7M9 7h8v8" className="h-3 w-3" />
+                              </a>
+                            </div>
+
+                            <div className="mt-2.5 grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => onPreviewDraft?.(msg.appliedPost!.id)}
+                                className="flex items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-2 py-1.5 text-[10.5px] font-medium text-ink-soft transition hover:bg-paper-deep"
+                              >
+                                <Icon d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" className="h-3 w-3" />
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRevisionState({
+                                    postId: msg.appliedPost!.id,
+                                    currentTitle: msg.appliedPost!.title,
+                                    prompt: '',
+                                  })
+                                }
+                                className="flex items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-2 py-1.5 text-[10.5px] font-medium text-ink-soft transition hover:bg-paper-deep"
+                              >
+                                <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-3 w-3" />
+                                Revise
+                              </button>
+                              {msg.appliedPost.status !== 'publish' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onPublishNow?.(msg.appliedPost!.id)}
+                                  className="flex items-center justify-center gap-1.5 rounded-lg bg-ink px-2 py-1.5 text-[10.5px] font-semibold text-white transition hover:bg-stone-800"
+                                >
+                                  <Icon d="M12 19V5M6 11l6-6 6 6" className="h-3 w-3" />
+                                  Publish
+                                </button>
+                              ) : (
+                                <span className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-100/60 px-2 py-1.5 text-[10.5px] font-medium text-emerald-700">
+                                  Live
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onKeepAsDraft?.(msg.appliedPost!.id)}
+                                className="flex items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-2 py-1.5 text-[10.5px] font-medium text-ink-soft transition hover:bg-paper-deep"
+                              >
+                                <Icon d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z M7 3v6h9" className="h-3 w-3" />
+                                Keep draft
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {msg.error ? (
+                          <div className="mt-2.5 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-2.5 text-[11px] text-rose-700">
+                            <div className="flex items-start gap-1.5 font-medium">
+                              <Icon d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span>{msg.error}</span>
+                            </div>
+                            {/credentials|Application Password|401/i.test(msg.error) ? (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-[10px] font-medium text-rose-600">
+                                  How to connect WordPress
+                                </summary>
+                                <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-[10px] leading-relaxed text-rose-700/90">
+                                  <li>Open WP Admin for {siteLabel}.</li>
+                                  <li>Go to Users → Profile → Application Passwords.</li>
+                                  <li>Create one named “KPH-SitePilot”.</li>
+                                  <li>Add it to the server environment as WP_USERNAME and WP_APPLICATION_PASSWORD.</li>
+                                </ol>
+                                <p className="mt-1.5 text-[10px] italic text-rose-600/80">
+                                  Never paste credentials in chat. The agent reads them server-side only.
+                                </p>
+                              </details>
+                            ) : /ECONNREFUSED|ENOTFOUND|fetch failed|Failed to fetch|Network|timeout|API server/i.test(
+                                msg.error
+                              ) ? (
+                              <p className="mt-1 pl-5 text-[10px] text-rose-600/80">
+                                Check that the LocalWP site is running and the API is up on port 3001.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                    <div className="text-[10px] text-emerald-300/80 font-mono flex items-center gap-1">
-                      <span>✓</span><span>Verified via read-only GET /wp-json/wp/v2/posts/{msg.appliedPost.id}</span>
-                    </div>
-                    <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
-                      <button type="button" onClick={() => onPreviewDraft?.(msg.appliedPost!.id)}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] transition-colors flex items-center justify-center gap-1.5 border border-slate-700">
-                        <span>👁️</span><span>Preview Draft</span>
-                      </button>
-                      <button type="button" onClick={() => setRevisionState({ open: true, postId: msg.appliedPost!.id, currentTitle: msg.appliedPost!.title, prompt: '' })}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-[11px] transition-colors flex items-center justify-center gap-1.5 border border-slate-700">
-                        <span>✏️</span><span>Revise Draft</span>
-                      </button>
-                      {msg.appliedPost.status !== 'publish' ? (
-                        <button type="button" onClick={() => onPublishNow?.(msg.appliedPost!.id)}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition-all flex items-center justify-center gap-1.5 shadow-md border border-emerald-500/50">
-                          <span>🚀</span><span>Publish Now</span>
-                        </button>
-                      ) : (
-                        <div className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 text-emerald-300 font-medium text-[11px] flex items-center justify-center gap-1.5 border border-emerald-800/60">
-                          ✓ Live on Site
-                        </div>
-                      )}
-                      <button type="button" onClick={() => onKeepAsDraft?.(msg.appliedPost!.id)}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 font-medium text-[11px] transition-colors flex items-center justify-center gap-1.5 border border-slate-800">
-                        <span>📁</span><span>Keep as Draft</span>
-                      </button>
-                    </div>
                   </div>
-                )}
 
-                {/* Application Password Guidance */}
-                {msg.error && (msg.error.includes('credentials') || msg.error.includes('Application Password') || msg.error.includes('401')) && (
-                  <div className="mt-3 p-3.5 rounded-xl bg-amber-950/50 border border-amber-700/80 shadow-lg text-[11px] space-y-2">
-                    <div className="flex items-center gap-1.5 text-amber-400 font-semibold"><span>🔑</span><span>WordPress Application Password Required</span></div>
-                    <p className="text-slate-300">To perform actions on WordPress, your local WordPress user requires an authorized Application Password.</p>
-                    <div className="bg-black/40 p-2.5 rounded-lg border border-amber-900/40 text-slate-300 space-y-1 text-[10px] font-mono">
-                      <div>1. Open LocalWP → WP Admin for {selectedSite}</div>
-                      <div>2. Navigate to Users → Profile</div>
-                      <div>3. Scroll to Application Passwords</div>
-                      <div>4. Enter name &quot;KPH-SitePilot&quot; &amp; click Add New</div>
-                      <div>5. Add credentials to your server .env.local:</div>
-                      <div className="text-emerald-400">WP_USERNAME=admin<br />WP_APPLICATION_PASSWORD=xxxx xxxx xxxx xxxx</div>
-                    </div>
-                    <p className="text-[10px] text-amber-400/80 italic">Note: Never paste your password in chat. The agent reads credentials server-side only.</p>
-                  </div>
-                )}
-
-                {/* General Error */}
-                {msg.error && !msg.error.includes('credentials') && !msg.error.includes('Application Password') && !msg.error.includes('401') && (
-                  <div className="mt-2 p-2 rounded bg-rose-950/60 border border-rose-800 text-[11px] text-rose-300 flex items-start gap-1.5">
-                    <span className="text-rose-400 mt-0.5">⚠️</span>
-                    <div>
-                      <p className="font-semibold">{msg.error}</p>
-                      <p className="text-[10px] text-rose-400 mt-0.5">Ensure LocalWP site is running and backend API is active on port 3001.</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Timestamp */}
-              <span className="text-[10px] text-slate-600 mt-1 px-1">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          ))
+                  <span className={`mt-1 px-1 text-[9px] text-ink-muted ${isUser ? 'mr-1' : 'ml-9'}`}>
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         )}
 
-        {/* Live Multi-Step Activity Panel (inline in stream) */}
-        {activeTask && (
-          <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 shadow-xl space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="font-semibold text-slate-200">
-                  {activeTask.status === 'planning' ? 'Planning Task...'
-                    : activeTask.status === 'running' ? 'Executing Task...'
-                    : activeTask.status === 'waiting_for_approval' ? 'Awaiting Your Approval'
-                    : activeTask.status === 'completed' ? 'Task Completed'
-                    : activeTask.status === 'cancelled' ? 'Task Stopped'
-                    : 'Task Active'}
+        {/* Thinking timeline */}
+        {activeTask ? (
+          <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
+            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+              <span className="flex items-center gap-2 text-[11px] font-semibold text-ink">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pink-400 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-pink-500" />
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 uppercase">{activeTask.mode}</span>
-              </div>
-              <button type="button" onClick={() => setShowActivityDetails((prev) => !prev)} className="text-[10px] text-slate-500 hover:text-slate-300">
-                {showActivityDetails ? 'Hide ▲' : 'Steps ▼'}
-              </button>
+                {statusLabel}
+                <span className="rounded-md bg-paper-deep px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-ink-muted">
+                  {activeTask.mode}
+                </span>
+              </span>
+              {activeTask.status === 'running' || activeTask.status === 'planning' ? (
+                <button
+                  type="button"
+                  onClick={onStopTask}
+                  className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:bg-rose-50 hover:text-rose-600"
+                >
+                  Stop
+                </button>
+              ) : null}
             </div>
-            {showActivityDetails && activeTask.steps && activeTask.steps.length > 0 && (
-              <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
-                {activeTask.steps.map((step, idx) => (
-                  <div key={step.id || idx} className="flex items-center justify-between text-[11px] p-1.5 rounded bg-slate-900/60 border border-slate-800/40">
-                    <div className="flex items-center gap-2">
-                      {step.status === 'completed' ? <span className="text-emerald-400 font-bold">✓</span>
-                        : step.status === 'running' ? <span className="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                        : step.status === 'failed' ? <span className="text-rose-400 font-bold">✕</span>
-                        : step.status === 'skipped' ? <span className="text-slate-500">⊘</span>
-                        : <span className="text-slate-600 font-bold">○</span>}
-                      <span className={step.status === 'running' ? 'text-white font-medium' : step.status === 'completed' ? 'text-slate-300' : 'text-slate-500'}>
+            {activeTask.steps?.length ? (
+              <div className="space-y-1 px-3 py-2.5">
+                {activeTask.steps.map((step, index) => (
+                  <div key={step.id || index} className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {step.status === 'completed' ? (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                          <Icon d="M20 6L9 17l-5-5" className="h-2.5 w-2.5" />
+                        </span>
+                      ) : step.status === 'running' ? (
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-pink-500 border-t-transparent" />
+                      ) : step.status === 'failed' ? (
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+                          <Icon d="M6 6l12 12M18 6L6 18" className="h-2.5 w-2.5" />
+                        </span>
+                      ) : (
+                        <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
+                      )}
+                      <span
+                        className={`truncate ${
+                          step.status === 'running'
+                            ? 'font-medium text-ink'
+                            : step.status === 'completed'
+                            ? 'text-ink-soft'
+                            : 'text-ink-muted'
+                        }`}
+                      >
                         {step.name}
                       </span>
-                    </div>
-                    {step.toolName && (
-                      <span className="text-[9px] font-mono px-1 rounded bg-slate-800 text-slate-400">{step.toolName}</span>
-                    )}
+                    </span>
+                    {step.toolName ? (
+                      <span className="shrink-0 rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[9px] text-ink-muted">
+                        {step.toolName}
+                      </span>
+                    ) : null}
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
-        {/* Loading indicator */}
-        {isLoading && (
-          <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/90 border border-slate-700/60 shadow-lg">
-            <div className="flex items-center gap-2 text-xs text-slate-300">
-              <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-              <span>
-                {agentMode === 'writes' ? 'Analyzing & generating proposal...'
-                  : agentMode === 'agent' ? 'Executing read-only WordPress tools...'
-                  : 'Synthesizing AI response...'}
-              </span>
-            </div>
-            <button type="button" onClick={onStopTask}
-              className="px-2.5 py-1 rounded bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 shadow"
-              title="Stop task execution immediately">
-              <span>⏹</span><span>Stop</span>
+        {/* Loading */}
+        {isLoading && !activeTask ? (
+          <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-line bg-white px-3 py-2.5">
+            <span className="shimmer-text text-[12px] font-medium">
+              {agentMode === 'writes'
+                ? 'Designing the change…'
+                : agentMode === 'agent'
+                ? 'Checking your site…'
+                : 'Thinking…'}
+            </span>
+            <button
+              type="button"
+              onClick={onStopTask}
+              className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:bg-rose-50 hover:text-rose-600"
+            >
+              Stop
             </button>
           </div>
-        )}
+        ) : null}
 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ── Queue bar ── */}
-      {queuedTasks && queuedTasks.length > 0 && (
-        <div className="px-3 py-1.5 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-semibold shrink-0">Queue ({queuedTasks.length})</span>
-            <span className="text-[11px] text-slate-300 truncate">Next: &ldquo;{queuedTasks[0].prompt}&rdquo;</span>
-          </div>
-          <button type="button" onClick={() => onRemoveQueuedTask(queuedTasks[0].id)} className="text-[10px] text-slate-500 hover:text-rose-400 px-1 font-mono transition-colors" title="Remove queued prompt">
-            ✕ Cancel
+      {/* Queue */}
+      {queuedTasks.length > 0 ? (
+        <div className="flex items-center justify-between gap-2 border-t border-line bg-paper px-4 py-2 text-[10px]">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 rounded-md bg-ink px-1.5 py-0.5 font-semibold text-white">
+              {queuedTasks.length} queued
+            </span>
+            <span className="truncate text-ink-muted">{queuedTasks[0].prompt}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemoveQueuedTask(queuedTasks[0].id)}
+            className="shrink-0 font-medium text-ink-muted transition hover:text-rose-600"
+          >
+            Cancel
           </button>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Contextual mode suggestion ── */}
-      {contextualSuggestion && (
-        <div className="px-3 py-2 bg-gradient-to-r from-amber-950/60 to-slate-900 border-t border-amber-700/50 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-1.5 text-amber-200 text-[11px] truncate mr-2">
-            <span className="text-amber-400">⚡</span>
-            <span className="truncate">{contextualSuggestion.reason}</span>
-          </div>
-          <button type="button" onClick={() => onAgentModeChange(contextualSuggestion.targetMode)}
-            className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold text-[11px] transition-colors shrink-0 shadow-sm">
+      {/* Mode nudge */}
+      {contextualSuggestion ? (
+        <div className="flex items-center justify-between gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2">
+          <span className="truncate text-[10.5px] text-amber-800">{contextualSuggestion.reason}</span>
+          <button
+            type="button"
+            onClick={() => onAgentModeChange(contextualSuggestion.targetMode)}
+            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[10px] font-semibold text-white transition hover:bg-amber-500"
+          >
             {contextualSuggestion.label}
           </button>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Composer ── */}
-      <form onSubmit={handleSubmit} className="p-3 border-t border-slate-800 bg-[#13131f] shrink-0 space-y-2">
-        {/* Mode pills + site selector */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
-          <div className="flex items-center bg-slate-900/80 border border-slate-800 rounded-lg p-0.5" role="tablist">
-            <button type="button" onClick={() => onAgentModeChange('agent')}
-              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5 ${agentMode === 'agent' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-200'}`}
-              title="Safe Read-Only inspection and query mode (Default)">
-              <span className={`w-1.5 h-1.5 rounded-full ${agentMode === 'agent' ? 'bg-white' : 'bg-emerald-400'}`} />
-              <span>🛡 Read-Only</span>
-            </button>
-            <button type="button" onClick={() => onAgentModeChange('writes')}
-              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5 ${agentMode === 'writes' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-200'}`}
-              title="Create WordPress draft posts with human approval">
-              <span className={`w-1.5 h-1.5 rounded-full ${agentMode === 'writes' ? 'bg-white' : 'bg-amber-400'}`} />
-              <span>✏️ Writes</span>
-            </button>
-            <button type="button" onClick={() => onAgentModeChange('chat')}
-              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5 ${agentMode === 'chat' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-200'}`}
-              title="Direct model chat without tools">
-              <span className={`w-1.5 h-1.5 rounded-full ${agentMode === 'chat' ? 'bg-white' : 'bg-sky-400'}`} />
-              <span>💬 Chat</span>
-            </button>
-          </div>
-
-          {/* Site selector */}
-          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 rounded-lg px-2 py-0.5">
-            <span className="text-[10px] text-slate-500">Target:</span>
-            <select
-              value={selectedSite}
-              onChange={(e) => onSelectSite(e.target.value)}
-              className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none cursor-pointer"
-              aria-label="Select Target Site"
-            >
-              {availableSites.map((site) => (
-                <option key={site.id} value={site.url} className="bg-slate-900 text-slate-200">{site.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Textarea & send/stop */}
-        <div className="relative flex items-end bg-slate-900/90 border border-slate-700 focus-within:border-emerald-500/60 rounded-xl overflow-hidden shadow-inner transition-colors">
+      {/* Composer */}
+      <form onSubmit={handleSubmit} className="shrink-0 border-t border-line bg-white/70 p-3 sm:p-4">
+        <div className="composer-shell rounded-2xl">
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
+            rows={1}
             placeholder={
               agentMode === 'writes'
-                ? `Request draft post for ${selectedSite.replace(/https?:\/\//, '')}... (Approval required)`
+                ? `Describe the change to stage on ${siteLabel}…`
                 : agentMode === 'agent'
-                ? `Ask about ${selectedSite.replace(/https?:\/\//, '')}... (Read-Only inspection)`
-                : `Ask AI anything... (Enter to send, Shift+Enter for new line)`
+                ? `Ask anything about ${siteLabel}…`
+                : 'Ask the model anything…'
             }
-            rows={1}
-            className="flex-1 bg-transparent text-slate-100 placeholder-slate-600 text-xs px-3 py-2.5 resize-none focus:outline-none min-h-[44px] max-h-[140px]"
-            aria-label="Agent prompt input"
+            aria-label="Agent prompt"
+            className="block max-h-[168px] min-h-[54px] w-full resize-none bg-transparent px-4 pt-3.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
           />
-          <div className="flex items-center gap-1.5 m-1.5 shrink-0">
-            {isLoading && (
-              <button type="button" onClick={onStopTask}
-                className="p-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-all shadow"
-                aria-label="Stop task" title="Stop current task">
-                <span className="text-xs font-bold">⏹</span>
+
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex items-center gap-0.5 rounded-lg bg-paper p-0.5" role="group" aria-label="Agent mode">
+                {(Object.keys(MODE_META) as AgentMode[]).map((mode) => {
+                  const meta = MODE_META[mode];
+                  const active = agentMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => onAgentModeChange(mode)}
+                      title={meta.hint}
+                      aria-pressed={active}
+                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                        active ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+                      }`}
+                    >
+                      <Icon d={meta.icon} className="h-3 w-3" />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <select
+                value={selectedSite}
+                onChange={(event) => onSelectSite(event.target.value)}
+                aria-label="Target site"
+                className="max-w-[120px] cursor-pointer truncate rounded-lg bg-transparent px-1.5 py-1 text-[10px] font-medium text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-500/30"
+              >
+                {availableSites.map((site) => (
+                  <option key={site.id} value={site.url}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {isLoading ? (
+                <button
+                  type="button"
+                  onClick={onStopTask}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                  aria-label="Stop task"
+                  title="Stop"
+                >
+                  <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="brand-gradient focus-ring flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Send prompt"
+                title="Send (Enter)"
+              >
+                <Icon d="M12 19V5M6 11l6-6 6 6" className="h-4 w-4" />
               </button>
-            )}
-            <button type="submit" disabled={!input.trim()}
-              className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 disabled:hover:bg-emerald-600 text-white transition-all shrink-0"
-              aria-label="Send message" title={isLoading ? 'Add to execution queue' : 'Send prompt'}>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-1 text-[10px] text-slate-600">
-          <span>Shift + Enter for new line</span>
-          {agentMode === 'writes' ? (
-            <span className="text-amber-500 font-mono">Approval Required</span>
-          ) : agentMode === 'agent' ? (
-            <span className="text-emerald-600 font-mono">Read-Only Enforced</span>
-          ) : (
-            <span className="text-sky-500 font-mono">Direct AI Chat</span>
-          )}
+        <div className="mt-1.5 flex items-center justify-between px-1 text-[9.5px] text-ink-muted">
+          <span>
+            <kbd className="rounded border border-line bg-white px-1 py-0.5 font-sans">Enter</kbd> to send ·{' '}
+            <kbd className="rounded border border-line bg-white px-1 py-0.5 font-sans">Shift</kbd> + Enter for a new line
+          </span>
+          <span className="font-medium">
+            {agentMode === 'writes' ? 'Approval required' : agentMode === 'agent' ? 'Read-only' : 'No tools'}
+          </span>
         </div>
       </form>
 
-      {/* ── Publish Confirmation Modal ── */}
-      {activePublishProposal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-emerald-500/40 shadow-2xl p-5 space-y-4 text-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                <span>🚀</span><span>Publish Post to Live WordPress Site</span>
+      {/* Publish confirmation */}
+      {activePublishProposal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-sm">
+          <div className="surface-card w-full max-w-md rounded-2xl p-5">
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                <Icon d="M12 19V5M6 11l6-6 6 6" className="h-4 w-4 text-emerald-600" />
+                Publish to WordPress
               </div>
-              <button type="button" onClick={onCancelPublish} disabled={isPublishing} className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors">✕</button>
-            </div>
-            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-600/60 text-amber-200 text-xs space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-amber-300"><span>⚠️</span><span>Public Visibility Warning</span></div>
-              <p className="text-[11px] leading-relaxed">
-                Publishing will make this post immediately visible to all public visitors on{' '}
-                <strong className="text-white">{activePublishProposal.targetSite}</strong>. This action converts status from{' '}
-                <strong className="text-amber-300 font-mono">DRAFT</strong> to <strong className="text-emerald-300 font-mono">LIVE PUBLISHED</strong>.
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-black/40 border border-slate-800 text-xs space-y-1.5">
-              <div><span className="text-slate-400">Post Title: </span><strong className="text-white">{activePublishProposal.post.title}</strong></div>
-              <div><span className="text-slate-400">Post ID: </span><span className="font-mono text-emerald-400 font-semibold">#{activePublishProposal.post.id}</span></div>
-              <div><span className="text-slate-400">Integrity Hash: </span><span className="font-mono text-[10px] text-slate-500 truncate block">{activePublishProposal.integrityHash}</span></div>
-            </div>
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <button type="button" onClick={onCancelPublish} disabled={isPublishing} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors disabled:opacity-50">
-                Cancel / Keep Draft
+              <button
+                type="button"
+                onClick={onCancelPublish}
+                disabled={isPublishing}
+                className="rounded-lg p-1 text-ink-muted transition hover:bg-paper-deep hover:text-ink disabled:opacity-50"
+                aria-label="Close"
+              >
+                <Icon d="M6 6l12 12M18 6L6 18" className="h-4 w-4" />
               </button>
-              <button type="button" onClick={() => onApprovePublish?.(activePublishProposal)} disabled={isPublishing}
-                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-lg flex items-center gap-1.5 disabled:opacity-50">
+            </div>
+
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-800">
+              This makes the post publicly visible on{' '}
+              <strong className="font-semibold">{activePublishProposal.targetSite}</strong>. It moves from{' '}
+              <span className="font-mono font-semibold">draft</span> to{' '}
+              <span className="font-mono font-semibold">published</span>.
+            </div>
+
+            <div className="mt-3 space-y-1.5 rounded-xl border border-line bg-paper px-3 py-2.5 text-[11px]">
+              <div>
+                <span className="text-ink-muted">Title </span>
+                <span className="font-medium text-ink">{activePublishProposal.post.title}</span>
+              </div>
+              <div>
+                <span className="text-ink-muted">Post </span>
+                <span className="font-mono font-semibold text-ink">#{activePublishProposal.post.id}</span>
+              </div>
+              <div className="truncate">
+                <span className="text-ink-muted">Integrity </span>
+                <span className="font-mono text-[9px] text-ink-muted">{activePublishProposal.integrityHash}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelPublish}
+                disabled={isPublishing}
+                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink disabled:opacity-50"
+              >
+                Keep as draft
+              </button>
+              <button
+                type="button"
+                onClick={() => onApprovePublish?.(activePublishProposal)}
+                disabled={isPublishing}
+                className="flex items-center gap-1.5 rounded-lg bg-ink px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50"
+              >
                 {isPublishing ? (
-                  <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Publishing &amp; Verifying...</span></>
-                ) : <><span>✓</span><span>Approve &amp; Publish Live</span></>}
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                ) : (
+                  <Icon d="M12 19V5M6 11l6-6 6 6" className="h-3 w-3" />
+                )}
+                Publish live
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Revision Modal ── */}
-      {revisionState?.open && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-sky-500/40 shadow-2xl p-5 space-y-4 text-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-sky-400 font-bold text-sm">
-                <span>✏️</span><span>Revise Draft Post #{revisionState.postId}</span>
+      {/* Revision modal */}
+      {revisionState ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-sm">
+          <div className="surface-card w-full max-w-md rounded-2xl p-5">
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-4 w-4 text-pink-500" />
+                Revise post #{revisionState.postId}
               </div>
-              <button type="button" onClick={() => setRevisionState(null)} className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors">✕</button>
+              <button
+                type="button"
+                onClick={() => setRevisionState(null)}
+                className="rounded-lg p-1 text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+                aria-label="Close"
+              >
+                <Icon d="M6 6l12 12M18 6L6 18" className="h-4 w-4" />
+              </button>
             </div>
-            <p className="text-xs text-slate-300">Current Title: <strong className="text-white">&ldquo;{revisionState.currentTitle}&rdquo;</strong></p>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-400">What changes would you like to make?</label>
-              <textarea
-                rows={3}
-                value={revisionState.prompt}
-                onChange={(e) => setRevisionState((prev) => (prev ? { ...prev, prompt: e.target.value } : null))}
-                placeholder="e.g. Add a step-by-step section, make the conclusion stronger..."
-                className="w-full rounded-lg bg-black/50 border border-slate-700 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 resize-none"
-              />
-            </div>
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <button type="button" onClick={() => setRevisionState(null)} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors">
+
+            <p className="mt-3 text-[11px] text-ink-muted">
+              Current title <span className="font-medium text-ink">“{revisionState.currentTitle}”</span>
+            </p>
+
+            <label htmlFor="revision-prompt" className="mt-3 block text-[11px] font-medium text-ink-soft">
+              What should change?
+            </label>
+            <textarea
+              id="revision-prompt"
+              rows={4}
+              value={revisionState.prompt}
+              onChange={(event) =>
+                setRevisionState((prev) => (prev ? { ...prev, prompt: event.target.value } : null))
+              }
+              placeholder="Add a step-by-step section, tighten the intro, improve the conclusion…"
+              className="mt-1 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-[12px] text-ink placeholder:text-ink-muted focus:border-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-500/20"
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRevisionState(null)}
+                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+              >
                 Cancel
               </button>
-              <button type="button" disabled={!revisionState.prompt.trim()}
+              <button
+                type="button"
+                disabled={!revisionState.prompt.trim()}
                 onClick={() => {
-                  const pid = revisionState.postId;
-                  const curTitle = revisionState.currentTitle;
-                  const prompt = revisionState.prompt.trim();
+                  const { postId, currentTitle, prompt } = revisionState;
                   setRevisionState(null);
-                  onStartRevise?.(pid, curTitle, prompt);
+                  onStartRevise?.(postId, currentTitle, prompt.trim());
                 }}
-                className="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
-                <span>Propose Revision</span>
+                className="rounded-lg bg-ink px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-40"
+              >
+                Propose revision
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </aside>
   );
 }

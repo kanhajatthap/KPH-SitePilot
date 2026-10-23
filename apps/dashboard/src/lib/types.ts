@@ -79,12 +79,31 @@ export interface BuilderProposal {
   createdAt: string;
   isApplied?: boolean;
   /** Discriminates what the Approve button should actually DO */
-  operationType?: 'content' | 'plugin' | 'settings' | 'code';
+  operationType?: 'content' | 'plugin' | 'settings' | 'code' | 'page' | 'section';
   /** For plugin ops only */
   pluginAction?: 'install' | 'activate' | 'deactivate' | 'delete';
   pluginSlug?: string;
   /** For code injection only */
   codeLocation?: 'header' | 'footer' | 'css';
+  /** For page creation only */
+  pageDetails?: {
+    isFrontPage?: boolean;
+    slug?: string;
+    postStatus?: 'draft' | 'publish';
+  };
+  /** For section edit only */
+  sectionDetails?: {
+    pageId: number;
+    sectionId: string;
+    sectionName: string;
+  };
+}
+
+export interface PageSectionSummary {
+  id: string;
+  name: string;
+  blockName: string;
+  excerpt: string;
 }
 
 export interface AppliedDraftPost {
