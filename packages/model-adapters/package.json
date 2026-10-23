@@ -1,0 +1,32 @@
+{
+  "name": "@wp-agent/model-adapters",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-independent LLM adapter interfaces and mock implementation for KPH SitePilot",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:live": "vitest run tests/gemini-live.integration.test.ts",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@google/genai": "^2.30.0",
+    "@wp-agent/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@wp-agent/config": "workspace:*",
+    "typescript": "^5.8.2"
+  }
+}

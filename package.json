@@ -1,0 +1,24 @@
+{
+  "name": "wp-agent-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KPH SitePilot / wp-agent — Provider-independent AI WordPress agent monorepo",
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "build": "turbo run build --concurrency=1",
+    "typecheck": "turbo run typecheck && pnpm typecheck:edge",
+    "typecheck:edge": "tsc --noEmit -p supabase/functions/tsconfig.json",
+    "test": "turbo run test",
+    "test:live": "pnpm --filter @wp-agent/model-adapters test:live",
+    "test:wp:live": "pnpm --filter @wp-agent/agent-core test:live",
+    "start:api": "pnpm --filter @wp-agent/api start",
+    "dev:dashboard": "pnpm --filter @wp-agent/dashboard dev",
+    "start:dashboard": "pnpm --filter @wp-agent/dashboard start",
+    "lint": "turbo run lint && pnpm typecheck:edge"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

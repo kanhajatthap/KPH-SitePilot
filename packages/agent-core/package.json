@@ -1,0 +1,35 @@
+{
+  "name": "@wp-agent/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal orchestration boundary and security-first tool execution engine for KPH SitePilot",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:live": "vitest run tests/wordpress-page-read.integration.test.ts",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@wp-agent/contracts": "workspace:*",
+    "@wp-agent/model-adapters": "workspace:*",
+    "@wp-agent/audit": "workspace:*",
+    "@wp-agent/wp-client": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@wp-agent/config": "workspace:*",
+    "typescript": "^5.8.2"
+  }
+}

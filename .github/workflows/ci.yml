@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Build, Lint & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Enable Corepack & Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.14.0 --activate
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Monorepo Typecheck
+        run: pnpm typecheck
+
+      - name: Edge Functions Typecheck
+        run: pnpm typecheck:edge
+
+      - name: Monorepo Lint
+        run: pnpm lint
+
+      - name: Secret Leak Prevention & Security Audit
+        run: |
+          echo "Scanning for accidental secrets or .env file commits..."
+          ! git ls-files | grep -E "^\.env(\.local)?$"
+          echo "Checking production dependency vulnerabilities..."
+          pnpm audit --prod --audit-level high || echo "Audit warnings logged for review"
+
+      - name: Monorepo Unit & Security Tests (Zero-Quota Mock Mode)
+        run: pnpm -r test
+        env:
+          NODE_ENV: test
+          AI_PROVIDER: mock
+
+      - name: Monorepo Build
+        run: pnpm build

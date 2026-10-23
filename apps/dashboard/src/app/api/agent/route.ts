@@ -1,0 +1,87 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
+
+const ALLOWED_TARGET_PATTERNS = [
+  /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
+  /^https?:\/\/localhost(:\d+)?$/i,
+  /^https?:\/\/127\.0\.0\.1(:\d+)?$/i,
+];
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { prompt, targetSite, correlationId, controlledWrites } = body;
+
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return NextResponse.json(
+        { error: 'VALIDATION_FAILED', message: 'Field "prompt" is required and cannot be empty.' },
+        { status: 400 }
+      );
+    }
+
+    // Validate targetSite strictly against allowed local development patterns
+    if (targetSite) {
+      if (typeof targetSite !== 'string') {
+        return NextResponse.json(
+          { error: 'VALIDATION_FAILED', message: 'Target site must be a valid URL string.' },
+          { status: 400 }
+        );
+      }
+
+      let parsed: URL;
+      try {
+        parsed = new URL(targetSite);
+      } catch {
+        return NextResponse.json(
+          { error: 'VALIDATION_FAILED', message: `Invalid target site format: "${targetSite}"` },
+          { status: 400 }
+        );
+      }
+
+      const isAllowed = ALLOWED_TARGET_PATTERNS.some((p) => p.test(parsed.origin));
+      if (!isAllowed) {
+        return NextResponse.json(
+          {
+            error: 'TARGET_NOT_ALLOWED',
+            message: `Target "${targetSite}" is not an authorized local development environment. External sites and cloud metadata are strictly denied.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Forward server-to-server to KPH SitePilot Backend API
+    let response: Response;
+    try {
+      response = await fetch(`${API_SERVER_URL}/api/agent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          targetSite,
+          correlationId,
+          controlledWrites: Boolean(controlledWrites),
+        }),
+      });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: 'NETWORK_ERROR',
+          message: `Cannot connect to KPH SitePilot Backend API at ${API_SERVER_URL}. Ensure the API server is started with "pnpm start:api" in PowerShell. (${(err as Error).message})`,
+        },
+        { status: 504 }
+      );
+    }
+
+    const data = await response.json();
+    return NextResponse.json(data, { status: response.status });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'INTERNAL_ERROR', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
+}
