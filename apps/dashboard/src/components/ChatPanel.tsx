@@ -23,6 +23,7 @@ interface ChatPanelProps {
   conversations: PersistedChatConversation[];
   activeConversationId: string | null;
   historyError: string | null;
+  isHistoryReady: boolean;
   onResumeConversation: (conversation: PersistedChatConversation) => void;
   onDeleteConversation: (conversationId: string) => void;
   onClearConversationHistory: () => void;
@@ -396,6 +397,7 @@ export function ChatPanel({
   conversations,
   activeConversationId,
   historyError,
+  isHistoryReady,
   onResumeConversation,
   onDeleteConversation,
   onClearConversationHistory,
@@ -476,7 +478,7 @@ export function ChatPanel({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!input.trim()) return;
+    if (!isHistoryReady || !input.trim()) return;
     onSendMessage(input.trim());
     setInput('');
   };
@@ -1010,7 +1012,8 @@ export function ChatPanel({
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder={
+            disabled={!isHistoryReady}
+            placeholder={!isHistoryReady ? 'Loading saved conversations…' :
               agentMode === 'writes'
                 ? `Describe the change to stage on ${siteLabel}…`
                 : agentMode === 'agent'
@@ -1073,7 +1076,7 @@ export function ChatPanel({
               ) : null}
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!isHistoryReady || !input.trim()}
                 className="brand-gradient focus-ring flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 aria-label="Send prompt"
                 title="Send (Enter)"

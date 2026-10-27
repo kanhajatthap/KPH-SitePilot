@@ -1988,6 +1988,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           conversations={chatHistory.conversations}
           activeConversationId={chatHistory.activeConversationId}
           historyError={historyError}
+          isHistoryReady={historyReady}
           onResumeConversation={handleResumeConversation}
           onDeleteConversation={handleDeleteConversation}
           onClearConversationHistory={handleClearConversationHistory}
