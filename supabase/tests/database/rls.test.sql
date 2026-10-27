@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(11);
+SELECT plan(14);
 
 INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
 VALUES
@@ -22,6 +22,17 @@ SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111
 
 SELECT is((SELECT count(*)::integer FROM public.projects), 1, 'user A can only select their project');
 SELECT is((SELECT count(*)::integer FROM public.wordpress_connection_metadata), 1, 'connection metadata is tenant scoped');
+INSERT INTO public.dashboard_chat_history (owner_id, messages)
+VALUES ('11111111-1111-4111-8111-111111111111', '[{"id":"user-a-message"}]');
+SELECT is(
+  (SELECT count(*)::integer FROM public.dashboard_chat_history),
+  1,
+  'user A can persist and read only their conversation'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.dashboard_chat_history (owner_id, messages) VALUES ('22222222-2222-4222-8222-222222222222', '[]')$$,
+  '42501', NULL, 'user A cannot persist a conversation for user B'
+);
 SELECT throws_ok(
   $$INSERT INTO public.projects (owner_id, name) VALUES ('22222222-2222-4222-8222-222222222222', 'forged project')$$,
   '42501', NULL, 'user A cannot create a project for user B'
@@ -76,6 +87,11 @@ RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 SELECT is((SELECT count(*)::integer FROM public.projects), 1, 'user B can only select their project');
+SELECT is(
+  (SELECT count(*)::integer FROM public.dashboard_chat_history),
+  0,
+  'user B cannot read user A conversation'
+);
 
 SELECT * FROM finish();
 ROLLBACK;

@@ -1,0 +1,44 @@
+name: Local Supabase Database Tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-local-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-tests:
+    name: Migrate and test isolated local database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Enable Corepack and setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.14.0 --activate
+
+      - name: Start isolated local Supabase stack
+        run: pnpm dlx supabase@2.122.0 start
+
+      - name: Apply local database migrations
+        run: pnpm dlx supabase@2.122.0 migration up --local
+
+      - name: Run local database and RLS tests
+        run: pnpm dlx supabase@2.122.0 test db --local
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: pnpm dlx supabase@2.122.0 stop --no-backup
