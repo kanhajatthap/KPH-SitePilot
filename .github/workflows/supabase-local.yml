@@ -2,7 +2,7 @@ name: Local Supabase Database Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
     paths:
       - ".github/workflows/supabase-local.yml"
       - "supabase/migrations/**"
