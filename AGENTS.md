@@ -36,7 +36,10 @@
   individual deletion, and confirmed clear-all, and retains at most 50 conversations.
 - Local storage migration and authenticated SaaS persistence use validated history;
   saved proposals do not restore actionable approval controls.
-- The database migration and RLS assertions are pending the isolated local Supabase CI
-  workflow. Authenticated browser behavior has not yet been verified.
+- The database migration and 15 RLS assertions passed in isolated local Supabase
+  GitHub Actions run [40465140394](https://github.com/kanhajatthap/KPH-SitePilot/actions/runs/40465140394).
+- Browser interactions and authenticated SaaS-session behavior have not yet been
+  verified; the local dashboard served successfully, but UI interaction checks were
+  inconclusive in the browser session.
 - Keep archive work isolated on `feature/chat-conversation-archive`; do not include
   unrelated pending changes from the primary worktree.

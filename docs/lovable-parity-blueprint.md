@@ -69,8 +69,11 @@ Engineering rules:
 - Persist only safe message content and status; never restore proposal approval
   controls from saved history.
 - Existing local single-thread storage and database rows are migrated to archives.
-- **Still pending:** verify the archive migration/RLS suite in the local-only
-  Supabase workflow and browser-test archive, resume, delete, clear-all, and reload.
+- **Verified:** archive migration and 15 RLS assertions passed against an isolated
+  local Supabase stack in GitHub Actions run
+  [40465140394](https://github.com/kanhajatthap/KPH-SitePilot/actions/runs/40465140394).
+- **Still pending:** browser-test archive, resume, delete, clear-all, reload persistence,
+  and authenticated SaaS-session behavior.
 - Per-project site binding and last-known capability snapshot.
 - Per-project site binding and last-known capability snapshot.
 
