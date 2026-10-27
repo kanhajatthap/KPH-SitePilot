@@ -37,32 +37,35 @@ SELECT throws_ok(
   $$INSERT INTO public.projects (owner_id, name) VALUES ('22222222-2222-4222-8222-222222222222', 'forged project')$$,
   '42501', NULL, 'user A cannot create a project for user B'
 );
+WITH changed AS (
+  UPDATE public.projects
+  SET owner_id = '22222222-2222-4222-8222-222222222222'
+  WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  RETURNING id
+)
 SELECT is(
-  (WITH changed AS (
-    UPDATE public.projects
-    SET owner_id = '22222222-2222-4222-8222-222222222222'
-    WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-    RETURNING id
-  ) SELECT count(*)::integer FROM changed),
+  (SELECT count(*)::integer FROM changed),
   0,
   'user A cannot transfer project ownership'
 );
+WITH changed AS (
+  UPDATE public.projects
+  SET name = 'hijacked'
+  WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  RETURNING id
+)
 SELECT is(
-  (WITH changed AS (
-    UPDATE public.projects
-    SET name = 'hijacked'
-    WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-    RETURNING id
-  ) SELECT count(*)::integer FROM changed),
+  (SELECT count(*)::integer FROM changed),
   0,
   'user A cannot update user B project'
 );
+WITH removed AS (
+  DELETE FROM public.projects
+  WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  RETURNING id
+)
 SELECT is(
-  (WITH removed AS (
-    DELETE FROM public.projects
-    WHERE id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-    RETURNING id
-  ) SELECT count(*)::integer FROM removed),
+  (SELECT count(*)::integer FROM removed),
   0,
   'user A cannot delete user B project'
 );
