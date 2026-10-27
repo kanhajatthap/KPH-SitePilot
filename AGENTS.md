@@ -29,3 +29,14 @@
 5. **Evidence-Based Verification**:
    - Never report tests, builds, or commands as passing without explicit execution evidence in terminal output.
    - Report executed commands, stdout/stderr, changed files, and any remaining blockers honestly.
+
+## Current milestone: Conversation archive
+
+- The dashboard archives the active thread when starting a new chat, supports resume,
+  individual deletion, and confirmed clear-all, and retains at most 50 conversations.
+- Local storage migration and authenticated SaaS persistence use validated history;
+  saved proposals do not restore actionable approval controls.
+- The database migration and RLS assertions are pending the isolated local Supabase CI
+  workflow. Authenticated browser behavior has not yet been verified.
+- Keep archive work isolated on `feature/chat-conversation-archive`; do not include
+  unrelated pending changes from the primary worktree.

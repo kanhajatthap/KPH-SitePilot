@@ -12,9 +12,49 @@ import {
   TaskActivityEventSchema,
   VerifiedResourceSchema,
   PublishApprovalRequestSchema,
+  ChatHistorySchema,
 } from '../src/index.js';
 
 describe('Contracts & Schemas', () => {
+  describe('ChatHistorySchema', () => {
+    const conversation = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      title: 'Site task',
+      createdAt: '2026-10-26T12:00:00.000Z',
+      updatedAt: '2026-10-26T12:00:00.000Z',
+      messages: [{
+        id: 'message-1',
+        role: 'user' as const,
+        content: 'Inspect the site',
+        timestamp: '2026-10-26T12:00:00.000Z',
+      }],
+    };
+
+    it('accepts a bounded archive with a valid active conversation', () => {
+      expect(ChatHistorySchema.parse({
+        conversations: [conversation],
+        activeConversationId: conversation.id,
+      }).conversations).toHaveLength(1);
+    });
+
+    it('rejects an active conversation that is not present in the archive', () => {
+      expect(ChatHistorySchema.safeParse({
+        conversations: [conversation],
+        activeConversationId: '650e8400-e29b-41d4-a716-446655440000',
+      }).success).toBe(false);
+    });
+
+    it('rejects more than 50 conversations', () => {
+      expect(ChatHistorySchema.safeParse({
+        conversations: Array.from({ length: 51 }, (_, index) => ({
+          ...conversation,
+          id: `550e8400-e29b-41d4-a716-${String(index).padStart(12, '0')}`,
+        })),
+        activeConversationId: null,
+      }).success).toBe(false);
+    });
+  });
+
   describe('SiteInspectInputSchema', () => {
     it('accepts valid site inspection parameters', () => {
       const valid = SiteInspectInputSchema.parse({

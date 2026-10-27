@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(15);
 
 INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
 VALUES
@@ -22,15 +22,20 @@ SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111
 
 SELECT is((SELECT count(*)::integer FROM public.projects), 1, 'user A can only select their project');
 SELECT is((SELECT count(*)::integer FROM public.wordpress_connection_metadata), 1, 'connection metadata is tenant scoped');
-INSERT INTO public.dashboard_chat_history (owner_id, messages)
-VALUES ('11111111-1111-4111-8111-111111111111', '[{"id":"user-a-message"}]');
+INSERT INTO public.dashboard_chat_history (owner_id, conversations, active_conversation_id)
+VALUES (
+  '11111111-1111-4111-8111-111111111111',
+  '[{"id":"550e8400-e29b-41d4-a716-446655440000","title":"User A task","createdAt":"2026-10-26T12:00:00Z","updatedAt":"2026-10-26T12:00:00Z","messages":[{"id":"user-a-message","role":"user","content":"Hello","timestamp":"2026-10-26T12:00:00Z"}]}]',
+  '550e8400-e29b-41d4-a716-446655440000'
+);
 SELECT is(
-  (SELECT count(*)::integer FROM public.dashboard_chat_history),
+  (SELECT count(*)::integer FROM public.dashboard_chat_history
+    WHERE conversations @> '[{"title":"User A task"}]'::jsonb),
   1,
   'user A can persist and read only their conversation'
 );
 SELECT throws_ok(
-  $$INSERT INTO public.dashboard_chat_history (owner_id, messages) VALUES ('22222222-2222-4222-8222-222222222222', '[]')$$,
+  $$INSERT INTO public.dashboard_chat_history (owner_id, conversations, active_conversation_id) VALUES ('22222222-2222-4222-8222-222222222222', '[]', NULL)$$,
   '42501', NULL, 'user A cannot persist a conversation for user B'
 );
 SELECT throws_ok(
@@ -87,6 +92,17 @@ SELECT is(
   (SELECT count(*)::integer FROM public.dashboard_chat_history),
   0,
   'user B cannot read user A conversation'
+);
+WITH changed AS (
+  UPDATE public.dashboard_chat_history
+  SET conversations = '[]'::jsonb, active_conversation_id = NULL
+  WHERE owner_id = '11111111-1111-4111-8111-111111111111'
+  RETURNING owner_id
+)
+SELECT is(
+  (SELECT count(*)::integer FROM changed),
+  0,
+  'user B cannot write user A conversation'
 );
 
 SELECT * FROM finish();

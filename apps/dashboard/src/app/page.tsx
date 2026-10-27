@@ -19,7 +19,18 @@ import {
   VerifiedResource,
   PublishProposalResponse,
 } from '../lib/types';
-import { BuilderCapabilities } from '@wp-agent/contracts';
+import {
+  BuilderCapabilities,
+  ChatHistory,
+  PersistedChatConversation,
+} from '@wp-agent/contracts';
+import {
+  createChatConversation,
+  fromPersistedChatHistory,
+  readLocalChatHistory,
+  saveLocalChatHistory,
+  toPersistedChatHistory,
+} from '../lib/chat-history';
 import { synthesizeFromPrompt } from '../lib/ui-synthesizer';
 import {
   checkApiHealth,
@@ -76,6 +87,12 @@ export default function DashboardPage() {
   const [agentMode, setAgentMode] = useState<AgentMode>('agent');
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatHistory>({
+    conversations: [],
+    activeConversationId: null,
+  });
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTask, setActiveTask] = useState<AgentExecutionTask | undefined>(undefined);
   const [queuedTasks, setQueuedTasks] = useState<QueuedTask[]>([]);
@@ -99,6 +116,9 @@ export default function DashboardPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const approvalInFlightRef = useRef(false);
+  const isSaasMode = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
 
   const [preview, setPreview] = useState<PreviewState>({
     targetSite: AVAILABLE_SITES[0].url,
@@ -115,6 +135,84 @@ export default function DashboardPage() {
       viewport,
     }));
   }, [selectedSite, viewport]);
+
+  useEffect(() => {
+    let active = true;
+    const loadHistory = async () => {
+      try {
+        let history: ChatHistory;
+        if (isSaasMode) {
+          const response = await fetch('/api/chat/history', { cache: 'no-store' });
+          if (!response.ok) throw new Error('Unable to load saved conversations.');
+          history = await response.json() as ChatHistory;
+        } else {
+          history = readLocalChatHistory();
+        }
+        if (!active) return;
+        setChatHistory(history);
+        setMessages(fromPersistedChatHistory(
+          history.conversations.find(
+            (conversation) => conversation.id === history.activeConversationId
+          )?.messages ?? []
+        ));
+        setHistoryReady(true);
+      } catch (error) {
+        if (!active) return;
+        setHistoryError(
+          error instanceof Error ? error.message : 'Unable to load saved conversations.'
+        );
+      }
+    };
+    void loadHistory();
+    return () => { active = false; };
+  }, [isSaasMode]);
+
+  useEffect(() => {
+    if (!historyReady || messages.length === 0) return;
+    const activeId = chatHistory.activeConversationId;
+    const existing = chatHistory.conversations.find(
+      (conversation) => conversation.id === activeId
+    );
+    const updatedAt = new Date().toISOString();
+    const conversation: PersistedChatConversation = existing
+      ? { ...existing, updatedAt, messages: toPersistedChatHistory(messages) }
+      : createChatConversation(messages);
+    if (!activeId) setChatHistory((history) => ({
+      ...history,
+      conversations: [...history.conversations, conversation].slice(-50),
+      activeConversationId: conversation.id,
+    }));
+    else setChatHistory((history) => ({
+      ...history,
+      conversations: history.conversations.map((item) =>
+        item.id === activeId ? conversation : item
+      ),
+    }));
+  }, [messages, historyReady, chatHistory.activeConversationId]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        if (isSaasMode) {
+          const response = await fetch('/api/chat/history', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(chatHistory),
+          });
+          if (!response.ok) throw new Error('Unable to save conversations to your account.');
+        } else {
+          saveLocalChatHistory(chatHistory);
+        }
+        setHistoryError(null);
+      } catch (error) {
+        setHistoryError(
+          error instanceof Error ? error.message : 'Unable to save conversations.'
+        );
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [chatHistory, historyReady, isSaasMode]);
 
   // Check backend API server health
   const checkHealth = useCallback(async () => {
@@ -1771,6 +1869,20 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
   };
 
   const handleClearChat = () => {
+    if (messages.length > 0) {
+      const activeId = chatHistory.activeConversationId;
+      const existing = chatHistory.conversations.find((item) => item.id === activeId);
+      const conversation = existing
+        ? { ...existing, updatedAt: new Date().toISOString(), messages: toPersistedChatHistory(messages) }
+        : createChatConversation(messages);
+      setChatHistory((history) => ({
+        conversations: [
+          ...history.conversations.filter((item) => item.id !== conversation.id),
+          conversation,
+        ].slice(-50),
+        activeConversationId: null,
+      }));
+    }
     setMessages([]);
     setActiveTask(undefined);
     setQueuedTasks([]);
@@ -1784,6 +1896,31 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
       appliedPost: undefined,
       errorMessage: undefined,
     }));
+  };
+
+  const handleResumeConversation = (conversation: PersistedChatConversation) => {
+    setChatHistory((history) => ({
+      ...history,
+      activeConversationId: conversation.id,
+    }));
+    setMessages(fromPersistedChatHistory(conversation.messages));
+    setActiveTask(undefined);
+    setQueuedTasks([]);
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    const isActive = chatHistory.activeConversationId === conversationId;
+    setChatHistory((history) => ({
+      conversations: history.conversations.filter((item) => item.id !== conversationId),
+      activeConversationId: isActive ? null : history.activeConversationId,
+    }));
+    if (isActive) setMessages([]);
+  };
+
+  const handleClearConversationHistory = () => {
+    if (!window.confirm('Delete all saved conversations? This cannot be undone.')) return;
+    setChatHistory({ conversations: [], activeConversationId: null });
+    setMessages([]);
   };
 
   // Determine if there's an active publish proposal pending confirmation
@@ -1848,6 +1985,12 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           queuedTasks={queuedTasks}
           onSendMessage={handleSendMessage}
           onClearChat={handleClearChat}
+          conversations={chatHistory.conversations}
+          activeConversationId={chatHistory.activeConversationId}
+          historyError={historyError}
+          onResumeConversation={handleResumeConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onClearConversationHistory={handleClearConversationHistory}
           selectedSite={selectedSite}
           onSelectSite={setSelectedSite}
           availableSites={AVAILABLE_SITES}

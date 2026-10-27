@@ -62,8 +62,16 @@ Engineering rules:
 - Auth screens aligned to the same system.
 
 ### Phase 2 — Workspace memory
-- Recent conversations and projects (localStorage first, Supabase later).
-- Resume a conversation with full message history.
+- Conversation archive: New chat archives the current thread; users can resume or
+  individually delete conversations, and clear-all requires confirmation.
+- Keep the latest 50 conversations. Local mode uses validated browser storage;
+  signed-in SaaS mode persists through the session-authenticated, RLS-scoped API.
+- Persist only safe message content and status; never restore proposal approval
+  controls from saved history.
+- Existing local single-thread storage and database rows are migrated to archives.
+- **Still pending:** verify the archive migration/RLS suite in the local-only
+  Supabase workflow and browser-test archive, resume, delete, clear-all, and reload.
+- Per-project site binding and last-known capability snapshot.
 - Per-project site binding and last-known capability snapshot.
 
 ### Phase 3 — Agent quality

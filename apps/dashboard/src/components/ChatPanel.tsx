@@ -11,6 +11,7 @@ import {
   QueuedTask,
   PublishProposalResponse,
 } from '../lib/types';
+import { PersistedChatConversation } from '@wp-agent/contracts';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -19,6 +20,12 @@ interface ChatPanelProps {
   queuedTasks: QueuedTask[];
   onSendMessage: (prompt: string) => void;
   onClearChat: () => void;
+  conversations: PersistedChatConversation[];
+  activeConversationId: string | null;
+  historyError: string | null;
+  onResumeConversation: (conversation: PersistedChatConversation) => void;
+  onDeleteConversation: (conversationId: string) => void;
+  onClearConversationHistory: () => void;
   selectedSite: string;
   onSelectSite: (site: string) => void;
   availableSites: AvailableSite[];
@@ -386,6 +393,12 @@ export function ChatPanel({
   queuedTasks,
   onSendMessage,
   onClearChat,
+  conversations,
+  activeConversationId,
+  historyError,
+  onResumeConversation,
+  onDeleteConversation,
+  onClearConversationHistory,
   selectedSite,
   onSelectSite,
   availableSites,
@@ -408,6 +421,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [approvingPlanId, setApprovingPlanId] = useState<string | null>(null);
   const [revisionState, setRevisionState] = useState<{
     postId: number;
@@ -544,17 +558,74 @@ export function ChatPanel({
             autonomous
           </span>
         </div>
-        {messages.length > 0 ? (
-          <button
-            type="button"
-            onClick={onClearChat}
-            className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
-            title="Start a new conversation"
-          >
-            New chat
-          </button>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {conversations.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((open) => !open)}
+              className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+              aria-expanded={historyOpen}
+            >
+              History ({conversations.length})
+            </button>
+          ) : null}
+          {messages.length > 0 ? (
+            <button
+              type="button"
+              onClick={onClearChat}
+              className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+              title="Archive this conversation and start a new one"
+            >
+              New chat
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {historyOpen ? (
+        <section className="max-h-64 shrink-0 overflow-y-auto border-b border-line bg-white px-3 py-2" aria-label="Saved conversations">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-ink">Saved conversations</span>
+            <button
+              type="button"
+              onClick={onClearConversationHistory}
+              className="rounded px-1.5 py-1 text-[10px] text-red-600 hover:bg-red-50"
+            >
+              Clear all
+            </button>
+          </div>
+          <ul className="space-y-1">
+            {[...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((conversation) => (
+              <li key={conversation.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResumeConversation(conversation);
+                    setHistoryOpen(false);
+                  }}
+                  className={`min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-[11px] hover:bg-paper ${conversation.id === activeConversationId ? 'font-semibold text-pink-700' : 'text-ink'}`}
+                  title={conversation.title}
+                >
+                  {conversation.title}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteConversation(conversation.id)}
+                  className="rounded px-1.5 py-1 text-[10px] text-ink-muted hover:bg-red-50 hover:text-red-600"
+                  aria-label={`Delete ${conversation.title}`}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {historyError ? (
+        <p role="alert" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[11px] text-amber-900">
+          Conversation history could not be saved or loaded: {historyError}
+        </p>
+      ) : null}
 
       {/* Conversation */}
       <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">

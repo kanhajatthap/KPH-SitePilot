@@ -1095,4 +1095,46 @@ export const PageSectionEditApplyResponseSchema = z.object({
 
 export type PageSectionEditApplyResponse = z.infer<typeof PageSectionEditApplyResponseSchema>;
 
+export const PersistedChatMessageSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(10000),
+  timestamp: z.string().datetime(),
+  status: z.enum(['sending', 'success', 'denied', 'error']).optional(),
+  targetSite: z.string().max(2048).optional(),
+});
 
+export const PersistedChatConversationSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().trim().min(1).max(100),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  messages: z.array(PersistedChatMessageSchema).max(100),
+}).strict();
+
+export const ChatHistorySchema = z.object({
+  conversations: z.array(PersistedChatConversationSchema).max(50),
+  activeConversationId: z.string().uuid().nullable(),
+}).strict().superRefine((history, context) => {
+  if (JSON.stringify(history.conversations).length > 2 * 1024 * 1024) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['conversations'],
+      message: 'Saved chat history exceeds the 2 MB storage limit.',
+    });
+  }
+  if (
+    history.activeConversationId !== null &&
+    !history.conversations.some((conversation) => conversation.id === history.activeConversationId)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['activeConversationId'],
+      message: 'The active conversation must exist in the saved history.',
+    });
+  }
+});
+
+export type PersistedChatMessage = z.infer<typeof PersistedChatMessageSchema>;
+export type PersistedChatConversation = z.infer<typeof PersistedChatConversationSchema>;
+export type ChatHistory = z.infer<typeof ChatHistorySchema>;
