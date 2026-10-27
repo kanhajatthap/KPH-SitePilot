@@ -1,6 +1,12 @@
 name: Local Supabase Database Tests
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/supabase-local.yml"
+      - "supabase/migrations/**"
+      - "supabase/tests/database/**"
   workflow_dispatch:
 
 permissions:
