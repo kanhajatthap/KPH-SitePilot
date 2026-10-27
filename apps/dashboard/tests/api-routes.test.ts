@@ -6,6 +6,20 @@ import { POST as handlePlanPost } from '../src/app/api/plan/route';
 import { POST as handleProposePost } from '../src/app/api/mutate/propose/route';
 import { POST as handleApplyPost } from '../src/app/api/mutate/apply/route';
 import { GET as handleHealthGet } from '../src/app/api/health/route';
+import { GET as handlePluginListGet } from '../src/app/api/site/plugins/list/route';
+import { POST as handlePluginProposePost } from '../src/app/api/site/plugins/propose/route';
+import { POST as handlePluginApplyPost } from '../src/app/api/site/plugins/apply/route';
+import { POST as handlePageLifecycleProposePost } from '../src/app/api/site/pages/lifecycle/propose/route';
+import { POST as handlePageLifecycleApplyPost } from '../src/app/api/site/pages/lifecycle/apply/route';
+import { POST as handlePageDesignGeneratePost } from '../src/app/api/site/pages/lifecycle/generate/route';
+import { GET as handlePageSnapshotsGet } from '../src/app/api/site/pages/snapshots/route';
+import { POST as handlePageSnapshotComparePost } from '../src/app/api/site/pages/snapshots/compare/route';
+import { POST as handlePageRestoreProposePost } from '../src/app/api/site/pages/restore/propose/route';
+import { POST as handlePageRestoreApplyPost } from '../src/app/api/site/pages/restore/apply/route';
+import { POST as handlePublishProposePost } from '../src/app/api/publish/propose/route';
+import { POST as handlePublishApplyPost } from '../src/app/api/publish/apply/route';
+import { GET as handlePageListGet } from '../src/app/api/site/pages/list/route';
+import { GET as handlePageSectionsGet } from '../src/app/api/site/pages/sections/route';
 
 describe('Dashboard API Route Handlers (Server-Side Proxy & Security Guards)', () => {
   it('POST /api/agent rejects empty prompt with 400 VALIDATION_FAILED', async () => {
@@ -117,6 +131,206 @@ describe('Dashboard API Route Handlers (Server-Side Proxy & Security Guards)', (
       const body = await res.json();
       expect(body.error).toBe('NETWORK_ERROR');
       expect(body.message).toContain('pnpm start:api');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('plugin routes reject external targets before forwarding requests', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+
+    try {
+      const listReq = new NextRequest(
+        'http://localhost:3002/api/site/plugins/list?targetSite=https%3A%2F%2Fexample.com'
+      );
+      const listRes = await handlePluginListGet(listReq);
+      expect(listRes.status).toBe(403);
+
+      const proposeReq = new NextRequest('http://localhost:3002/api/site/plugins/propose', {
+        method: 'POST',
+        body: JSON.stringify({
+          targetSite: 'https://example.com',
+          action: 'delete',
+          pluginSlug: 'hello-dolly',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const proposeRes = await handlePluginProposePost(proposeReq);
+      expect(proposeRes.status).toBe(403);
+
+      const applyReq = new NextRequest('http://localhost:3002/api/site/plugins/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          targetSite: 'https://example.com',
+          planId: 'plan',
+          integrityHash: 'hash',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const applyRes = await handlePluginApplyPost(applyReq);
+      expect(applyRes.status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('plugin proposal and approval routes forward authorized local requests', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ status: 'proposed' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    try {
+      const listReq = new NextRequest(
+        'http://localhost:3002/api/site/plugins/list?targetSite=http%3A%2F%2Ftest.local'
+      );
+      expect((await handlePluginListGet(listReq)).status).toBe(200);
+
+      const proposeReq = new NextRequest('http://localhost:3002/api/site/plugins/propose', {
+        method: 'POST',
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          action: 'delete',
+          pluginSlug: 'hello-dolly',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      expect((await handlePluginProposePost(proposeReq)).status).toBe(200);
+
+      const applyReq = new NextRequest('http://localhost:3002/api/site/plugins/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          planId: '00000000-0000-0000-0000-000000000001',
+          integrityHash: 'integrity',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      expect((await handlePluginApplyPost(applyReq)).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[0][0]).toContain('/api/site/plugins/list');
+      expect(fetchMock.mock.calls[1][0]).toContain('/api/site/plugins/propose');
+      expect(fetchMock.mock.calls[2][0]).toContain('/api/site/plugins/apply');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('page lifecycle proxy rejects external targets and forwards authorized local proposals', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ status: 'proposed' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    try {
+      const externalReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/lifecycle/propose',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'https://example.com',
+            action: 'trash',
+            pageId: 42,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageLifecycleProposePost(externalReq)).status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const proposeReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/lifecycle/propose',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            action: 'update',
+            pageId: 42,
+            content: '<p>Updated</p>',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageLifecycleProposePost(proposeReq)).status).toBe(200);
+
+      const applyReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/lifecycle/apply',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            planId: '00000000-0000-0000-0000-000000000001',
+            integrityHash: 'hash',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageLifecycleApplyPost(applyReq)).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][0]).toContain('/api/site/pages/lifecycle/propose');
+      expect(fetchMock.mock.calls[1][0]).toContain('/api/site/pages/lifecycle/apply');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('page design proxy restricts targets to authorized local sites', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 'generated' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    try {
+      const externalReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/lifecycle/generate',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'https://example.com',
+            pageId: 42,
+            instruction: 'Redesign the page',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageDesignGeneratePost(externalReq)).status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const localReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/lifecycle/generate',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            pageId: 42,
+            instruction: 'Redesign the page',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageDesignGeneratePost(localReq)).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toContain('/api/site/pages/lifecycle/generate');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        targetSite: 'http://test.local',
+        pageId: 42,
+        instruction: 'Redesign the page',
+      });
     } finally {
       global.fetch = originalFetch;
     }
@@ -247,5 +461,160 @@ describe('Dashboard API Route Handlers (Server-Side Proxy & Security Guards)', (
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toBe('TARGET_NOT_ALLOWED');
+  });
+
+  it('page history and restore proxies reject external targets and forward authorized local requests', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ snapshots: [], status: 'proposed' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    try {
+      const externalHistory = new NextRequest(
+        'http://localhost:3002/api/site/pages/snapshots?targetSite=https%3A%2F%2Fexample.com&pageId=42'
+      );
+      expect((await handlePageSnapshotsGet(externalHistory)).status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const history = new NextRequest(
+        'http://localhost:3002/api/site/pages/snapshots?targetSite=http%3A%2F%2Ftest.local&pageId=42'
+      );
+      expect((await handlePageSnapshotsGet(history)).status).toBe(200);
+
+      const compare = new NextRequest(
+        'http://localhost:3002/api/site/pages/snapshots/compare',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            pageId: 42,
+            snapshotId: '00000000-0000-4000-8000-000000000001',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageSnapshotComparePost(compare)).status).toBe(200);
+
+      const restoreProposal = new NextRequest(
+        'http://localhost:3002/api/site/pages/restore/propose',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            pageId: 42,
+            snapshotId: '00000000-0000-4000-8000-000000000001',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageRestoreProposePost(restoreProposal)).status).toBe(200);
+
+      const restoreApply = new NextRequest(
+        'http://localhost:3002/api/site/pages/restore/apply',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetSite: 'http://test.local',
+            pageId: 42,
+            planId: '00000000-0000-4000-8000-000000000001',
+            integrityHash: 'approved-hash',
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect((await handlePageRestoreApplyPost(restoreApply)).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock.mock.calls[0][0]).toContain('/api/site/pages/snapshots?');
+      expect(fetchMock.mock.calls[1][0]).toContain('/api/site/pages/snapshots/compare');
+      expect(fetchMock.mock.calls[2][0]).toContain('/api/site/pages/restore/propose');
+      expect(fetchMock.mock.calls[3][0]).toContain('/api/site/pages/restore/apply');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('publish routes enforce local targets and reject non-local targets with 403', async () => {
+    const proposeReq = new NextRequest('http://localhost:3002/api/publish/propose', {
+      method: 'POST',
+      body: JSON.stringify({
+        siteUrlOrSlug: 'https://production-site.com',
+        postId: 101,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const proposeRes = await handlePublishProposePost(proposeReq);
+    expect(proposeRes.status).toBe(403);
+    const proposeBody = await proposeRes.json();
+    expect(proposeBody.error).toBe('TARGET_NOT_ALLOWED');
+
+    const applyReq = new NextRequest('http://localhost:3002/api/publish/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        targetSite: 'https://production-site.com',
+        postId: 101,
+        planId: '123e4567-e89b-12d3-a456-426614174000',
+        integrityHash: 'test-hash',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const applyRes = await handlePublishApplyPost(applyReq);
+    expect(applyRes.status).toBe(403);
+    const applyBody = await applyRes.json();
+    expect(applyBody.error).toBe('TARGET_NOT_ALLOWED');
+  });
+
+  it('page list and sections routes enforce local targets and reject non-local targets', async () => {
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ pages: [], sections: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    try {
+      // 1. /api/site/pages/list rejects external target
+      const extListReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/list?targetSite=https%3A%2F%2Fexternal-site.com'
+      );
+      const extListRes = await handlePageListGet(extListReq);
+      expect(extListRes.status).toBe(403);
+
+      // 2. /api/site/pages/list accepts local target
+      const localListReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/list?targetSite=http%3A%2F%2Ftest.local'
+      );
+      const localListRes = await handlePageListGet(localListReq);
+      expect(localListRes.status).toBe(200);
+
+      // 3. /api/site/pages/sections rejects external target
+      const extSecReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/sections?id=32&targetSite=https%3A%2F%2Fexternal-site.com'
+      );
+      const extSecRes = await handlePageSectionsGet(extSecReq);
+      expect(extSecRes.status).toBe(403);
+
+      // 4. /api/site/pages/sections rejects invalid/missing id
+      const invalidSecReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/sections?id=abc'
+      );
+      const invalidSecRes = await handlePageSectionsGet(invalidSecReq);
+      expect(invalidSecRes.status).toBe(400);
+
+      // 5. /api/site/pages/sections forwards valid local target and id
+      const validSecReq = new NextRequest(
+        'http://localhost:3002/api/site/pages/sections?id=32&targetSite=http%3A%2F%2Ftest.local'
+      );
+      const validSecRes = await handlePageSectionsGet(validSecReq);
+      expect(validSecRes.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

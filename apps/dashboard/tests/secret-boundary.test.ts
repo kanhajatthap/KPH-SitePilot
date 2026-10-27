@@ -22,6 +22,7 @@ const ALLOWED_PUBLIC_ENV = new Set([
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'NEXT_PUBLIC_SITE_URL',
+  'NEXT_PUBLIC_CHAT_HISTORY_MODE',
 ]);
 
 function sourceFiles(dir: string): string[] {

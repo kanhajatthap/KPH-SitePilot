@@ -222,10 +222,20 @@ export type BuilderInspectInput = z.infer<typeof BuilderInspectInputSchema>;
 /**
  * Agent Request & Response Contracts.
  */
+export const ConversationMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().min(1).max(2000),
+});
+
+export const ConversationHistorySchema = z.array(ConversationMessageSchema).max(12);
+
+export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;
+
 export const AgentRequestSchema = z.object({
   correlationId: z.string().uuid(),
   prompt: z.string().min(1),
   targetSite: z.string().url(),
+  conversationHistory: ConversationHistorySchema.optional(),
 });
 
 export type AgentRequest = z.infer<typeof AgentRequestSchema>;
@@ -778,6 +788,30 @@ export const VerifiedResourceSchema = z.object({
 export type VerifiedResource = z.infer<typeof VerifiedResourceSchema>;
 
 /**
+ * Pre-flight Publish / Deploy Checklist Contracts
+ */
+export const PreflightCheckSeveritySchema = z.enum(['blocking', 'warning', 'info']);
+export type PreflightCheckSeverity = z.infer<typeof PreflightCheckSeveritySchema>;
+
+export const PreflightCheckItemSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().min(1),
+  severity: PreflightCheckSeveritySchema,
+  passed: z.boolean(),
+  details: z.string().optional(),
+});
+export type PreflightCheckItem = z.infer<typeof PreflightCheckItemSchema>;
+
+export const PreflightChecklistSchema = z.object({
+  passed: z.boolean(),
+  hasBlockingFailures: z.boolean(),
+  warningCount: z.number().int().nonnegative(),
+  items: z.array(PreflightCheckItemSchema),
+});
+export type PreflightChecklist = z.infer<typeof PreflightChecklistSchema>;
+
+/**
  * Separate Privileged Publishing Contracts
  */
 export const PublishProposalRequestSchema = z.object({
@@ -798,6 +832,7 @@ export const PublishProposalResponseSchema = z.object({
   warning: z.string(),
   summary: z.string(),
   createdAt: z.string(),
+  checklist: PreflightChecklistSchema.optional(),
 });
 
 export type PublishProposalResponse = z.infer<typeof PublishProposalResponseSchema>;
@@ -928,7 +963,7 @@ export type PluginOperationAction = z.infer<typeof PluginOperationActionSchema>;
 export const PluginProposalRequestSchema = z.object({
   targetSite: z.string().url(),
   action: PluginOperationActionSchema,
-  pluginSlug: z.string().min(1).max(100),
+  pluginSlug: z.string().min(1).max(100).regex(/^[a-z0-9_-]+$/i),
   activateOnInstall: z.boolean().default(true),
 });
 
@@ -1038,6 +1073,179 @@ export const PageApplyResponseSchema = z.object({
 
 export type PageApplyResponse = z.infer<typeof PageApplyResponseSchema>;
 
+export const PageLifecycleProposalRequestSchema = z
+  .object({
+    targetSite: z.string().url(),
+    action: z.enum(['update', 'trash']),
+    pageId: z.number().int().positive(),
+    title: z.string().min(1).max(200).optional(),
+    content: z.string().min(1).max(200000).optional(),
+  })
+  .superRefine((request, context) => {
+    if (request.action === 'update' && !request.title && !request.content) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide a new page title or content for an update.',
+      });
+    }
+    if (request.action === 'trash' && (request.title || request.content)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Trash proposals cannot include page content changes.',
+      });
+    }
+  });
+
+export type PageLifecycleProposalRequest = z.infer<
+  typeof PageLifecycleProposalRequestSchema
+>;
+
+export const PageDesignGenerationRequestSchema = z.object({
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  instruction: z.string().trim().min(1).max(2000),
+}).strict();
+
+export type PageDesignGenerationRequest = z.infer<
+  typeof PageDesignGenerationRequestSchema
+>;
+
+export const PageDesignSectionSchema = z.object({
+  type: z.enum(['hero', 'content', 'features', 'cta']),
+  heading: z.string().trim().min(1).max(120),
+  body: z.string().trim().max(1000).optional(),
+  items: z.array(z.string().trim().min(1).max(180)).min(2).max(4).optional(),
+}).strict().superRefine((section, context) => {
+  if (section.type === 'features' && !section.items) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['items'],
+      message: 'Feature sections require a list of items.',
+    });
+  }
+  if (section.type !== 'features' && section.items) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['items'],
+      message: 'Only feature sections may contain items.',
+    });
+  }
+});
+
+export const PageDesignSchema = z.object({
+  sections: z.array(PageDesignSectionSchema).min(2).max(8),
+}).strict().superRefine((design, context) => {
+  if (design.sections[0]?.type !== 'hero') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sections', 0, 'type'],
+      message: 'The first section must be a hero.',
+    });
+  }
+  if (design.sections[design.sections.length - 1]?.type !== 'cta') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sections', design.sections.length - 1, 'type'],
+      message: 'The final section must be a call to action.',
+    });
+  }
+});
+
+export type PageDesign = z.infer<typeof PageDesignSchema>;
+
+export const PersistedChatMessageSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(10000),
+  timestamp: z.string().datetime(),
+  status: z.enum(['sending', 'success', 'denied', 'error']).optional(),
+  targetSite: z.string().max(2048).optional(),
+}).strict();
+
+export const PersistedChatConversationSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().trim().min(1).max(100),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  messages: z.array(PersistedChatMessageSchema).max(100),
+}).strict();
+
+export const ChatHistorySchema = z.object({
+  conversations: z.array(PersistedChatConversationSchema).max(50),
+  activeConversationId: z.string().uuid().nullable(),
+}).strict().superRefine((history, context) => {
+  if (JSON.stringify(history.conversations).length > 2 * 1024 * 1024) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['conversations'],
+      message: 'Saved chat history exceeds the 2 MB storage limit.',
+    });
+  }
+  if (
+    history.activeConversationId !== null &&
+    !history.conversations.some((conversation) => conversation.id === history.activeConversationId)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['activeConversationId'],
+      message: 'The active conversation must exist in the saved history.',
+    });
+  }
+});
+
+export type PersistedChatMessage = z.infer<typeof PersistedChatMessageSchema>;
+export type PersistedChatConversation = z.infer<typeof PersistedChatConversationSchema>;
+export type ChatHistory = z.infer<typeof ChatHistorySchema>;
+
+export const PageLifecycleProposalResponseSchema = z.object({
+  status: z.literal('proposed'),
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  action: z.enum(['update', 'trash']),
+  pageId: z.number().int().positive(),
+  title: z.string(),
+  slug: z.string(),
+  pageStatus: z.string(),
+  before: z.string(),
+  after: z.string(),
+  pageUrl: z.string(),
+  summary: z.string(),
+  createdAt: z.string(),
+});
+
+export type PageLifecycleProposalResponse = z.infer<
+  typeof PageLifecycleProposalResponseSchema
+>;
+
+export const PageLifecycleApplyRequestSchema = z.object({
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  approvedBy: z.string().default('user'),
+});
+
+export type PageLifecycleApplyRequest = z.infer<
+  typeof PageLifecycleApplyRequestSchema
+>;
+
+export const PageLifecycleApplyResponseSchema = z.object({
+  status: z.literal('applied'),
+  planId: z.string().uuid(),
+  targetSite: z.string().url(),
+  action: z.enum(['update', 'trash']),
+  pageId: z.number().int().positive(),
+  title: z.string(),
+  slug: z.string(),
+  pageStatus: z.string(),
+  pageUrl: z.string(),
+  verified: z.boolean(),
+});
+
+export type PageLifecycleApplyResponse = z.infer<
+  typeof PageLifecycleApplyResponseSchema
+>;
+
 /**
  * Scoped Page Section Edit Contracts
  */
@@ -1095,4 +1303,116 @@ export const PageSectionEditApplyResponseSchema = z.object({
 
 export type PageSectionEditApplyResponse = z.infer<typeof PageSectionEditApplyResponseSchema>;
 
+export const PAGE_SNAPSHOT_RETENTION_LIMIT = 20;
+export const PAGE_SNAPSHOT_MAX_CONTENT_BYTES = 2 * 1024 * 1024;
 
+const PageSnapshotContentSchema = z.string().refine(
+  (content) => new TextEncoder().encode(content).byteLength <= PAGE_SNAPSHOT_MAX_CONTENT_BYTES,
+  `Page content must not exceed ${PAGE_SNAPSHOT_MAX_CONTENT_BYTES} bytes`
+);
+
+export const PageSnapshotSchema = z.object({
+  id: z.string().uuid(),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  title: z.string().max(500),
+  slug: z.string().max(200),
+  status: z.string().min(1).max(50),
+  content: PageSnapshotContentSchema,
+  sourceOperation: z.enum(['page_update', 'page_section_edit', 'page_trash', 'page_restore']),
+  capturedAt: z.string().datetime(),
+}).strict();
+
+export type PageSnapshot = z.infer<typeof PageSnapshotSchema>;
+
+export const CreatePageSnapshotSchema = PageSnapshotSchema.omit({
+  id: true,
+  capturedAt: true,
+}).strict();
+
+export type CreatePageSnapshot = z.infer<typeof CreatePageSnapshotSchema>;
+
+export const PageSnapshotSummarySchema = PageSnapshotSchema.omit({ content: true });
+
+export type PageSnapshotSummary = z.infer<typeof PageSnapshotSummarySchema>;
+
+export const PageSnapshotListRequestSchema = z.object({
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+}).strict();
+
+export const PageSnapshotReadRequestSchema = PageSnapshotListRequestSchema.extend({
+  snapshotId: z.string().uuid(),
+}).strict();
+
+export const PageSnapshotListResponseSchema = z.object({
+  snapshots: z.array(PageSnapshotSummarySchema).max(PAGE_SNAPSHOT_RETENTION_LIMIT),
+}).strict();
+
+export const PageSnapshotReadResponseSchema = z.object({
+  snapshot: PageSnapshotSchema.nullable(),
+}).strict();
+
+export const PageSnapshotCompareResponseSchema = z.object({
+  snapshot: PageSnapshotSchema,
+  currentPage: z.object({
+    title: z.string(),
+    slug: z.string(),
+    status: z.string(),
+    content: PageSnapshotContentSchema,
+  }).strict(),
+  differences: z.object({
+    titleChanged: z.boolean(),
+    statusChanged: z.boolean(),
+    contentChanged: z.boolean(),
+  }).strict(),
+}).strict();
+export type PageSnapshotComparison = z.infer<typeof PageSnapshotCompareResponseSchema>;
+
+export const PageSnapshotRestoreProposalRequestSchema = PageSnapshotReadRequestSchema;
+
+export const PageSnapshotRestoreProposalResponseSchema = z.object({
+  status: z.literal('proposed'),
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  pageUrl: z.string().url(),
+  snapshot: PageSnapshotSummarySchema,
+  current: z.object({
+    title: z.string(),
+    status: z.string(),
+  }).strict(),
+  restoreTo: z.object({
+    title: z.string(),
+    status: z.string(),
+  }).strict(),
+  changes: z.object({
+    titleChanged: z.boolean(),
+    statusChanged: z.boolean(),
+    contentChanged: z.boolean(),
+  }).strict(),
+  summary: z.string(),
+  createdAt: z.string().datetime(),
+}).strict();
+export type PageSnapshotRestoreProposal = z.infer<typeof PageSnapshotRestoreProposalResponseSchema>;
+
+export const PageSnapshotRestoreApplyRequestSchema = z.object({
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  approvedBy: z.string().default('user'),
+}).strict();
+
+export const PageSnapshotRestoreApplyResponseSchema = z.object({
+  status: z.literal('applied'),
+  planId: z.string().uuid(),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  pageUrl: z.string().url(),
+  restoredSnapshotId: z.string().uuid(),
+  backupSnapshotId: z.string().uuid(),
+  verified: z.literal(true),
+}).strict();
+export type PageSnapshotRestoreApplyResponse = z.infer<typeof PageSnapshotRestoreApplyResponseSchema>;

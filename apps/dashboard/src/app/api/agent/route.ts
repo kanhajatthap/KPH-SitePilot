@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { prompt, targetSite, correlationId, controlledWrites } = body;
+    const { prompt, targetSite, correlationId, controlledWrites, conversationHistory } = body;
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return NextResponse.json(
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
           targetSite,
           correlationId,
           controlledWrites: Boolean(controlledWrites),
+          conversationHistory,
         }),
       });
     } catch (err) {

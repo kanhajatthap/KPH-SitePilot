@@ -87,3 +87,21 @@ A full propose-and-apply cycle was executed live against LocalWP instance `http:
 ## 5. Remaining Blockers
 
 - **None.** The page creation workflow is fully implemented, verified live against WordPress, and protected by end-to-end regression tests and cryptographic proposal approvals.
+
+## 6. Existing Page Lifecycle (Added 2026-10-26)
+
+Chat requests can now stage a full Gutenberg content replacement for a named page slug/ID, or propose moving a named page to the WordPress Trash. Both actions require an integrity-bound proposal and explicit dashboard approval. Update apply checks the original title, content, and status have not changed since staging, then reads the page back to verify the result.
+
+Trash is reversible; permanent deletion is not exposed. The active homepage is refused, and successful Trash operations must be read back with `post_status=trash`. Dashboard proposal/apply routes authenticate the caller and restrict target URLs to local test hosts.
+
+Full-page redesign asks the configured model for a bounded JSON section plan, validates it against shared Zod contracts, and converts validated plain text into Gutenberg core blocks. The preview and saved content are rendered by code; model-supplied HTML/CSS/JavaScript is never accepted. Existing page content is passed to the model as delimited untrusted context, and schema-invalid output fails explicitly without a fallback proposal.
+
+This workflow has automated tests, but has not been exercised against a live LocalWP site. Full-page redesign replaces the page content with the generated Gutenberg layout shown in the staged preview; use the existing scoped section-edit flow for narrower content changes.
+
+## 7. Local Page History and Restore (Added 2026-10-27)
+
+Before an approved page update, section edit, Trash operation, or snapshot restore, the API saves the current page title, slug, status, and content. Snapshots are local-only, stored under a site/page hash, limited to 20 per page, and reject content larger than 2 MiB. A failed snapshot write prevents the associated mutation.
+
+In chat, request history with a page title, slug, or ID (for example, “show history for page #42”). Use a listed snapshot UUID to compare or request a restore. Comparison reports title/status/content differences and bounded text excerpts. A restore is only staged at first: the user must approve the proposal card. Apply rechecks the page state, captures a backup of the current page, restores the selected version, and requires exact read-back verification. A stale proposal is refused; failed backup or verification is surfaced as an error.
+
+Automated API, contracts, WordPress-client, and dashboard route tests cover the workflow. No live LocalWP restore was performed for this milestone. History is not backfilled for changes made before snapshot capture was enabled, and versions older than the 20-entry retention window may be removed.

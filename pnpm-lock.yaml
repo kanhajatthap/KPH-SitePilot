@@ -323,6 +323,18 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
+  packages/design-system:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.9
+        version: 22.20.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@22.20.5)(jiti@1.21.7)
+
   packages/model-adapters:
     dependencies:
       '@google/genai':

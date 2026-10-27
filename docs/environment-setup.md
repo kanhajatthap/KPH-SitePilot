@@ -1,7 +1,7 @@
 # Development Environment Setup & Audit Record
 
 **Date**: October 2026  
-**Host OS**: Windows 11 64-bit  
+**Host OS**: Windows 10 Pro 64-bit (build 19045)
 **Workspace**: `c:\AI\KPH SitePilot` (`wp-agent`)
 
 ---
@@ -19,7 +19,7 @@
 | **WP-CLI** | `2.12.0` | `C:\Program Files (x86)\Local\resources\extraResources\bin\wp-cli\win32\wp.bat` | Verified |
 | **LocalWP** | `10.1.2` | `C:\Program Files (x86)\Local\Local.exe` | Verified |
 | **Turborepo** | N/A (scaffold) | To be installed as monorepo root devDependency (`pnpm add -D turbo`) | Pending monorepo init |
-| **Docker Desktop** | Not Installed | Docker & Compose not detected; not needed for initial read-only phase | Optional (Audit DB) |
+| **Docker Desktop** | `4.96.3` | Installed via winget; engine is not running because firmware virtualization is disabled | Blocked (Local Supabase) |
 
 ---
 
@@ -57,8 +57,8 @@ To allow seamless command execution across all PowerShell shells without duplica
 
 ## 4. Docker / PostgreSQL Audit Persistence (Future Phase)
 
-- **Current Status**: Docker Desktop is not installed on the system.
-- **Action for Future Phase**: When PostgreSQL audit persistence is required in later phases, Docker Desktop can be installed via `winget install Docker.DockerDesktop` (requires Windows administrator elevation and WSL 2 virtualization backend). LocalWP's internal MySQL database is kept separate and will not be altered or replaced.
+- **Current Status**: Docker Desktop `4.96.3` and Docker CLI `29.9.2` are installed. The Docker service is stopped and the engine pipe is unavailable. This host reports Intel firmware virtualization disabled; the Docker CLI was also absent from the current VS Code process `PATH` (it was discoverable after adding its installed directory for a one-off check).
+- **Next Action**: Enable Intel VT-x in BIOS/UEFI, enable/update WSL 2 and `VirtualMachinePlatform` with administrator privileges, and restart Windows. Reopen VS Code so its process inherits the updated Docker `PATH`, start Docker Desktop, and verify `docker info` before starting the isolated Supabase stack. Do not reinstall Docker Desktop unless a later diagnostic shows the installation is damaged. LocalWP's internal MySQL database is separate and must not be altered or replaced.
 
 ## 5. Optional Supabase SaaS Development (Phase 7)
 
@@ -79,15 +79,21 @@ Signup uses Supabase email confirmation. Configure the local dashboard URL and
 `/auth/confirm` callback in the project's Auth URL allow-list before testing signup
 or password recovery.
 
+To keep Supabase authentication configured but store chat history only in this
+browser's local storage, set `NEXT_PUBLIC_CHAT_HISTORY_MODE=local` in the dashboard
+environment and restart the dashboard. This disables the remote chat-history
+endpoint for the dashboard; it does not change the authentication settings or
+delete history already stored in Supabase.
+
 ### Local database and Edge Functions
 
 Supabase CLI and Docker are prerequisites for a local Supabase stack. If available:
 
 ```powershell
-supabase start
-supabase migration up
-supabase test db
-supabase functions serve --env-file supabase/.env.local
+pnpm dlx supabase@2.122.0 start
+pnpm dlx supabase@2.122.0 migration up --local
+pnpm dlx supabase@2.122.0 test db --local
+pnpm dlx supabase@2.122.0 functions serve --env-file supabase/.env.local
 ```
 
 Set local-only Edge Function secrets in the ignored `supabase/.env.local` file.
@@ -99,10 +105,25 @@ vault encrypts WordPress application credentials using AES-256-GCM with a random
 metadata is returned; there is no API to decrypt credentials into a browser.
 
 The database test in `supabase/tests/database/rls.test.sql` exercises cross-tenant
-project/connection visibility and verifies that users cannot read encrypted
-credentials or forge proposals, usage, or rate-limit data. Run `supabase test db`
-before using any hosted Supabase project. This workspace has not run that test
-because Docker and Supabase CLI are unavailable.
+project, connection, and chat-history visibility and verifies that users cannot
+read encrypted credentials or forge proposals, usage, or rate-limit data. Run
+`supabase test db` against the local stack before using any hosted Supabase
+project. The CLI was verified through `pnpm dlx supabase@2.122.0`. To run these
+checks without configuring Docker on a developer PC, push a change to the
+workflow, a Supabase migration, or a database test to `main`, or open the
+repository's **Actions** tab, select **Local Supabase Database Tests**, and
+choose **Run workflow**. The workflow starts the repository's isolated local
+stack on a GitHub-hosted runner, applies migrations, runs database/RLS tests,
+and stops the stack. It does not use Supabase project secrets or connect to a
+hosted Supabase database. The test passed all 14 pgTAP assertions in GitHub
+Actions workflow run
+[40459112930](https://github.com/kanhajatthap/KPH-SitePilot/actions/runs/40459112930),
+including migration application and stack cleanup. The developer PC does not
+need Docker for this verification path.
+
+The follow-up migration that changes single-thread history into a bounded
+conversation archive is still under development and has not yet been applied or
+tested by the GitHub workflow.
 
 The dashboard's legacy `/api/*` proxies are denied in configured SaaS mode after
 authentication; they cannot fall back to the shared local API. The `agent-proxy`

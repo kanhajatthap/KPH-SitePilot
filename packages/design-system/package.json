@@ -1,0 +1,37 @@
+{
+  "name": "@wp-agent/design-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design tokens for wp-agent – WordPress‑native UI language",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kanhajatthap/KPH-SitePilot.git"
+  },
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "design-system",
+    "tokens",
+    "wordpress",
+    "ui"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

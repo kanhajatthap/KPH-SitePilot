@@ -346,6 +346,7 @@ export class AgentCore {
         role: 'system',
         content: systemPrompt,
       },
+      ...(request.conversationHistory ?? []),
       { role: 'user', content: request.prompt },
     ];
 

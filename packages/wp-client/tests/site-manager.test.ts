@@ -13,6 +13,7 @@ function manager(): LocalWpSiteManager {
 function pageJson(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     ID: 123,
+    post_type: 'page',
     post_title: 'Ceramics Studio',
     post_status: 'publish',
     post_name: 'ceramics-studio',
@@ -72,6 +73,70 @@ describe('LocalWpSiteManager page inventory', () => {
 });
 
 describe('LocalWpSiteManager page writes', () => {
+  it('restores a page from an exact, staged payload and verifies title, content, and status', async () => {
+    const wp = manager();
+    let restoredPayload: Record<string, unknown> | null = null;
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      if (args[0] === 'eval-file') {
+        restoredPayload = JSON.parse(await readFile(args[2], 'utf8')) as Record<string, unknown>;
+        return { stdout: '123', stderr: '', exitCode: 0 };
+      }
+      if (args[0] === 'post' && args[1] === 'get') {
+        return {
+          stdout: pageJson({
+            post_title: 'Restored page',
+            post_status: 'draft',
+            post_content: '<!-- wp:paragraph -->\n<p>Restored exactly</p>\n<!-- /wp:paragraph -->',
+          }),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      return { stdout: '', stderr: '', exitCode: 0 };
+    });
+
+    await expect(wp.restorePage({
+      id: 123,
+      title: 'Restored page',
+      status: 'draft',
+      content: '<!-- wp:paragraph -->\n<p>Restored exactly</p>\n<!-- /wp:paragraph -->',
+    })).resolves.toMatchObject({
+      id: 123,
+      title: 'Restored page',
+      status: 'draft',
+      content: '<!-- wp:paragraph -->\n<p>Restored exactly</p>\n<!-- /wp:paragraph -->',
+    });
+    expect(restoredPayload).toEqual({
+      action: 'update',
+      id: 123,
+      title: 'Restored page',
+      status: 'draft',
+      content: '<!-- wp:paragraph -->\n<p>Restored exactly</p>\n<!-- /wp:paragraph -->',
+    });
+  }, 15_000);
+
+  it('does not report a restore when read-back differs from the requested state', async () => {
+    const wp = manager();
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      if (args[0] === 'eval-file') return { stdout: '123', stderr: '', exitCode: 0 };
+      if (args[0] === 'post' && args[1] === 'get') {
+        return {
+          stdout: pageJson({ post_title: 'Restored page', post_status: 'draft', post_content: '<p>Different</p>' }),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      return { stdout: '', stderr: '', exitCode: 0 };
+    });
+
+    await expect(wp.restorePage({
+      id: 123,
+      title: 'Restored page',
+      status: 'draft',
+      content: '<p>Expected</p>',
+    })).rejects.toThrow('restore could not be verified');
+  });
+
   it('sends page content through a temp payload file, not argv', async () => {
     const wp = manager();
     const content =
@@ -265,5 +330,144 @@ describe('LocalWpSiteManager page writes', () => {
       status: 'draft',
     });
     expect(result.id).toBe(55);
+  });
+});
+
+describe('LocalWpSiteManager plugin uninstall', () => {
+  it('deactivates, uninstalls and verifies the plugin is absent', async () => {
+    const wp = manager();
+    const calls: string[][] = [];
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      calls.push(args);
+      if (args[0] === 'plugin' && args[1] === 'list') {
+        return { stdout: '[]', stderr: '', exitCode: 0 };
+      }
+      return { stdout: 'Uninstalled and deleted plugin.', stderr: '', exitCode: 0 };
+    });
+
+    describe('LocalWpSiteManager page lifecycle', () => {
+      it('reads an existing page and verifies its type', async () => {
+        const wp = manager();
+        vi.spyOn(wp, 'runWpCli').mockResolvedValue({
+          stdout: pageJson(),
+          stderr: '',
+          exitCode: 0,
+        });
+
+        await expect(wp.readPageDetails(123)).resolves.toEqual({
+          id: 123,
+          title: 'Ceramics Studio',
+          slug: 'ceramics-studio',
+          status: 'publish',
+          content: '<h1>Made slowly. Used daily.</h1>',
+          url: 'http://test.local/ceramics-studio/',
+        });
+      });
+
+      it('moves a non-homepage page to Trash without force and verifies status', async () => {
+        const wp = manager();
+        const calls: string[][] = [];
+        let readCount = 0;
+        vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+          calls.push(args);
+          if (args[0] === 'option') {
+            return { stdout: '0', stderr: '', exitCode: 0 };
+          }
+          if (args[0] === 'post' && args[1] === 'delete') {
+            return { stdout: 'Moved to Trash.', stderr: '', exitCode: 0 };
+          }
+          if (args[0] === 'post' && args[1] === 'get') {
+            readCount += 1;
+            return {
+              stdout: pageJson({ post_status: readCount === 1 ? 'publish' : 'trash' }),
+              stderr: '',
+              exitCode: 0,
+            };
+          }
+          return { stdout: '', stderr: 'Unexpected WP-CLI call', exitCode: 1 };
+        });
+
+        await expect(wp.trashPage(123)).resolves.toMatchObject({
+          id: 123,
+          status: 'trash',
+          verified: true,
+        });
+        expect(calls).toContainEqual(['post', 'delete', '123']);
+        expect(calls.flat()).not.toContain('--force');
+      });
+
+      it('refuses to trash the active homepage', async () => {
+        const wp = manager();
+        const runWpCli = vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]) => {
+          if (args[0] === 'option') {
+            return { stdout: '123', stderr: '', exitCode: 0 };
+          }
+          return { stdout: pageJson(), stderr: '', exitCode: 0 };
+        });
+
+        await expect(wp.trashPage(123)).rejects.toThrow('active homepage cannot be trashed');
+        expect(runWpCli).not.toHaveBeenCalledWith(['post', 'delete', '123']);
+      });
+
+      it('fails instead of reporting success when trash state cannot be verified', async () => {
+        const wp = manager();
+        vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+          if (args[0] === 'option') {
+            return { stdout: '0', stderr: '', exitCode: 0 };
+          }
+          if (args[0] === 'post' && args[1] === 'get') {
+            return { stdout: pageJson(), stderr: '', exitCode: 0 };
+          }
+          return { stdout: 'delete returned', stderr: '', exitCode: 0 };
+        });
+
+        await expect(wp.trashPage(123)).rejects.toThrow('was not verified in the trash');
+      });
+    });
+
+    await expect(wp.uninstallPlugin('hello-dolly')).resolves.toMatchObject({
+      success: true,
+      verified: true,
+    });
+    expect(calls[0]).toEqual(['plugin', 'uninstall', 'hello-dolly', '--deactivate']);
+    expect(calls[1]).toEqual(['plugin', 'list', '--format=json']);
+  });
+
+  it('fails when the plugin remains installed after uninstall', async () => {
+    const wp = manager();
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      if (args[0] === 'plugin' && args[1] === 'list') {
+        return { stdout: JSON.stringify([{ name: 'hello-dolly/hello.php' }]), stderr: '', exitCode: 0 };
+      }
+      return { stdout: 'Uninstall attempted.', stderr: '', exitCode: 0 };
+    });
+
+    await expect(wp.uninstallPlugin('hello-dolly')).rejects.toThrow(
+      'is still installed after uninstall'
+    );
+  });
+
+  it('rejects plugin slugs that are not a single safe slug', async () => {
+    const wp = manager();
+    const runWpCli = vi.spyOn(wp, 'runWpCli');
+
+    await expect(wp.uninstallPlugin('../hello-dolly')).rejects.toThrow(
+      'Invalid plugin slug'
+    );
+    expect(runWpCli).not.toHaveBeenCalled();
+  });
+
+  it('does not treat malformed plugin inventory output as verified absence', async () => {
+    const wp = manager();
+    vi.spyOn(wp, 'runWpCli').mockImplementation(async (args: string[]): Promise<WpCliResult> => {
+      if (args[0] === 'plugin' && args[1] === 'list') {
+        return { stdout: 'not-json', stderr: '', exitCode: 0 };
+      }
+      return { stdout: 'Uninstalled.', stderr: '', exitCode: 0 };
+    });
+
+    await expect(wp.uninstallPlugin('hello-dolly')).rejects.toThrow(
+      'Plugin list output did not contain a JSON array'
+    );
   });
 });

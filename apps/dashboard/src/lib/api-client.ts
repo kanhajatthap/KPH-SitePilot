@@ -21,6 +21,13 @@ import {
   BuilderType,
   PublishApprovalRequest,
   ReviseDraftRequest,
+  PageDesign,
+  ChatHistory,
+  ChatHistorySchema,
+  PageSnapshotSummary,
+  PageSnapshotComparison,
+  PageSnapshotRestoreProposal,
+  PageSnapshotRestoreApplyResponse,
 } from '@wp-agent/contracts';
 
 export interface AgentApiResponse {
@@ -30,6 +37,34 @@ export interface AgentApiResponse {
   executedTools?: ToolActivity[];
   error?: string;
   message?: string;
+}
+
+export interface ConversationHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export async function fetchChatHistory(): Promise<ChatHistory> {
+  const res = await fetch('/api/chat/history', { cache: 'no-store' });
+  const data = await readJsonResponse<unknown>(res);
+  if (!res.ok) {
+    const error = data as { message?: string; error?: string };
+    throw new Error(error.message || error.error || `Chat history load failed (${res.status})`);
+  }
+  return ChatHistorySchema.parse(data);
+}
+
+export async function saveChatHistory(history: ChatHistory): Promise<void> {
+  const validated = ChatHistorySchema.parse(history);
+  const res = await fetch('/api/chat/history', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(validated),
+  });
+  const data = await readJsonResponse<{ message?: string; error?: string }>(res);
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Chat history save failed (${res.status})`);
+  }
 }
 
 /**
@@ -71,7 +106,8 @@ export async function sendAgentMessage(
   prompt: string,
   targetSite?: string,
   controlledWrites?: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  conversationHistory?: ConversationHistoryItem[]
 ): Promise<AgentApiResponse> {
   const res = await fetch('/api/agent', {
     method: 'POST',
@@ -83,6 +119,7 @@ export async function sendAgentMessage(
       prompt,
       targetSite,
       controlledWrites: Boolean(controlledWrites),
+      conversationHistory,
     }),
   });
 
@@ -191,7 +228,11 @@ export async function applyDraftPost(params: {
   return data.post;
 }
 
-export async function sendPureChatMessage(prompt: string, signal?: AbortSignal): Promise<string> {
+export async function sendPureChatMessage(
+  prompt: string,
+  signal?: AbortSignal,
+  conversationHistory?: ConversationHistoryItem[]
+): Promise<string> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     signal,
@@ -200,6 +241,7 @@ export async function sendPureChatMessage(prompt: string, signal?: AbortSignal):
     },
     body: JSON.stringify({
       prompt,
+      conversationHistory,
     }),
   });
 
@@ -480,6 +522,34 @@ export interface PluginListResult {
   verified: boolean;
 }
 
+export interface PageDesignGenerationResult {
+  status: 'generated';
+  pageId: number;
+  title: string;
+  slug: string;
+  design: PageDesign;
+  gutenbergBlocksHtml: string;
+  previewHtml: string;
+  summary: string;
+}
+
+export async function generatePageDesign(params: {
+  targetSite: string;
+  pageId: number;
+  instruction: string;
+}): Promise<PageDesignGenerationResult> {
+  const res = await fetch('/api/site/pages/lifecycle/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Page design generation failed (${res.status})`);
+  }
+  return data;
+}
+
 export interface CodeInjectionProposalResult {
   status: 'proposed';
   planId: string;
@@ -623,6 +693,69 @@ export interface PageApplyResult {
   source?: 'created' | 'existing' | 'recovered';
 }
 
+export interface PageLifecycleProposalResult {
+  status: 'proposed';
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  action: 'update' | 'trash';
+  pageId: number;
+  title: string;
+  slug: string;
+  pageStatus: string;
+  before: string;
+  after: string;
+  pageUrl: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface PageLifecycleApplyResult {
+  status: 'applied';
+  planId: string;
+  targetSite: string;
+  action: 'update' | 'trash';
+  pageId: number;
+  title: string;
+  slug: string;
+  pageStatus: string;
+  pageUrl: string;
+  verified: boolean;
+}
+
+export async function proposePageLifecycle(params: {
+  targetSite: string;
+  action: 'update' | 'trash';
+  pageId: number;
+  title?: string;
+  content?: string;
+}): Promise<PageLifecycleProposalResult> {
+  const res = await fetch('/api/site/pages/lifecycle/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await readJsonResponse<PageLifecycleProposalResult & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page proposal failed (${res.status})`);
+  return data;
+}
+
+export async function applyPageLifecycle(params: {
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  approvedBy?: string;
+}): Promise<PageLifecycleApplyResult> {
+  const res = await fetch('/api/site/pages/lifecycle/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, approvedBy: params.approvedBy || 'user' }),
+  });
+  const data = await readJsonResponse<PageLifecycleApplyResult & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page change failed (${res.status})`);
+  return data;
+}
+
 export async function proposePageCreation(params: {
   targetSite: string;
   title: string;
@@ -671,8 +804,15 @@ export interface PageSectionsResult {
   }>;
 }
 
-export async function fetchPageSections(pageId: number = 32): Promise<PageSectionsResult> {
-  const res = await fetch(`/api/site/pages/sections?id=${pageId}`);
+export async function fetchPageSections(
+  pageId: number = 32,
+  targetSite?: string
+): Promise<PageSectionsResult> {
+  const query = new URLSearchParams({ id: String(pageId) });
+  if (targetSite) {
+    query.set('targetSite', targetSite);
+  }
+  const res = await fetch(`/api/site/pages/sections?${query.toString()}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || data.error || `Failed to fetch page sections (${res.status})`);
   return data;
@@ -692,6 +832,64 @@ export async function listSitePages(targetSite: string): Promise<{
     error?: string;
   }>(res);
   if (!res.ok) throw new Error(data.message || data.error || `Failed to list site pages (${res.status})`);
+  return data;
+}
+
+export async function listPageSnapshots(
+  targetSite: string,
+  pageId: number
+): Promise<PageSnapshotSummary[]> {
+  const query = new URLSearchParams({ targetSite, pageId: String(pageId) });
+  const res = await fetch(`/api/site/pages/snapshots?${query}`);
+  const data = await readJsonResponse<{ snapshots: PageSnapshotSummary[]; message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Failed to fetch page history (${res.status})`);
+  return data.snapshots;
+}
+
+export async function comparePageSnapshot(params: {
+  targetSite: string;
+  pageId: number;
+  snapshotId: string;
+}): Promise<PageSnapshotComparison> {
+  const res = await fetch('/api/site/pages/snapshots/compare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await readJsonResponse<PageSnapshotComparison & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page comparison failed (${res.status})`);
+  return data;
+}
+
+export async function proposePageSnapshotRestore(params: {
+  targetSite: string;
+  pageId: number;
+  snapshotId: string;
+}): Promise<PageSnapshotRestoreProposal> {
+  const res = await fetch('/api/site/pages/restore/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await readJsonResponse<PageSnapshotRestoreProposal & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page restore proposal failed (${res.status})`);
+  return data;
+}
+
+export async function applyPageSnapshotRestore(params: {
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  pageId: number;
+  approvedBy?: string;
+}): Promise<PageSnapshotRestoreApplyResponse> {
+  const res = await fetch('/api/site/pages/restore/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, approvedBy: params.approvedBy || 'user' }),
+  });
+  const data = await readJsonResponse<PageSnapshotRestoreApplyResponse & { message?: string; error?: string }>(res);
+  if (!res.ok) throw new Error(data.message || data.error || `Page restore failed (${res.status})`);
   return data;
 }
 

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { AllowedOptionKey } from '@wp-agent/contracts';
 
 const execFileAsync = promisify(execFile);
+const RESTORABLE_PAGE_STATUSES = new Set<string>(['draft', 'publish', 'pending', 'private']);
 
 /**
  * Runs inside `wp eval-file`. The payload travels in a temp JSON file, never
@@ -80,6 +81,14 @@ export interface WpPageSummary {
   slug: string;
   status: string;
   url: string;
+}
+
+function normalizePluginSlug(slug: string): string {
+  const normalized = slug.trim().toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(normalized)) {
+    throw new Error('Invalid plugin slug provided.');
+  }
+  return normalized;
 }
 
 export class LocalWpSiteManager {
@@ -192,9 +201,15 @@ export class LocalWpSiteManager {
     try {
       // Find the JSON array in output (stripping any PHP startup warnings)
       const jsonStart = res.stdout.indexOf('[');
-      if (jsonStart === -1) return [];
+      if (jsonStart === -1) {
+        throw new Error('Plugin list output did not contain a JSON array.');
+      }
       const jsonStr = res.stdout.substring(jsonStart);
-      return JSON.parse(jsonStr) as WpPluginInfo[];
+      const plugins: unknown = JSON.parse(jsonStr);
+      if (!Array.isArray(plugins)) {
+        throw new Error('Plugin list output was not a JSON array.');
+      }
+      return plugins as WpPluginInfo[];
     } catch (e: any) {
       throw new Error(`Failed to parse plugin list output: ${e.message}`);
     }
@@ -247,10 +262,7 @@ export class LocalWpSiteManager {
   }
 
   async installPlugin(slug: string, activate = true): Promise<{ success: boolean; message: string }> {
-    const cleanSlug = slug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    if (!cleanSlug) {
-      throw new Error('Invalid plugin slug provided.');
-    }
+    const cleanSlug = normalizePluginSlug(slug);
 
     const args = ['plugin', 'install', cleanSlug];
     if (activate) {
@@ -269,7 +281,7 @@ export class LocalWpSiteManager {
   }
 
   async activatePlugin(slug: string): Promise<{ success: boolean; message: string }> {
-    const cleanSlug = slug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const cleanSlug = normalizePluginSlug(slug);
     const res = await this.runWpCli(['plugin', 'activate', cleanSlug]);
     if (res.exitCode !== 0) {
       throw new Error(`Failed to activate plugin ${cleanSlug}: ${res.stderr || res.stdout}`);
@@ -282,7 +294,7 @@ export class LocalWpSiteManager {
   }
 
   async deactivatePlugin(slug: string): Promise<{ success: boolean; message: string }> {
-    const cleanSlug = slug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const cleanSlug = normalizePluginSlug(slug);
     const res = await this.runWpCli(['plugin', 'deactivate', cleanSlug]);
     if (res.exitCode !== 0) {
       throw new Error(`Failed to deactivate plugin ${cleanSlug}: ${res.stderr || res.stdout}`);
@@ -291,6 +303,39 @@ export class LocalWpSiteManager {
     return {
       success: true,
       message: res.stdout,
+    };
+  }
+
+  async uninstallPlugin(
+    slug: string
+  ): Promise<{ success: boolean; verified: boolean; message: string }> {
+    const cleanSlug = normalizePluginSlug(slug);
+
+    const uninstall = await this.runWpCli([
+      'plugin',
+      'uninstall',
+      cleanSlug,
+      '--deactivate',
+    ]);
+    if (uninstall.exitCode !== 0) {
+      throw new Error(
+        `Failed to uninstall plugin ${cleanSlug}: ${uninstall.stderr || uninstall.stdout}`
+      );
+    }
+
+    const plugins = await this.listPlugins();
+    const remaining = plugins.find((plugin) => {
+      const pluginPath = plugin.name.toLowerCase();
+      return pluginPath === cleanSlug || pluginPath.startsWith(`${cleanSlug}/`);
+    });
+    if (remaining) {
+      throw new Error(`Plugin ${cleanSlug} is still installed after uninstall.`);
+    }
+
+    return {
+      success: true,
+      verified: true,
+      message: uninstall.stdout || `Uninstalled and verified removal of ${cleanSlug}.`,
     };
   }
 
@@ -649,6 +694,129 @@ export class LocalWpSiteManager {
       title: pageTitle,
       status: pageStatus,
       url: pageUrl,
+    };
+  }
+
+  async restorePage(params: {
+    id: number;
+    title: string;
+    content: string;
+    status: 'draft' | 'publish' | 'pending' | 'private';
+  }): Promise<{
+    id: number;
+    title: string;
+    slug: string;
+    status: string;
+    content: string;
+    url: string;
+  }> {
+    if (!Number.isSafeInteger(params.id) || params.id <= 0) {
+      throw new Error('Invalid page ID provided.');
+    }
+    if (!RESTORABLE_PAGE_STATUSES.has(params.status)) {
+      throw new Error(`Unsupported page status "${params.status}" for restore.`);
+    }
+
+    const result = await this.runWpCliWithPostPayload({
+      action: 'update',
+      id: params.id,
+      title: params.title,
+      content: params.content,
+      status: params.status,
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to restore page #${params.id}: ${result.stderr || result.stdout}`);
+    }
+
+    const restoredPage = await this.readPageDetails(params.id);
+    if (
+      restoredPage.title !== params.title ||
+      restoredPage.content !== params.content ||
+      restoredPage.status !== params.status
+    ) {
+      throw new Error(`Page #${params.id} restore could not be verified.`);
+    }
+
+    return restoredPage;
+  }
+
+  async readPageDetails(id: number): Promise<{
+    id: number;
+    title: string;
+    slug: string;
+    status: string;
+    content: string;
+    url: string;
+  }> {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new Error('Invalid page ID provided.');
+    }
+
+    const result = await this.runWpCli(['post', 'get', String(id), '--format=json']);
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to read page #${id}: ${result.stderr || result.stdout}`);
+    }
+
+    const jsonStart = result.stdout.indexOf('{');
+    if (jsonStart === -1) {
+      throw new Error(`Failed to parse page #${id} output.`);
+    }
+
+    const data = JSON.parse(result.stdout.substring(jsonStart)) as Record<string, unknown>;
+    if (Number(data.ID) !== id || data.post_type !== 'page') {
+      throw new Error(`WordPress resource #${id} is not a page.`);
+    }
+
+    return {
+      id,
+      title: String(data.post_title || ''),
+      slug: String(data.post_name || ''),
+      status: String(data.post_status || 'unknown'),
+      content: String(data.post_content || ''),
+      url: String(data.url || `http://test.local/?page_id=${id}`),
+    };
+  }
+
+  async trashPage(id: number): Promise<{
+    id: number;
+    title: string;
+    slug: string;
+    status: 'trash';
+    url: string;
+    verified: true;
+  }> {
+    const page = await this.readPageDetails(id);
+    if (page.status === 'trash') {
+      throw new Error(`Page #${id} is already in the trash.`);
+    }
+
+    const frontPage = await this.runWpCli(['option', 'get', 'page_on_front']);
+    if (frontPage.exitCode !== 0) {
+      throw new Error(
+        `Could not verify whether page #${id} is the active homepage: ${frontPage.stderr || frontPage.stdout}`
+      );
+    }
+    if (frontPage.stdout.trim() === String(id)) {
+      throw new Error('The active homepage cannot be trashed. Set a different homepage first.');
+    }
+
+    const result = await this.runWpCli(['post', 'delete', String(id)]);
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to move page #${id} to trash: ${result.stderr || result.stdout}`);
+    }
+
+    const trashedPage = await this.readPageDetails(id);
+    if (trashedPage.status !== 'trash') {
+      throw new Error(`Page #${id} was not verified in the trash after deletion.`);
+    }
+
+    return {
+      id,
+      title: trashedPage.title,
+      slug: trashedPage.slug,
+      status: 'trash',
+      url: trashedPage.url,
+      verified: true,
     };
   }
 }

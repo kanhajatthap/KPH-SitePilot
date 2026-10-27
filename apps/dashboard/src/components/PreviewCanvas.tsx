@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary } from '../lib/types';
+import { RouteTree } from './RouteTree';
 
 interface PreviewCanvasProps {
   preview: PreviewState;
@@ -23,6 +24,8 @@ interface PreviewCanvasProps {
   availableSections?: Array<{ id: string; name: string }>;
   livePages?: SitePageSummary[];
   onRefreshPages?: () => void;
+  targetPageId?: number;
+  onSelectPage?: (page: SitePageSummary) => void;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -53,6 +56,7 @@ export function PreviewCanvas({
   onRejectBuilderProposal,
   onStartRevise,
   activeCanvasTab = 'preview',
+  onCanvasTabChange,
   currentRoute = '/',
   selectedSectionId = 'hero',
   onSelectSection,
@@ -63,7 +67,10 @@ export function PreviewCanvas({
   ],
   livePages = [],
   onRefreshPages,
+  targetPageId,
+  onSelectPage,
 }: PreviewCanvasProps) {
+  const [treeOpen, setTreeOpen] = useState(false);
   const {
     targetSite,
     viewport,
@@ -91,6 +98,19 @@ export function PreviewCanvas({
   }, [targetSite]);
 
   const refreshIframe = useCallback(() => setIframeKey((value) => value + 1), []);
+
+  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+
+  // Keyboard navigation listener: Escape clears section selection
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedSectionId && selectedSectionId !== 'all') {
+        onSelectSection?.('all');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedSectionId, onSelectSection]);
 
   const handleApprove = async () => {
     if (!proposal || !onApproveProposal) return;
@@ -186,14 +206,14 @@ export function PreviewCanvas({
   const canEdit = Boolean(res || proposal || builderProposal);
 
   return (
-    <main className="hidden h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f1ea] md:flex">
+    <main className="hidden h-full min-w-0 flex-1 flex-col overflow-hidden bg-paper-deep md:flex">
       {/* Browser chrome */}
       <div className="glass z-10 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="hidden items-center gap-1.5 sm:flex" aria-hidden="true">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#e8b4a8]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#e8d5a8]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#b7d4b0]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-paper-deep" />
+            <span className="h-2.5 w-2.5 rounded-full bg-paper-deep" />
+            <span className="h-2.5 w-2.5 rounded-full bg-paper-deep" />
           </div>
 
           <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-line bg-white/80 px-2.5 py-1.5 shadow-inner">
@@ -241,6 +261,22 @@ export function PreviewCanvas({
               <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-3.5 w-3.5" />
             </button>
           ) : null}
+
+          <button
+            type="button"
+            onClick={() => setTreeOpen((prev) => !prev)}
+            className={`focus-ring flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium transition ${
+              treeOpen
+                ? 'border-pink-300 bg-pink-50/80 text-pink-700 shadow-sm'
+                : 'border-line bg-white text-ink-soft hover:bg-paper-deep hover:text-ink'
+            }`}
+            title="Toggle Pages & Sections Tree"
+            aria-label="Toggle Pages & Sections Tree"
+            aria-expanded={treeOpen}
+          >
+            <Icon d="M4 6h16M4 12h10M4 18h14" className="h-3.5 w-3.5 text-pink-600" />
+            <span className="hidden sm:inline">Routes</span>
+          </button>
 
           <a
             href={targetSite}
@@ -413,13 +449,117 @@ export function PreviewCanvas({
       ) : null}
 
       {/* Canvas */}
-      <div className="dots-bg relative flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
+        {/* Collapsible RouteTree Sidebar */}
+        {treeOpen ? (
+          <aside className="w-64 shrink-0 border-r border-line bg-white/95 backdrop-blur-sm z-20 flex flex-col shadow-sm">
+            <RouteTree
+              targetSite={targetSite}
+              selectedPageId={targetPageId}
+              selectedSectionId={selectedSectionId}
+              onSelectPage={(page) => {
+                onSelectPage?.(page);
+              }}
+              onSelectSection={(_pageId, sectionId) => {
+                onSelectSection?.(sectionId);
+              }}
+              className="h-full"
+            />
+          </aside>
+        ) : null}
+
+        <div className="dots-bg relative flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
         {activeCanvasTab === 'preview' ? (
           <div className="flex h-full w-full flex-col" style={viewportStyle}>
+            {/* Visual Section Navigation Bar overlay when sections exist */}
+            {availableSections && availableSections.length > 0 && (res || builderProposal) ? (
+              <div
+                className="mb-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-line bg-white/90 p-2 shadow-xs backdrop-blur-xs"
+                role="region"
+                aria-label="Visual Section Selection"
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted mr-1">
+                  Visual Sections ({availableSections.length}):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onSelectSection?.('all')}
+                  className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
+                    !selectedSectionId || selectedSectionId === 'all'
+                      ? 'bg-ink text-white shadow-xs'
+                      : 'border border-line bg-paper-deep text-ink-soft hover:bg-paper hover:text-ink'
+                  }`}
+                  aria-pressed={!selectedSectionId || selectedSectionId === 'all'}
+                >
+                  Whole Page
+                </button>
+                {availableSections.map((sec) => {
+                  const isSelected = selectedSectionId === sec.id;
+                  const isHovered = hoveredSectionId === sec.id;
+                  return (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => onSelectSection?.(sec.id)}
+                      onMouseEnter={() => setHoveredSectionId(sec.id)}
+                      onMouseLeave={() => setHoveredSectionId((prev) => (prev === sec.id ? null : prev))}
+                      className={`group relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
+                        isSelected
+                          ? 'border border-pink-400 bg-pink-50 text-pink-700 shadow-xs ring-2 ring-pink-500/20'
+                          : isHovered
+                          ? 'border border-line-strong bg-white text-ink shadow-xs'
+                          : 'border border-line bg-white text-ink-soft hover:bg-paper-deep hover:text-ink'
+                      }`}
+                      aria-pressed={isSelected}
+                      aria-label={`Select section ${sec.name}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-pink-500' : 'bg-line-strong'}`} />
+                      <span>{sec.name}</span>
+                      {isSelected ? (
+                        <span className="ml-1 rounded bg-pink-100 px-1 py-0.2 text-[9px] font-semibold text-pink-700">
+                          Active
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                {selectedSectionId && selectedSectionId !== 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectSection?.('all')}
+                    className="ml-auto text-[10px] font-medium text-ink-muted hover:text-ink hover:underline"
+                    title="Press Escape to clear selection"
+                  >
+                    Clear (Esc)
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             {builderProposal ? (
-              <div className="h-full w-full overflow-y-auto rounded-xl border border-line bg-white shadow-lift">
+              <div
+                className={`relative h-full w-full overflow-y-auto rounded-xl border bg-white shadow-lift transition ${
+                  selectedSectionId && selectedSectionId !== 'all'
+                    ? 'border-pink-300 ring-2 ring-pink-500/10'
+                    : 'border-line'
+                }`}
+                tabIndex={0}
+                role="region"
+                aria-label={`Preview Canvas: ${selectedSectionId !== 'all' ? selectedSectionId : 'Full Page'}`}
+              >
+                {selectedSectionId && selectedSectionId !== 'all' ? (
+                  <div className="sticky top-2 right-2 z-10 m-2 flex items-center justify-between rounded-lg border border-pink-200 bg-pink-50/95 px-3 py-1.5 shadow-sm backdrop-blur-xs">
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-pink-700">
+                      <span className="h-2 w-2 rounded-full bg-pink-500" />
+                      Section Scope: #{selectedSectionId}
+                    </span>
+                    <span className="text-[10.5px] text-pink-600/80">
+                      Chat instructions will target this section • Press Esc to clear
+                    </span>
+                  </div>
+                ) : null}
                 <div
-                  className="builder-canvas-preview text-ink"
+                  className="builder-canvas-preview text-ink p-4"
                   dangerouslySetInnerHTML={{ __html: builderProposal.renderedPreviewHtml }}
                 />
               </div>
@@ -441,7 +581,27 @@ export function PreviewCanvas({
                 </div>
               </article>
             ) : res ? (
-              <article className="mx-auto h-full w-full max-w-4xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-9">
+              <article
+                className={`mx-auto h-full w-full max-w-4xl overflow-y-auto rounded-2xl border bg-white p-6 shadow-lift sm:p-9 transition ${
+                  selectedSectionId && selectedSectionId !== 'all'
+                    ? 'border-pink-300 ring-2 ring-pink-500/10'
+                    : 'border-line'
+                }`}
+                tabIndex={0}
+                role="region"
+                aria-label={`Verified Draft: ${selectedSectionId !== 'all' ? selectedSectionId : 'Full Page'}`}
+              >
+                {selectedSectionId && selectedSectionId !== 'all' ? (
+                  <div className="sticky top-0 z-10 -mt-2 mb-4 flex items-center justify-between rounded-lg border border-pink-200 bg-pink-50/95 px-3 py-1.5 shadow-sm backdrop-blur-xs">
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-pink-700">
+                      <span className="h-2 w-2 rounded-full bg-pink-500" />
+                      Section Scope: #{selectedSectionId}
+                    </span>
+                    <span className="text-[10.5px] text-pink-600/80">
+                      Chat instructions will target this section • Press Esc to clear
+                    </span>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
                   <div>
                     <span
@@ -644,7 +804,21 @@ export function PreviewCanvas({
         ) : null}
 
         {activeCanvasTab === 'live' ? (
-          <div className="flex h-full w-full justify-center" style={viewportStyle}>
+          <div className="flex h-full w-full flex-col justify-center" style={viewportStyle}>
+            {/* Notice for cross-origin live iframe */}
+            <div className="mb-2 flex items-center justify-between rounded-lg border border-line bg-white/90 px-3 py-1.5 text-[11px] text-ink-soft shadow-xs backdrop-blur-xs">
+              <span className="flex items-center gap-1.5">
+                <Icon d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="h-3.5 w-3.5 text-pink-600" />
+                <span>Live view is rendered in an isolated sandbox. Use <strong>Preview</strong> mode or the <strong>Routes</strong> tree to visually select and edit block sections.</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onCanvasTabChange?.('preview')}
+                className="ml-2 shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold text-pink-600 hover:bg-pink-50"
+              >
+                Switch to Preview
+              </button>
+            </div>
             <iframe
               key={iframeKey}
               src={selectedLiveUrl}
@@ -678,6 +852,7 @@ export function PreviewCanvas({
             </pre>
           </div>
         ) : null}
+        </div>
       </div>
     </main>
   );

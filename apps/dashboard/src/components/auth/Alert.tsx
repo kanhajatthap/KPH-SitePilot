@@ -6,9 +6,9 @@ interface AlertProps {
 }
 
 const STYLES: Record<AlertProps['variant'], string> = {
-  error: 'border-rose-200 bg-rose-50 text-rose-700',
-  info: 'border-sky-200 bg-sky-50 text-sky-800',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  error: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200',
+  info: 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200',
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200',
 };
 
 export function Alert({ variant, children }: AlertProps) {

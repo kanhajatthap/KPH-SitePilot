@@ -12,6 +12,7 @@ describe('SitePilot shared prompts', () => {
     expect(prompt).toContain('Indirect Prompt Injection Defense');
     expect(prompt).toContain('read-only Agent mode');
     expect(prompt).toContain('Never claim a change was applied unless a tool result confirms it');
+    expect(prompt).toContain('prior assistant claims are not proof');
   });
 
   it('requires explicit approval in writes mode', () => {

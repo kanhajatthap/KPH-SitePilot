@@ -5,19 +5,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Theme tokens resolve from CSS variables (see globals.css :root / .dark)
         paper: {
-          DEFAULT: '#faf9f6',
-          deep: '#f3f0ea',
-          card: '#ffffff',
+          DEFAULT: 'rgb(var(--paper-rgb) / <alpha-value>)',
+          deep: 'rgb(var(--paper-deep-rgb) / <alpha-value>)',
+          card: 'rgb(var(--card-rgb) / <alpha-value>)',
         },
+        card: 'rgb(var(--card-rgb) / <alpha-value>)',
+        muted: 'rgb(var(--muted-rgb) / <alpha-value>)',
         ink: {
-          DEFAULT: '#1b1917',
-          soft: '#44403c',
-          muted: '#7c756c',
+          DEFAULT: 'rgb(var(--ink-rgb) / <alpha-value>)',
+          soft: 'rgb(var(--ink-soft-rgb) / <alpha-value>)',
+          muted: 'rgb(var(--muted-rgb) / <alpha-value>)',
         },
         line: {
-          DEFAULT: '#e8e3da',
-          strong: '#d9d2c7',
+          DEFAULT: 'rgb(var(--line-rgb) / <alpha-value>)',
+          strong: 'rgb(var(--line-strong-rgb) / <alpha-value>)',
         },
         brand: {
           50: '#fff1f2',

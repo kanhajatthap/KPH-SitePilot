@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { prompt, systemPrompt } = body;
+    const { prompt, systemPrompt, conversationHistory } = body;
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return NextResponse.json(
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           prompt: prompt.trim(),
           systemPrompt,
+          conversationHistory,
         }),
       });
     } catch (err) {

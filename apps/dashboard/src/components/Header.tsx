@@ -336,6 +336,13 @@ export function Header({
               </div>
               <div className="my-1 h-px bg-line" />
               <Link
+                href="/settings"
+                className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink-soft transition hover:bg-paper-deep hover:text-ink"
+              >
+                <Icon d="M3 10h18M3 14h18M5 3v18M19 3v18M10 15l-3-3m0 0l3-3m-3 3l3 3" className="h-3.5 w-3.5" />
+                Settings
+              </Link>
+              <Link
                 href="/about"
                 className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink-soft transition hover:bg-paper-deep hover:text-ink"
               >

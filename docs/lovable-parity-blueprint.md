@@ -62,8 +62,9 @@ Engineering rules:
 - Auth screens aligned to the same system.
 
 ### Phase 2 — Workspace memory
-- Recent conversations and projects (localStorage first, Supabase later).
-- Resume a conversation with full message history.
+- [x] Persist and resume the current conversation across page reloads (browser storage locally, session-authenticated RLS-scoped Supabase storage in SaaS mode).
+- [x] Recent-conversation archive so starting a new task/chat does not discard the previous thread; latest 50 retained, with individual delete and confirmed clear-all.
+- [x] Resume a selected conversation with its full message history.
 - Per-project site binding and last-known capability snapshot.
 
 ### Phase 3 — Agent quality
@@ -71,12 +72,26 @@ Engineering rules:
 - Stream reasoning tokens and tool calls into the timeline.
 - Structured "what changed" summaries with diffs and undo hints.
 - Follow-up awareness: edits apply to the last staged artifact unless re-scoped.
+- [x] Pass recent user/assistant messages into Chat and Agent requests (maximum 12 messages, 2,000 characters each); client-supplied system messages are rejected and old assistant claims are not treated as verified site state.
+- [x] Wire authenticated dashboard plugin list/propose/apply routes; plugin uninstall requires explicit approval and verifies the plugin is absent afterward.
+- [x] Stage existing-page redesigns and reversible Trash operations from chat; approval checks the page has not changed, protects the active homepage, and verifies the resulting state. Redesigns use schema-validated model section plans rendered to Gutenberg blocks without accepting model-supplied markup.
+- [x] Persist and resume the current conversation across page reloads; SaaS history is session-authenticated and row-level-security scoped, while local mode uses browser storage. History is bounded and reloaded messages do not restore actionable approval cards.
+- [x] Retain completed conversations when starting a new task/chat, with archive/list, safe resume flow, individual delete, and confirmed clear-all; user confirmed behavior in the local browser.
+
+### Phase 2 acceptance notes
+- Supabase chat-history migration applied successfully on an ephemeral GitHub Actions local stack.
+- Database/RLS suite passed all 14 pgTAP assertions in workflow run [40459112930](https://github.com/kanhajatthap/KPH-SitePilot/actions/runs/40459112930).
+- The conversation archive migration and updated RLS suite passed in local-only workflow run [40465140394](https://github.com/kanhajatthap/KPH-SitePilot/actions/runs/40465140394).
+- User verified local browser persistence after reload, New chat archiving, resume, individual deletion (including after reload), and Clear all confirmation with Cancel leaving the seeded conversation intact; temporary test chat was then deleted.
+- Dashboard local-mode override is set in `apps/dashboard/.env.local`; the user reports dashboard is running locally with no `/api/chat/history` request during the test.
+- Session-authenticated SaaS browser sync has not been tested; do not point this local-only test workflow at hosted Supabase.
+- The developer PC does not need Docker for this validation path; the workflow uses only the isolated local Supabase stack and never a hosted project.
 
 ### Phase 4 — Build surface
-- File/route tree for generated pages and sections.
-- Version history with restore.
-- Inline section editing and visual selection.
-- Deploy/publish checklist with pre-flight checks.
+- [x] File/route tree for generated pages and sections: read-only navigation tree showing connected local site pages and identified block sections. Reuses existing page inventory and section contracts; supports expand/collapse, loading/empty/error states with retry, and safe preview navigation without triggering mutations or bypassing approval gates.
+- [x] Local page version history: capture before approved updates, section edits, Trash, and restores; chat can list/compare snapshots and stage an explicit restore approval. Restore checks for stale page changes, creates a backup, and verifies exact read-back. Retention is 20 versions per page and content is limited to 2 MiB. Automated tests pass; live LocalWP restore testing remains.
+- [x] Inline section editing and visual selection: interactive visual section selector bar and canvas region indicators in the build preview surface with hover/selected ring states, bidirectional sync with RouteTree, keyboard navigation (`Tab`, `Enter`/`Space`, `Escape` to clear), screen-reader aria region descriptors, and live iframe sandbox notice banners. Selection remains strictly read-only; inline editing triggers flow through `proposeSectionEdit` and require explicit user approval without auto-applying mutations.
+- [x] Deploy/publish checklist with pre-flight checks: pre-flight checks evaluate authorized local target environments, post status staging, content presence/integrity, and title requirements as blocking items, with SEO excerpt and permalink slug recommendations as advisory warnings. The checklist is surfaced in the dashboard publish approval modal, publish live action is disabled on blocking failures, and all checks are strictly re-verified on the API server during apply before executing verified publication. Automated tests pass across contracts, API, and dashboard routes.
 
 ## 4. Acceptance for Phase 1
 - `tsc --noEmit` passes for the dashboard.

@@ -11,14 +11,25 @@ import {
   QueuedTask,
   PublishProposalResponse,
 } from '../lib/types';
+import { PersistedChatConversation } from '@wp-agent/contracts';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
+  chatHistoryLoading?: boolean;
+  chatHistoryReady?: boolean;
+  chatHistoryError?: string;
+  onRetryChatHistory?: () => void;
+  onContinueWithoutChatHistory?: () => void;
   isLoading: boolean;
   activeTask?: AgentExecutionTask;
   queuedTasks: QueuedTask[];
   onSendMessage: (prompt: string) => void;
   onClearChat: () => void;
+  conversations: PersistedChatConversation[];
+  activeConversationId: string | null;
+  onResumeConversation: (conversationId: string) => void;
+  onDeleteConversation: (conversationId: string) => void;
+  onDeleteAllConversations: () => void;
   selectedSite: string;
   onSelectSite: (site: string) => void;
   availableSites: AvailableSite[];
@@ -197,10 +208,10 @@ function ToolActivityCard({
   const denied = tool.status === 'denied';
   const failed = tool.status === 'error';
   const tone = denied
-    ? 'border-rose-200 bg-rose-50/70 text-rose-700'
+    ? 'border-rose-200 bg-rose-50/70 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
     : failed
-    ? 'border-amber-200 bg-amber-50/70 text-amber-700'
-    : 'border-line bg-white text-ink-soft';
+    ? 'border-amber-200 bg-amber-50/70 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200'
+    : 'border-line bg-white text-ink-soft dark:border-line dark:bg-card dark:text-ink-muted';
 
   return (
     <div className={`overflow-hidden rounded-xl border text-[11px] ${tone}`}>
@@ -325,6 +336,18 @@ function BuilderProposalCard({
   onApprove?: () => void;
   onReject?: () => void;
 }) {
+  const destructive =
+    (proposal.operationType === 'plugin' && proposal.pluginAction === 'delete') ||
+    proposal.operationType === 'page_trash';
+  const destructiveLabel = proposal.operationType === 'page_trash'
+    ? 'Approve & Move to Trash'
+    : 'Approve & Uninstall';
+  const approvalLabel = proposal.operationType === 'page_restore'
+    ? 'Approve restore'
+    : destructive
+      ? destructiveLabel
+      : 'Approve change';
+
   return (
     <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-3.5">
       <div className="flex items-center justify-between gap-2">
@@ -367,10 +390,14 @@ function BuilderProposalCard({
               type="button"
               onClick={onApprove}
               disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition disabled:opacity-50 ${
+                destructive
+                  ? 'bg-rose-700 hover:bg-rose-800'
+                  : 'bg-ink hover:bg-stone-800'
+              }`}
             >
               {busy ? <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" /> : null}
-              Approve change
+              {approvalLabel}
             </button>
           </div>
         )}
@@ -381,11 +408,21 @@ function BuilderProposalCard({
 
 export function ChatPanel({
   messages,
+  chatHistoryLoading = false,
+  chatHistoryReady = true,
+  chatHistoryError,
+  onRetryChatHistory,
+  onContinueWithoutChatHistory,
   isLoading,
   activeTask,
   queuedTasks,
   onSendMessage,
   onClearChat,
+  conversations,
+  activeConversationId,
+  onResumeConversation,
+  onDeleteConversation,
+  onDeleteAllConversations,
   selectedSite,
   onSelectSite,
   availableSites,
@@ -407,6 +444,7 @@ export function ChatPanel({
   isPublishing,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [approvingPlanId, setApprovingPlanId] = useState<string | null>(null);
   const [revisionState, setRevisionState] = useState<{
@@ -462,7 +500,7 @@ export function ChatPanel({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!input.trim()) return;
+    if (!chatHistoryReady || !input.trim()) return;
     onSendMessage(input.trim());
     setInput('');
   };
@@ -533,7 +571,7 @@ export function ChatPanel({
   return (
     <aside className="flex h-full w-full shrink-0 flex-col border-r border-line bg-white/60 md:w-[420px] lg:w-[460px]">
       {/* Header */}
-      <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-line px-4">
+      <div className="relative flex h-[52px] shrink-0 items-center justify-between border-b border-line px-4">
         <div className="flex min-w-0 items-center gap-2">
           <span className="brand-gradient flex h-6 w-6 items-center justify-center rounded-lg text-white">
             <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-3.5 w-3.5" />
@@ -544,17 +582,131 @@ export function ChatPanel({
             autonomous
           </span>
         </div>
-        {messages.length > 0 ? (
-          <button
-            type="button"
-            onClick={onClearChat}
-            className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
-            title="Start a new conversation"
+        <div className="flex items-center gap-1">
+          {conversations.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((open) => !open)}
+              aria-expanded={historyOpen}
+              className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+            >
+              History ({conversations.length})
+            </button>
+          ) : null}
+          {messages.length > 0 ? (
+            <button
+              type="button"
+              onClick={onClearChat}
+              disabled={isLoading || !chatHistoryReady}
+              className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              title="Save this conversation and start a new one"
+            >
+              New chat
+            </button>
+          ) : null}
+        </div>
+        {historyOpen ? (
+          <div
+            role="dialog"
+            aria-label="Conversation history"
+            className="absolute right-3 top-full z-30 mt-1 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-line bg-white shadow-xl"
           >
-            New chat
-          </button>
+            <div className="flex items-center justify-between border-b border-line px-3 py-2">
+              <span className="text-xs font-semibold text-ink">Recent conversations</span>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                className="rounded px-1.5 py-0.5 text-xs text-ink-muted hover:bg-paper"
+                aria-label="Close conversation history"
+              >
+                Close
+              </button>
+            </div>
+            <ul className="max-h-72 overflow-y-auto p-1.5">
+              {[...conversations].reverse().map((conversation) => (
+                <li key={conversation.id} className="flex items-center gap-1 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onResumeConversation(conversation.id);
+                      setHistoryOpen(false);
+                    }}
+                    disabled={isLoading}
+                    className={`min-w-0 flex-1 rounded-lg px-2.5 py-2 text-left hover:bg-paper disabled:opacity-50 ${
+                      activeConversationId === conversation.id ? 'bg-paper' : ''
+                    }`}
+                  >
+                    <span className="block truncate text-xs font-medium text-ink">
+                      {conversation.title}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-ink-muted">
+                      {new Date(conversation.updatedAt).toLocaleString()} · {conversation.messages.length} messages
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteConversation(conversation.id)}
+                    disabled={isLoading}
+                    className="mr-1 rounded-md px-2 py-1 text-[10px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    aria-label={`Delete ${conversation.title}`}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center justify-between border-t border-line px-3 py-2">
+              <span className="text-[10px] text-ink-muted">Keeps the latest 50 conversations</span>
+              <button
+                type="button"
+                onClick={onDeleteAllConversations}
+                disabled={isLoading || conversations.length === 0}
+                className="rounded px-1.5 py-1 text-[10px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
         ) : null}
       </div>
+
+      {chatHistoryLoading || chatHistoryError ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`flex items-center justify-between gap-2 border-b px-4 py-2 text-[10px] ${
+            chatHistoryError
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-line bg-paper text-ink-muted'
+          }`}
+        >
+          <span>
+            {chatHistoryError
+              ? `Chat history sync issue: ${chatHistoryError}`
+              : 'Restoring saved chat history…'}
+          </span>
+          {chatHistoryError && onRetryChatHistory ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={onRetryChatHistory}
+                className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100"
+              >
+                Retry
+              </button>
+              {!chatHistoryReady && onContinueWithoutChatHistory ? (
+                <button
+                  type="button"
+                  onClick={onContinueWithoutChatHistory}
+                  className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100"
+                >
+                  Continue temporarily
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Conversation */}
       <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
@@ -634,7 +786,7 @@ export function ChatPanel({
                       <div
                         className={
                           isUser
-                            ? 'rounded-2xl rounded-br-md bg-[#f1ede6] px-3.5 py-2.5 text-[13px] leading-relaxed text-ink'
+                            ? 'rounded-2xl rounded-br-md bg-[#2a2a26] px-3.5 py-2.5 text-[13px] leading-relaxed text-ink'
                             : 'text-[13px] leading-6 text-ink-soft'
                         }
                       >
@@ -938,9 +1090,12 @@ export function ChatPanel({
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={!chatHistoryReady}
             rows={1}
             placeholder={
-              agentMode === 'writes'
+              !chatHistoryReady
+                ? 'Waiting for chat history…'
+                : agentMode === 'writes'
                 ? `Describe the change to stage on ${siteLabel}…`
                 : agentMode === 'agent'
                 ? `Ask anything about ${siteLabel}…`
@@ -1002,7 +1157,7 @@ export function ChatPanel({
               ) : null}
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!chatHistoryReady || !input.trim()}
                 className="brand-gradient focus-ring flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 aria-label="Send prompt"
                 title="Send (Enter)"
@@ -1027,7 +1182,7 @@ export function ChatPanel({
       {/* Publish confirmation */}
       {activePublishProposal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-sm">
-          <div className="surface-card w-full max-w-md rounded-2xl p-5">
+          <div className="surface-card w-full max-w-lg rounded-2xl p-5 shadow-xl">
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                 <Icon d="M12 19V5M6 11l6-6 6 6" className="h-4 w-4 text-emerald-600" />
@@ -1066,7 +1221,80 @@ export function ChatPanel({
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
+            {/* Pre-flight Checklist */}
+            {activePublishProposal.checklist ? (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-ink">Pre-flight Checklist</span>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    {activePublishProposal.checklist.hasBlockingFailures ? (
+                      <span className="font-semibold text-rose-600">Action Required (Blocking)</span>
+                    ) : (
+                      <span className="font-semibold text-emerald-600">All blocking checks passed</span>
+                    )}
+                    {activePublishProposal.checklist.warningCount > 0 ? (
+                      <span className="text-amber-700">({activePublishProposal.checklist.warningCount} advisory {activePublishProposal.checklist.warningCount === 1 ? 'warning' : 'warnings'})</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl border border-line bg-paper-deep/40 p-2.5 text-[11px]">
+                  {activePublishProposal.checklist.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-start gap-2 rounded-lg border p-2 transition ${
+                        item.passed
+                          ? 'border-line/70 bg-paper/60 text-ink'
+                          : item.severity === 'blocking'
+                          ? 'border-rose-200 bg-rose-50/70 text-rose-900'
+                          : 'border-amber-200 bg-amber-50/70 text-amber-900'
+                      }`}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        {item.passed ? (
+                          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                            ✓
+                          </span>
+                        ) : item.severity === 'blocking' ? (
+                          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-200 text-[10px] font-bold text-rose-700">
+                            !
+                          </span>
+                        ) : (
+                          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-200 text-[10px] font-bold text-amber-800">
+                            i
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-medium">{item.label}</span>
+                          <span
+                            className={`rounded px-1.5 py-0.2 text-[9px] font-semibold uppercase tracking-wider ${
+                              item.passed
+                                ? 'bg-emerald-100/80 text-emerald-800'
+                                : item.severity === 'blocking'
+                                ? 'bg-rose-200/80 text-rose-800'
+                                : 'bg-amber-200/80 text-amber-800'
+                            }`}
+                          >
+                            {item.passed ? 'PASS' : item.severity}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-[10px] opacity-80">{item.details || item.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {activePublishProposal.checklist.hasBlockingFailures ? (
+                  <div className="rounded-lg bg-rose-50 p-2 text-[10.5px] font-medium text-rose-700">
+                    Publishing is disabled until all blocking items are resolved.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-line pt-3">
               <button
                 type="button"
                 onClick={onCancelPublish}
@@ -1078,8 +1306,13 @@ export function ChatPanel({
               <button
                 type="button"
                 onClick={() => onApprovePublish?.(activePublishProposal)}
-                disabled={isPublishing}
-                className="flex items-center gap-1.5 rounded-lg bg-ink px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50"
+                disabled={isPublishing || Boolean(activePublishProposal.checklist?.hasBlockingFailures)}
+                title={
+                  activePublishProposal.checklist?.hasBlockingFailures
+                    ? 'Resolve all blocking checklist failures before publishing'
+                    : 'Publish live to WordPress'
+                }
+                className="flex items-center gap-1.5 rounded-lg bg-ink px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isPublishing ? (
                   <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />

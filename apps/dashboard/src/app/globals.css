@@ -17,15 +17,67 @@
   --ok: #16a34a;
   --warn: #d97706;
   --danger: #e11d48;
+  --paper-rgb: 250 249 246;
+  --paper-deep-rgb: 243 240 234;
+  --card-rgb: 255 255 255;
+  --ink-rgb: 27 25 23;
+  --ink-soft-rgb: 68 64 60;
+  --muted-rgb: 124 117 108;
+  --line-rgb: 232 227 218;
+  --line-strong-rgb: 217 210 199;
+  color-scheme: light;
 }
 
 * {
   border-color: var(--line);
 }
 
+.dark {
+  --paper: #0f0f0e;
+  --paper-deep: #181815;
+  --card: #161614;
+  --ink: #f4f1ea;
+  --ink-soft: #cbc8c2;
+  --muted: #a8a59f;
+  --line: #282622;
+  --line-strong: #3b3833;
+  --brand-1: #ff8a5b;
+  --brand-2: #ff4d8d;
+  --brand-3: #a855f7;
+  --ok: #22c55e;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --paper-rgb: 15 15 14;
+  --paper-deep-rgb: 24 24 21;
+  --card-rgb: 22 22 20;
+  --ink-rgb: 244 241 234;
+  --ink-soft-rgb: 203 200 194;
+  --muted-rgb: 168 165 159;
+  --line-rgb: 40 38 34;
+  --line-strong-rgb: 59 56 51;
+  color-scheme: dark;
+}
+
+body.dark {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
 html,
 body {
   min-height: 100%;
+}
+
+html.dark,
+body,
+body.dark {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+html.dark body {
+  background-color: var(--paper);
+  color: var(--ink);
 }
 
 body {
@@ -180,6 +232,141 @@ body {
   scrollbar-width: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-soft-pulse,
+  .shimmer-text {
+    animation: none !important;
+  }
+}
+
+html,
+html.dark,
+body,
+body.dark {
+  min-height: 100%;
+}
+
+html.dark,
+html.dark body,
+html.dark main,
+html.dark header,
+html.dark footer {
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+/* Override Tailwind literal-color utilities when in dark mode */
+html.dark .bg-paper { background-color: var(--paper) !important; }
+html.dark .bg-paper-deep { background-color: var(--paper-deep) !important; }
+html.dark .bg-card { background-color: var(--card) !important; }
+/* bg-ink is an inverted "contrast" surface: light in dark mode, so its text must flip too. */
+html.dark .bg-ink,
+html.dark .bg-ink.text-white,
+html.dark .bg-ink .text-white { color: var(--paper) !important; }
+html.dark .bg-ink:hover { background-color: rgb(var(--ink-soft-rgb)) !important; }
+
+/* That inverted surface is light in dark mode, so light text utilities used inside it
+   must become dark. Without this, labels render white-on-white (e.g. the About CTA). */
+html.dark .bg-ink .text-pink-300,
+html.dark .bg-ink .text-pink-400 { color: #9d174d !important; }
+html.dark .bg-ink .text-stone-100,
+html.dark .bg-ink .text-stone-200,
+html.dark .bg-ink .text-stone-300,
+html.dark .bg-ink .text-stone-400 { color: #57534e !important; }
+html.dark .bg-ink .text-ink-soft { color: #44403c !important; }
+html.dark .bg-ink .text-ink-muted { color: #57534e !important; }
+html.dark .text-ink { color: var(--ink) !important; }
+html.dark .text-ink-muted { color: var(--ink-soft) !important; }
+html.dark .text-muted { color: var(--muted) !important; }
+html.dark .border-line { border-color: var(--line) !important; }
+html.dark .border-line-strong { border-color: var(--line-strong) !important; }
+html.dark .surface-card { background: var(--card) !important; border-color: var(--line) !important; }
+html.dark .soft-shadow { box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 14px 34px -22px rgba(0,0,0,.3) !important; }
+html.dark .focus-ring { @apply outline-none focus-visible:ring-2 focus-visible:ring-pink-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white; }
+
+/* Override hardcoded literal colors used across components */
+html.dark .bg-white { background-color: var(--card) !important; }
+html.dark .bg-white\/60 { background-color: var(--card) !important; }
+html.dark .bg-white\/70 { background-color: var(--card) !important; }
+html.dark .bg-white\/80 { background-color: var(--card) !important; }
+html.dark .bg-white\/90 { background-color: var(--card) !important; }
+
+/* Status banners that use light Tailwind shades */
+html.dark .bg-amber-50 { background-color: rgba(251, 146, 60, 0.16) !important; }
+html.dark .bg-violet-50 { background-color: rgba(132, 204, 255, 0.12) !important; }
+html.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.16) !important; }
+html.dark .bg-rose-50\/70 { background-color: rgba(244, 63, 94, 0.18) !important; }
+html.dark .bg-emerald-50 { background-color: rgba(34, 197, 94, 0.16) !important; }
+html.dark .bg-sky-50 { background-color: rgba(2, 132, 199, 0.16) !important; }
+html.dark .text-amber-800 { color: #fcd34d !important; }
+html.dark .text-violet-800 { color: #a78bfa !important; }
+html.dark .text-rose-700,
+html.dark .text-amber-700 { color: #fecdd2 !important; }
+html.dark .text-emerald-700 { color: #86efac !important; }
+html.dark .text-sky-800 { color: #7dd3fc !important; }
+html.dark .text-pink-600 { color: #fb7185 !important; }
+html.dark .text-pink-300 { color: #fda4af !important; }
+html.dark .text-stone-300 { color: #d6d3d1 !important; }
+html.dark .text-emerald-300 { color: #86efac !important; }
+html.dark .text-rose-600 { color: #fb7185 !important; }
+html.dark .text-rose-600\/80 { color: rgba(251, 113, 133, 0.8) !important; }
+html.dark .text-rose-700\/90 { color: rgba(244, 63, 94, 0.9) !important; }
+html.dark .text-rose-700\/80 { color: rgba(244, 63, 94, 0.8) !important; }
+html.dark .text-emerald-700\/80 { color: rgba(34, 197, 94, 0.8) !important; }
+html.dark .text-amber-800 { color: #fcd34d !important; }
+html.dark .text-amber-700 { color: #fdba74 !important; }
+
+.dark .glass {
+  background: rgba(22, 22, 20, 0.78);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border: 1px solid var(--line);
+}
+
+.dark .dots-bg {
+  background-color: var(--paper-deep);
+  background-image: radial-gradient(rgba(244, 241, 234, 0.08) 1px, transparent 1px);
+  border: none;
+}
+
+.dark .composer-shell {
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 4px rgba(0,0,0,.03), 0 22px 48px -30px rgba(0,0,0,.35);
+}
+.dark .composer-shell:focus-within {
+  border-color: rgba(255,77,141,0.45);
+  box-shadow: 0 0 0 4px rgba(255,77,141,0.09), 0 22px 48px -30px rgba(0,0,0,.4);
+}
+
+.dark .shimmer-text {
+  background-image: linear-gradient(90deg, var(--muted) 0%, var(--ink) 45%, var(--muted) 90%);
+}
+
+.dark .brand-text {
+  background-image: linear-gradient(120deg, #7f9cf5 0%, #667eea 55%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dark ::selection {
+  background: rgba(255, 77, 141, 0.16);
+}
+
+/* Scrollbars */
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, 0.22);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 113, 108, 0.4);
+  background-clip: content-box;
+}
+
+/* Keyframes won't be overridden; animations still work in dark */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .animate-soft-pulse,

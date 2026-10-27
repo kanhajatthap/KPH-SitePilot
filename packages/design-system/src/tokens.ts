@@ -1,0 +1,91 @@
+/**
+ * Design tokens for wp-agent design system.
+ * WordPress‑native colour palette, spacing scale, radius and shadows.
+ * All values are static constants – swap via `createTheme()` if ever needed.
+ */
+
+export const colors = {
+  // Brand – WordPress blue (#0073AA) family
+  primary: '#0073AA',
+  primaryHover: '#005177',
+  primaryActive: '#003950',
+  primaryFocusRing: 'rgba(0, 115, 170, 0.25)',
+
+  // Neutrals – mirrors WP Admin background / surface scale
+  background: '#f6f7f7',
+  backgroundAlt: '#f0f0f0',
+  surface: '#ffffff',
+  surfaceAlt: '#fafafa',
+
+  // Text
+  text: '#1d2327',
+  textMuted: '#646970',
+  textOnPrimary: '#ffffff',
+
+  // Borders & lines
+  border: '#dcdcde',
+  borderStrong: '#c3c4c7',
+
+  // Feedback
+  success: '#46b450',
+  successBg: '#edf7ed',
+  warning: '#ffb900',
+  warningBg: '#fff8e5',
+  error: '#dc3232',
+  errorBg: '#fcf0ef',
+  info: '#2271b1',
+  infoBg: '#f0f6fb',
+
+  // Overlay / scrim
+  scrim: 'rgba(0, 0, 0, 0.5)',
+} as const;
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  '2xl': 48,
+} as const;
+
+export const radius = {
+  sm: 4,
+  md: 6,
+  lg: 8,
+  pill: 9999,
+} as const;
+
+export const shadows = {
+  sm: '0 1px 2px rgba(0, 0, 0, 0.05)',
+  md: '0 4px 8px rgba(0, 0, 0, 0.08)',
+  lg: '0 12px 24px rgba(0, 0, 0, 0.12)',
+} as const;
+
+export type ColorToken = keyof typeof colors;
+export type SpacingToken = keyof typeof spacing;
+export type RadiusToken = keyof typeof radius;
+export type ShadowToken = keyof typeof shadows;
+
+export interface DesignTokens {
+  colors: typeof colors;
+  spacing: typeof spacing;
+  radius: typeof radius;
+  shadows: typeof shadows;
+}
+
+export const designTokens: DesignTokens = {
+  colors,
+  spacing,
+  radius,
+  shadows,
+};
+
+export function createTheme(overrides?: Partial<DesignTokens>): DesignTokens {
+  return {
+    colors: { ...colors, ...overrides?.colors },
+    spacing: { ...spacing, ...overrides?.spacing },
+    radius: { ...radius, ...overrides?.radius },
+    shadows: { ...shadows, ...overrides?.shadows },
+  };
+}

@@ -268,6 +268,115 @@ describe('Publish Privilege Boundary & Activity Stream API Tests', () => {
       // Proposal removed from cache
       expect(activeProposals.has(proposal.planId)).toBe(false);
     });
+
+    it('includes pre-flight checklist with passing checks and warnings in publish proposal', async () => {
+      currentPostState = {
+        ...mockPostData,
+        status: 'draft',
+        excerpt: { rendered: '', raw: '' }, // empty excerpt -> triggers warning
+      };
+
+      const propRes = await fetch(`${baseUrl}/api/publish/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          postId: 101,
+        }),
+      });
+
+      expect(propRes.status).toBe(200);
+      const proposal = (await propRes.json()) as any;
+      expect(proposal.checklist).toBeDefined();
+      expect(proposal.checklist.passed).toBe(true);
+      expect(proposal.checklist.hasBlockingFailures).toBe(false);
+      expect(proposal.checklist.warningCount).toBeGreaterThan(0);
+
+      const excerptCheck = proposal.checklist.items.find((i: any) => i.id === 'seo_excerpt');
+      expect(excerptCheck).toBeDefined();
+      expect(excerptCheck.severity).toBe('warning');
+      expect(excerptCheck.passed).toBe(false);
+
+      const targetCheck = proposal.checklist.items.find((i: any) => i.id === 'target_environment');
+      expect(targetCheck.passed).toBe(true);
+      expect(targetCheck.severity).toBe('blocking');
+    });
+
+    it('rejects publish proposal for non-local unauthorized target environment', async () => {
+      const propRes = await fetch(`${baseUrl}/api/publish/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'https://production-wordpress.com',
+          postId: 101,
+        }),
+      });
+
+      expect(propRes.status).toBe(403);
+      const data = (await propRes.json()) as any;
+      expect(data.error).toBe('TARGET_NOT_ALLOWED');
+    });
+
+    it('rejects publish approval on API side when post has blocking pre-flight failure (empty content)', async () => {
+      // 1. Propose with valid post state
+      currentPostState = { ...mockPostData, status: 'draft', content: { rendered: '<p>Valid</p>', raw: '<p>Valid</p>' } };
+      const propRes = await fetch(`${baseUrl}/api/publish/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          postId: 101,
+        }),
+      });
+      expect(propRes.status).toBe(200);
+      const proposal = (await propRes.json()) as any;
+
+      // 2. Post becomes invalid in WordPress between proposal and approval (e.g. wiped content)
+      currentPostState = {
+        ...currentPostState,
+        content: { rendered: '', raw: '' },
+      };
+
+      // 3. Attempt apply -> API rechecks and fails closed with 409
+      const applyRes = await fetch(`${baseUrl}/api/publish/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: 'http://test.local',
+          postId: 101,
+          intendedStatus: 'publish',
+          approvedBy: 'user',
+        }),
+      });
+
+      expect(applyRes.status).toBe(409);
+      const applyData = (await applyRes.json()) as any;
+      expect(applyData.error).toBe('VALIDATION_FAILED');
+      expect(applyData.message).toContain('Pre-flight checklist failed blocking checks');
+      expect(applyData.checklist.hasBlockingFailures).toBe(true);
+    });
+
+    it('rejects stale or nonexistent publish approval requests with 400', async () => {
+      const applyRes = await fetch(`${baseUrl}/api/publish/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: '123e4567-e89b-12d3-a456-426614174099',
+          integrityHash: 'invalid-hash-value',
+          targetSite: 'http://test.local',
+          postId: 101,
+          intendedStatus: 'publish',
+          approvedBy: 'user',
+        }),
+      });
+
+      expect(applyRes.status).toBe(400);
+      const data = (await applyRes.json()) as any;
+      expect(data.error).toBe('VALIDATION_FAILED');
+      expect(data.message).toContain('not found or expired');
+    });
   });
 
   describe('POST /api/draft/revise', () => {

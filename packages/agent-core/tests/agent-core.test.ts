@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AgentCore } from '../src/index.js';
-import { MockModelAdapter } from '@wp-agent/model-adapters';
+import { MockModelAdapter, ModelAdapter, ModelMessage } from '@wp-agent/model-adapters';
 import { AuditLogger } from '@wp-agent/audit';
 import { WordPressClient, HttpTransport } from '@wp-agent/wp-client';
 import {
@@ -31,7 +31,7 @@ describe('AgentCore Security & Orchestration', () => {
     );
   };
 
-  const createTestEnv = (modelAdapter?: MockModelAdapter) => {
+  const createTestEnv = (modelAdapter?: ModelAdapter) => {
     const auditLogger = new AuditLogger();
     const wpClient = new WordPressClient({ transport: mockTransport });
     const adapter =
@@ -164,6 +164,40 @@ describe('AgentCore Security & Orchestration', () => {
     expect(response.executedTools).toHaveLength(1);
     expect(response.executedTools[0].name).toBe('page.read');
     expect(response.executedTools[0].isError).toBe(false);
+  });
+
+  it('includes bounded conversation history before the current user request', async () => {
+    let receivedMessages: ModelMessage[] = [];
+    const adapter: ModelAdapter = {
+      providerId: 'history-test',
+      modelName: 'history-test-v1',
+      async validateCredentials() {
+        return true;
+      },
+      async generate(messages) {
+        receivedMessages = messages;
+        return { content: 'I will keep the previous context in mind.' };
+      },
+    };
+    const { agent } = createTestEnv(adapter);
+
+    await agent.processRequest({
+      correlationId: '00000000-0000-0000-0000-000000000003',
+      prompt: 'Make the button blue',
+      targetSite: 'http://plugin-test.local',
+      conversationHistory: [
+        { role: 'user', content: 'Create a landing page.' },
+        { role: 'assistant', content: 'I staged the landing page proposal.' },
+      ],
+    });
+
+    expect(receivedMessages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'system', content: expect.any(String) },
+      { role: 'user', content: 'Create a landing page.' },
+      { role: 'assistant', content: 'I staged the landing page proposal.' },
+      { role: 'user', content: 'Make the button blue' },
+    ]);
+    expect(receivedMessages[0].content).toContain('prior assistant claims are not proof');
   });
 
   it('executes page.read by slug and extracts clean bounded content and excerpt', async () => {

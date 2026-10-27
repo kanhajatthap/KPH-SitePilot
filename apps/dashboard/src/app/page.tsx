@@ -19,7 +19,11 @@ import {
   VerifiedResource,
   PublishProposalResponse,
 } from '../lib/types';
-import { BuilderCapabilities } from '@wp-agent/contracts';
+import {
+  BuilderCapabilities,
+  ChatHistorySchema,
+  PersistedChatConversation,
+} from '@wp-agent/contracts';
 import { synthesizeFromPrompt } from '../lib/ui-synthesizer';
 import {
   checkApiHealth,
@@ -46,11 +50,28 @@ import {
   applyCodeInjection,
   proposePageCreation,
   applyPageCreation,
+  proposePageLifecycle,
+  applyPageLifecycle,
+  generatePageDesign,
+  fetchChatHistory,
+  saveChatHistory,
   fetchPageSections,
   proposeSectionEdit,
   applySectionEdit,
   listSitePages,
+  listPageSnapshots,
+  comparePageSnapshot,
+  proposePageSnapshotRestore,
+  applyPageSnapshotRestore,
 } from '../lib/api-client';
+import {
+  fromPersistedChatHistory,
+  createChatConversation,
+  readLocalChatHistory,
+  saveLocalChatHistory,
+  shouldUseRemoteChatHistory,
+  toPersistedChatHistory,
+} from '../lib/chat-history';
 
 const AVAILABLE_SITES: AvailableSite[] = [
   {
@@ -68,6 +89,29 @@ const AVAILABLE_SITES: AvailableSite[] = [
   },
 ];
 
+function getPageContentDelta(before: string, after: string): { before: string; after: string } {
+  let prefixLength = 0;
+  const sharedLength = Math.min(before.length, after.length);
+  while (prefixLength < sharedLength && before[prefixLength] === after[prefixLength]) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < before.length - prefixLength &&
+    suffixLength < after.length - prefixLength &&
+    before[before.length - suffixLength - 1] === after[after.length - suffixLength - 1]
+  ) {
+    suffixLength += 1;
+  }
+
+  const beforeDelta = before.slice(prefixLength, before.length - suffixLength);
+  const afterDelta = after.slice(prefixLength, after.length - suffixLength);
+  const truncate = (value: string) =>
+    `${value.slice(0, 360).replace(/```/g, '``\\u0060')}${value.length > 360 ? '…' : ''}`;
+  return { before: truncate(beforeDelta), after: truncate(afterDelta) };
+}
+
 export default function DashboardPage() {
   const showSignOut = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -76,6 +120,14 @@ export default function DashboardPage() {
   const [agentMode, setAgentMode] = useState<AgentMode>('agent');
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatConversations, setChatConversations] = useState<PersistedChatConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
+  const [chatHistoryLoading, setChatHistoryLoading] = useState(true);
+  const [chatHistoryError, setChatHistoryError] = useState<string>();
+  const [continueWithoutChatHistory, setContinueWithoutChatHistory] = useState(false);
+  const [chatHistoryLoadAttempt, setChatHistoryLoadAttempt] = useState(0);
+  const [chatHistorySaveAttempt, setChatHistorySaveAttempt] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTask, setActiveTask] = useState<AgentExecutionTask | undefined>(undefined);
   const [queuedTasks, setQueuedTasks] = useState<QueuedTask[]>([]);
@@ -99,6 +151,137 @@ export default function DashboardPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const approvalInFlightRef = useRef(false);
+  const chatHistorySaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const usesRemoteChatHistory = shouldUseRemoteChatHistory(
+    process.env.NEXT_PUBLIC_CHAT_HISTORY_MODE,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setChatHistoryLoading(true);
+
+    const restore = async () => {
+      try {
+        const history = usesRemoteChatHistory
+          ? await fetchChatHistory()
+          : readLocalChatHistory();
+        if (cancelled) return;
+
+        const unsyncedMessages = continueWithoutChatHistory ? messagesRef.current : [];
+        if (unsyncedMessages.length > 0) {
+          const unsyncedConversation = createChatConversation(unsyncedMessages);
+          setChatConversations(
+            [...history.conversations, unsyncedConversation].slice(-50)
+          );
+          setActiveConversationId(unsyncedConversation.id);
+          setMessages(unsyncedMessages);
+        } else {
+          const activeConversation = history.conversations.find(
+            (conversation) => conversation.id === history.activeConversationId
+          );
+          setChatConversations(history.conversations);
+          setActiveConversationId(activeConversation?.id ?? null);
+          setMessages(
+            activeConversation ? fromPersistedChatHistory(activeConversation.messages) : []
+          );
+        }
+        setChatHistoryLoaded(true);
+        setContinueWithoutChatHistory(false);
+        setChatHistoryError(undefined);
+      } catch (error) {
+        if (cancelled) return;
+        setChatHistoryError((error as Error).message || 'Could not load saved chat history.');
+      } finally {
+        if (!cancelled) setChatHistoryLoading(false);
+      }
+    };
+
+    void restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatHistoryLoadAttempt, usesRemoteChatHistory]);
+
+  useEffect(() => {
+    if (!chatHistoryLoaded) return;
+
+    const timeout = window.setTimeout(() => {
+      try {
+        const history = ChatHistorySchema.parse({
+          conversations: chatConversations,
+          activeConversationId,
+        });
+        chatHistorySaveQueueRef.current = chatHistorySaveQueueRef.current
+          .catch(() => undefined)
+          .then(async () => {
+            if (usesRemoteChatHistory) {
+              await saveChatHistory(history);
+            } else {
+              saveLocalChatHistory(history);
+            }
+            setChatHistoryError(undefined);
+          })
+          .catch((error: unknown) => {
+            setChatHistoryError(
+              error instanceof Error ? error.message : 'Could not save chat history.'
+            );
+          });
+      } catch (error) {
+        setChatHistoryError(
+          error instanceof Error ? error.message : 'Could not prepare chat history for saving.'
+        );
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    chatConversations,
+    activeConversationId,
+    chatHistoryLoaded,
+    chatHistorySaveAttempt,
+    usesRemoteChatHistory,
+  ]);
+
+  useEffect(() => {
+    if (!chatHistoryLoaded || !activeConversationId || messages.length === 0) return;
+
+    setChatConversations((previous) => {
+      const existing = previous.find((item) => item.id === activeConversationId);
+      const fresh = createChatConversation(messages);
+      const conversation: PersistedChatConversation = {
+        ...fresh,
+        id: activeConversationId,
+        createdAt: existing?.createdAt ?? fresh.createdAt,
+        title: existing?.title && existing.title !== 'New conversation'
+          ? existing.title
+          : fresh.title,
+      };
+      return [
+        ...previous.filter((item) => item.id !== activeConversationId),
+        conversation,
+      ].slice(-50);
+    });
+  }, [messages, activeConversationId, chatHistoryLoaded]);
+
+  const handleRetryChatHistory = () => {
+    if (chatHistoryLoaded) {
+      setChatHistorySaveAttempt((attempt) => attempt + 1);
+      return;
+    }
+    setChatHistoryLoadAttempt((attempt) => attempt + 1);
+  };
+
+  const handleContinueWithoutChatHistory = () => {
+    setContinueWithoutChatHistory(true);
+    setChatHistoryError(
+      'History is unavailable. New messages will remain temporary until sync recovers.'
+    );
+  };
 
   const [preview, setPreview] = useState<PreviewState>({
     targetSite: AVAILABLE_SITES[0].url,
@@ -596,7 +779,89 @@ export default function DashboardPage() {
         return;
       }
 
+      if (proposal.operationType === 'page_restore') {
+        const details = proposal.pageRestoreDetails;
+        if (!details) throw new Error('Page restore proposal is missing snapshot details.');
+        const result = await applyPageSnapshotRestore({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: proposal.targetSite,
+          pageId: details.pageId,
+          approvedBy: 'user',
+        });
+        setMessages((prev) => [
+          ...prev.map((message) =>
+            message.builderProposal?.planId === proposal.planId
+              ? { ...message, builderProposal: { ...message.builderProposal, isApplied: true } }
+              : message
+          ),
+          {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: `✅ Restored page #${result.pageId} from snapshot \`${result.restoredSnapshotId}\`.\n\n• Backup of the pre-restore page: \`${result.backupSnapshotId}\`\n• Verified by exact read-back: ${result.verified ? 'yes' : 'no'}\n• Page URL: ${result.pageUrl}`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+          },
+        ]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        void handleFetchSitePages();
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed', steps: prev.steps.map((step) => ({ ...step, status: 'completed' })) } : undefined
+          );
+        }
+        return;
+      }
+
       // ── ROUTE: Page Creation (Website Homepage / Landing Page) ───────────
+      if (proposal.operationType === 'page_update' || proposal.operationType === 'page_trash') {
+        const result = await applyPageLifecycle({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: proposal.targetSite,
+          approvedBy: 'user',
+        });
+        const message = result.action === 'trash'
+          ? `Page "${result.title}" (ID #${result.pageId}) was moved to Trash on ${result.targetSite}. Status: ${result.pageStatus}. Verified: ${result.verified ? 'yes' : 'no'}. You can restore it from WordPress admin.`
+          : `Page "${result.title}" (ID #${result.pageId}) was updated on ${result.targetSite}.\n\n• URL: ${result.pageUrl}\n• Status: ${result.pageStatus}\n• Verified by read-back: ${result.verified ? 'yes' : 'no'}`;
+        setMessages((prev) => [
+          ...prev.map((item) =>
+            item.builderProposal?.planId === proposal.planId
+              ? { ...item, builderProposal: { ...item.builderProposal, isApplied: true } }
+              : item
+          ),
+          {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: message,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+          },
+        ]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        void handleFetchSitePages();
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev
+              ? { ...prev, status: 'completed', steps: prev.steps.map((step) => ({ ...step, status: 'completed' })) }
+              : undefined
+          );
+        }
+        return;
+      }
+
       if (proposal.operationType === 'page') {
         const result = await applyPageCreation({
           planId: proposal.planId,
@@ -822,6 +1087,7 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
     overrideMode?: AgentMode,
     overrideSite?: string
   ) => {
+    if (!chatHistoryLoaded) return;
     const currentMode = overrideMode || agentMode;
     const currentSite = overrideSite || selectedSite;
 
@@ -843,6 +1109,13 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
     abortControllerRef.current = controller;
 
     const userMessageId = `msg_user_${Date.now()}`;
+    const conversationHistory = messages
+      .flatMap((message) =>
+        message.role === 'user' || message.role === 'assistant'
+          ? [{ role: message.role, content: message.content.slice(0, 2000) }]
+          : []
+      )
+      .slice(-12);
     const userMessage: ChatMessage = {
       id: userMessageId,
       role: 'user',
@@ -851,6 +1124,13 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
       targetSite: currentSite,
     };
 
+    if (!activeConversationId) {
+      const newConversation = createChatConversation([userMessage]);
+      setActiveConversationId(newConversation.id);
+      setChatConversations((previous) =>
+        [...previous, newConversation].slice(-50)
+      );
+    }
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setPreview((prev) => ({ ...prev, isLoading: true }));
@@ -940,18 +1220,34 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
 
       // --- Intent Detection ---
       const isInspectionPrompt = /^(inspect|check site|get page|read page|site health|wp version)/i.test(p);
+      const isPageQuestion = /^(?:how do i|how can i|what is|what are|should i)\b/i.test(p);
+      const isPageTrashRequest = !isPageQuestion &&
+        /\b(?:delete|trash|remove)\b/i.test(p) && /\bpages?\b/i.test(p);
+      const isPageRestoreRequest = !isPageQuestion &&
+        /\b(?:restore|revert)\b/i.test(p) && /\bpages?\b/i.test(p);
+      const isPageHistoryRequest =
+        !isPageQuestion &&
+        !isPageRestoreRequest &&
+        /\b(?:history|versions?|snapshots?|compare)\b/i.test(p) &&
+        /\bpages?\b/i.test(p);
+      const isPageUpdateRequest = !isPageQuestion &&
+        /\b(?:edit|update|redesign|rewrite|refresh|modify)\b/i.test(p) && /\bpages?\b/i.test(p);
+      const isPageLifecycleRequest = isPageTrashRequest || isPageUpdateRequest;
 
       // Section edit: scoped instruction for a selected page section
       const isSectionEdit =
+        !isPageLifecycleRequest &&
+        !isPageHistoryRequest &&
+        !isPageRestoreRequest &&
         selectedSectionId && selectedSectionId !== 'all' &&
         (
           /(?:change|update|edit|make|set|use|apply|add|remove|adjust|style|modify)/i.test(p) &&
           !/^(inspect|install|activate|create|list|show)/i.test(p)
         );
 
-      // Plugin operations: install, activate, deactivate, list
+      // Plugin operations: install, activate, deactivate, uninstall, list
       const isPluginOp = 
-        /^(install|activate|deactivate|uninstall|delete)\s+(?:the\s+|plugin\s+)?(?:plugin\s+)?[\w-]+/i.test(p) ||
+        /^(install|activate|deactivate|uninstall|delete|remove)\s+(?:the\s+|plugin\s+)?(?:plugin\s+)?[\w-]+/i.test(p) ||
         /(?:install|activate|deactivate)\s+[\w-]+\s+plugin/i.test(p) ||
         /^(list|show)\s+(installed\s+)?plugins/i.test(p) ||
         /plugin[s]?\s*(list|status)/i.test(p);
@@ -1068,13 +1364,265 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         return;
       }
 
+      // --- ROUTE: Existing page update or reversible Trash ---
+      if (isPageHistoryRequest || isPageRestoreRequest) {
+        const identifierMatch =
+          p.match(/\bpage\s+#?(\d+)\b/i) ||
+          p.match(/\bpage\s+["']([^"']+)["']/i) ||
+          p.match(/["']([^"']+)["']\s+page\b/i) ||
+          p.match(/\b(?:for|of)\s+(?:the\s+)?([a-z0-9][a-z0-9_-]*)\s+page\b/i) ||
+          p.match(/\b(?:for|of)\s+page\s+#?([a-z0-9][a-z0-9_-]*)\b/i) ||
+          p.match(/\bpage\s+([a-z0-9][a-z0-9_-]*)\b/i);
+        const identifier = identifierMatch?.[1] || identifierMatch?.[2] || identifierMatch?.[3];
+        const pageIdFromPrompt = identifier && /^\d+$/.test(identifier)
+          ? Number(identifier)
+          : undefined;
+        const page = identifier
+          ? sitePages.find((item) =>
+              String(item.id) === identifier ||
+              item.slug.toLowerCase() === identifier.toLowerCase() ||
+              item.title.toLowerCase() === identifier.toLowerCase()
+            )
+          : undefined;
+        const pageId = page?.id ?? pageIdFromPrompt;
+
+        if (!pageId) {
+          const reply = identifier
+            ? `I couldn't find page "${identifier}" on ${currentSite}. Check its title, slug, or ID and try again.`
+            : 'Tell me the exact page title, slug, or ID so I can show its saved history.';
+          setMessages((prev) => [...prev, {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: reply,
+            timestamp: new Date().toISOString(),
+            status: 'denied',
+          }]);
+          setPreview((prev) => ({ ...prev, isLoading: false }));
+          setActiveTask((prev) => (prev ? { ...prev, status: 'completed' } : undefined));
+          return;
+        }
+
+        const snapshotId = p.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i)?.[0];
+        if (isPageRestoreRequest && snapshotId) {
+          const proposal = await proposePageSnapshotRestore({
+            targetSite: currentSite,
+            pageId,
+            snapshotId,
+          });
+          const builderProposal: BuilderProposal = {
+            status: 'proposed',
+            planId: proposal.planId,
+            integrityHash: proposal.integrityHash,
+            targetSite: proposal.targetSite,
+            builderType: 'gutenberg',
+            title: `Restore ${proposal.restoreTo.title}`,
+            diff: {
+              before: `${proposal.current.title} (${proposal.current.status})`,
+              after: `${proposal.restoreTo.title} (${proposal.restoreTo.status})`,
+            },
+            renderedPreviewHtml: '<main><h1>Page restore proposal</h1><p>The selected saved version will replace the current page after approval.</p><p>Compare the snapshot with the live page before approving if you need to review the content.</p></main>',
+            unsupportedFeatures: [],
+            summary: `${proposal.summary}. Title changed: ${proposal.changes.titleChanged ? 'yes' : 'no'}; status changed: ${proposal.changes.statusChanged ? 'yes' : 'no'}; content changed: ${proposal.changes.contentChanged ? 'yes' : 'no'}.`,
+            createdAt: proposal.createdAt,
+            operationType: 'page_restore',
+            pageRestoreDetails: { pageId, snapshotId },
+          };
+          setMessages((prev) => [...prev, {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: `**Restore staged, not applied.** This will restore page #${pageId} to the saved version from ${new Date(proposal.snapshot.capturedAt).toLocaleString()}. Review the differences and approve the restore card to continue. A backup of the current page will be created before restoring.`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            builderProposal,
+          }]);
+          setPreview((prev) => ({
+            ...prev,
+            isLoading: false,
+            activeView: 'builder',
+            builderProposal,
+            lastUpdated: new Date().toISOString(),
+          }));
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'waiting_for_approval', steps: prev.steps.map((step) => ({ ...step, status: 'completed' })) } : undefined
+          );
+          return;
+        }
+
+        if (isPageHistoryRequest && /compare/i.test(p) && snapshotId) {
+          const comparison = await comparePageSnapshot({
+            targetSite: currentSite,
+            pageId,
+            snapshotId,
+          });
+          const snapshotContent = comparison.snapshot;
+          const currentContent = comparison.currentPage;
+          const removed = snapshotContent.content ?? '';
+          const changed = comparison.differences.contentChanged;
+          const delta = changed
+            ? getPageContentDelta(removed, currentContent.content)
+            : undefined;
+          const contentNote = changed
+            ? `Saved content: ${removed.length.toLocaleString()} characters; current content: ${currentContent.content.length.toLocaleString()} characters.`
+            : 'The saved content matches the current page.';
+          const deltaNote = delta
+            ? `\n\nSaved excerpt:\n\`\`\`text\n${delta.before || '(empty)'}\n\`\`\`\nCurrent excerpt:\n\`\`\`text\n${delta.after || '(empty)'}\n\`\`\``
+            : '';
+          setMessages((prev) => [...prev, {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content: `**Snapshot comparison for page #${pageId}**\n\n• Saved: ${new Date(snapshotContent.capturedAt).toLocaleString()} (${snapshotContent.title}, ${snapshotContent.status})\n• Current: ${currentContent.title}, ${currentContent.status}\n• Title changed: ${comparison.differences.titleChanged ? 'yes' : 'no'}\n• Status changed: ${comparison.differences.statusChanged ? 'yes' : 'no'}\n• ${contentNote}${deltaNote}\n\nTo restore it, say: “restore snapshot ${snapshotId} for page #${pageId}”. I’ll stage it for approval first.`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+          }]);
+          setPreview((prev) => ({ ...prev, isLoading: false }));
+          setActiveTask((prev) => (prev ? { ...prev, status: 'completed' } : undefined));
+          return;
+        }
+
+        const snapshots = await listPageSnapshots(currentSite, pageId);
+        const lines = snapshots.map((snapshot, index) =>
+          `${index + 1}. \`${snapshot.id}\` — ${new Date(snapshot.capturedAt).toLocaleString()} — ${snapshot.title} (${snapshot.status}, ${snapshot.sourceOperation.replaceAll('_', ' ')})`
+        );
+        const promptHint = isPageRestoreRequest
+          ? '\n\nTo restore one, provide its ID, for example: “restore snapshot <ID> for page #' + pageId + '”. I will ask for approval before changing anything.'
+          : '\n\nTo compare a version, say: “compare snapshot <ID> for page #' + pageId + '”.';
+        setMessages((prev) => [...prev, {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: snapshots.length
+            ? `**Saved history for page #${pageId}:**\n\n${lines.join('\n')}${promptHint}`
+            : `There are no saved snapshots for page #${pageId} yet. New snapshots are created before approved page updates, section edits, Trash, and restores; earlier changes are not backfilled.`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        }]);
+        setPreview((prev) => ({ ...prev, isLoading: false }));
+        setActiveTask((prev) => (prev ? { ...prev, status: 'completed' } : undefined));
+        return;
+      }
+
+      if (isPageLifecycleRequest && !isPluginOp && !isSettingsOp && !isCodeInjection) {
+        const identifierMatch =
+          p.match(/\bpage\s+#?(\d+)\b/i) ||
+          p.match(/\bpage\s+["']([^"']+)["']/i) ||
+          p.match(/["']([^"']+)["']\s+page\b/i) ||
+          p.match(/\bpage\s+([a-z0-9][a-z0-9_-]*)\b/i);
+        const identifier = identifierMatch?.[1] || identifierMatch?.[2] || identifierMatch?.[3];
+        const page = identifier
+          ? sitePages.find((item) =>
+              String(item.id) === identifier ||
+              item.slug.toLowerCase() === identifier.toLowerCase() ||
+              item.title.toLowerCase() === identifier.toLowerCase()
+            )
+          : undefined;
+
+        if (!page) {
+          const reply = identifier
+            ? `I couldn't find a page matching "${identifier}" on ${currentSite}. Check the page slug or ID and try again.`
+            : 'Tell me the page slug or ID to change. I will not guess which page to edit or move to Trash.';
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_asst_${Date.now()}`,
+              role: 'assistant',
+              content: reply,
+              timestamp: new Date().toISOString(),
+              status: 'denied',
+            },
+          ]);
+          setPreview((prev) => ({ ...prev, isLoading: false }));
+          setActiveTask((prev) => (prev ? { ...prev, status: 'completed' } : undefined));
+          return;
+        }
+
+        const action = isPageTrashRequest ? 'trash' : 'update';
+        const generated = action === 'update'
+          ? await generatePageDesign({
+              targetSite: currentSite,
+              pageId: page.id,
+              instruction: prompt,
+            })
+          : undefined;
+        const proposed = await proposePageLifecycle({
+          targetSite: currentSite,
+          action,
+          pageId: page.id,
+          ...(generated ? { content: generated.gutenbergBlocksHtml } : {}),
+        });
+        const builderProposal: BuilderProposal = {
+          status: 'proposed',
+          planId: proposed.planId,
+          integrityHash: proposed.integrityHash,
+          targetSite: currentSite,
+          builderType: 'gutenberg',
+          title: action === 'trash'
+            ? `Move page to Trash: ${proposed.title}`
+            : `Redesign page: ${proposed.title}`,
+          diff: { before: proposed.before, after: proposed.after },
+          renderedPreviewHtml: action === 'trash'
+            ? '<main><h1>Page will be moved to Trash</h1><p>It can be restored from WordPress admin.</p></main>'
+            : generated?.previewHtml || proposed.after,
+          unsupportedFeatures: [],
+          summary: generated?.summary || proposed.summary,
+          createdAt: proposed.createdAt,
+          operationType: action === 'trash' ? 'page_trash' : 'page_update',
+          pageDetails: { slug: proposed.slug },
+        };
+        const text = action === 'trash'
+          ? `**Reversible page deletion:** \`${proposed.title}\` (#${proposed.pageId}, \`${proposed.slug}\`) will be moved to Trash. You can restore it in WordPress admin. The active homepage cannot be trashed. Nothing changes until you approve.`
+          : `**Full page replacement preview:** \`${proposed.title}\` (#${proposed.pageId}) was redesigned from your instruction using validated Gutenberg sections. Review the staged preview; current content is preserved until you approve.`;
+        const assistantMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: `${text}\n\n${proposed.summary}`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+          builderProposal,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal,
+          lastUpdated: new Date().toISOString(),
+        }));
+        setActiveTask((prev) =>
+          prev
+            ? { ...prev, status: 'waiting_for_approval', steps: prev.steps.map((step) => ({ ...step, status: 'completed' })) }
+            : undefined
+        );
+        return;
+      }
+
       // --- ROUTE 1: Plugin Operations ---
       if (isPluginOp) {
         const action = /^(list|show)\s/i.test(p) || /list$|status$/i.test(p) ? 'list'
           : /\bactivate\b/i.test(p) ? 'activate'
           : /\bdeactivate\b/i.test(p) ? 'deactivate'
-          : /\bdelete\b|\buninstall\b/i.test(p) ? 'delete'
+          : /\bdelete\b|\buninstall\b|\bremove\b/i.test(p) ? 'delete'
           : 'install';
+
+        if (
+          action === 'delete' &&
+          (/\b(?:all|every|each)\s+(?:(?:the|installed)\s+)*plugins?\b/i.test(p) ||
+            /^(?:delete|remove|uninstall)\s+(?:the\s+)?plugins?\s*$/i.test(p))
+        ) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_asst_${Date.now()}`,
+              role: 'assistant',
+              content: 'Bulk plugin deletion is not supported. Name one plugin to review a single-plugin uninstall proposal.',
+              timestamp: new Date().toISOString(),
+              status: 'denied',
+            },
+          ]);
+          setPreview((prev) => ({ ...prev, isLoading: false }));
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed' } : undefined
+          );
+          return;
+        }
 
         // Common plugin slug aliases (human name → WordPress.org slug)
         const slugAliases: Record<string, string> = {
@@ -1094,81 +1642,72 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           'seopress': 'wp-seopress',
         };
 
+        if (action === 'list') {
+          const result = await listInstalledPlugins(currentSite);
+          const content = result.plugins.length
+            ? `Installed plugins on ${currentSite}:\n${result.plugins
+                .map((plugin) => `- ${plugin.name}: ${plugin.status}, version ${plugin.version}`)
+                .join('\n')}`
+            : `No plugins were returned for ${currentSite}.`;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_asst_${Date.now()}`,
+              role: 'assistant',
+              content,
+              timestamp: new Date().toISOString(),
+              status: 'success',
+            },
+          ]);
+          setPreview((prev) => ({ ...prev, isLoading: false }));
+          setActiveTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'completed',
+                  steps: prev.steps.map((step) => ({ ...step, status: 'completed' })),
+                }
+              : undefined
+          );
+          return;
+        }
+
         // Extract plugin slug from prompt
-        const slugMatch = p.match(/(?:install|activate|deactivate|delete|uninstall)\s+(?:the\s+|plugin\s+)?(?:plugin\s+)?([\w-]+)/i)
+        const slugMatch = p.match(/(?:install|activate|deactivate|delete|uninstall|remove)\s+(?:the\s+|plugin\s+)?(?:plugin\s+)?([\w-]+)/i)
           || p.match(/([\w-]+)\s+plugin/i);
         const rawSlug = slugMatch?.[1]?.toLowerCase().replace(/\s+/g, '-') || 'unknown-plugin';
         const pluginSlug = slugAliases[rawSlug] ?? rawSlug;
-
         const synth = synthesizeFromPrompt(prompt, currentSite, { pluginSlug, pluginAction: action });
+
         setCurrentRoute('/plugins');
         setActiveCanvasTab('preview');
 
-        let bProposal: BuilderProposal;
-        if (action === 'list') {
-          bProposal = {
-            status: 'proposed',
-            planId: `plan_${Date.now()}`,
-            integrityHash: Math.random().toString(16).substring(2).padEnd(64, '0'),
-            targetSite: currentSite,
-            builderType: 'gutenberg',
-            title: 'Installed Plugins',
-            diff: { before: null, after: 'Plugin list inspection' },
-            renderedPreviewHtml: synth.renderedHtml,
-            unsupportedFeatures: [],
-            summary: synth.summary,
-            createdAt: new Date().toISOString(),
-            operationType: 'plugin',
-            pluginAction: 'install',
-            pluginSlug,
-          };
-        } else {
-          try {
-            const proposal = await proposePluginOperation({
-              targetSite: currentSite,
-              action: action as 'install' | 'activate' | 'deactivate' | 'delete',
-              pluginSlug,
-            });
-            bProposal = {
-              status: 'proposed',
-              planId: proposal.planId,
-              integrityHash: proposal.integrityHash,
-              targetSite: currentSite,
-              builderType: 'gutenberg',
-              title: `Plugin: ${action} ${pluginSlug}`,
-              diff: { before: null, after: proposal.cliCommand },
-              renderedPreviewHtml: synth.renderedHtml,
-              unsupportedFeatures: [],
-              summary: proposal.summary,
-              createdAt: proposal.createdAt,
-              operationType: 'plugin',
-              pluginAction: action as 'install' | 'activate' | 'deactivate' | 'delete',
-              pluginSlug,
-            };
-          } catch {
-            bProposal = {
-              status: 'proposed',
-              planId: `plan_${Date.now()}`,
-              integrityHash: Math.random().toString(16).substring(2).padEnd(64, '0'),
-              targetSite: currentSite,
-              builderType: 'gutenberg',
-              title: `Plugin: ${action} ${pluginSlug}`,
-              diff: { before: null, after: `wp plugin ${action} ${pluginSlug}` },
-              renderedPreviewHtml: synth.renderedHtml,
-              unsupportedFeatures: [],
-              summary: synth.summary,
-              createdAt: new Date().toISOString(),
-              operationType: 'plugin',
-              pluginAction: action as 'install' | 'activate' | 'deactivate' | 'delete',
-              pluginSlug,
-            };
-          }
-        }
+        const proposal = await proposePluginOperation({
+          targetSite: currentSite,
+          action: action as 'install' | 'activate' | 'deactivate' | 'delete',
+          pluginSlug,
+        });
+        const bProposal: BuilderProposal = {
+          status: 'proposed',
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: currentSite,
+          builderType: 'gutenberg',
+          title: `Plugin: ${action} ${pluginSlug}`,
+          diff: { before: null, after: proposal.cliCommand },
+          renderedPreviewHtml: synth.renderedHtml,
+          unsupportedFeatures: [],
+          summary: proposal.summary,
+          createdAt: proposal.createdAt,
+          operationType: 'plugin',
+          pluginAction: action as 'install' | 'activate' | 'deactivate' | 'delete',
+          pluginSlug,
+        };
 
         const assistantMessage: ChatMessage = {
           id: `msg_asst_${Date.now()}`,
           role: 'assistant',
-          content: `\`\`\`bash\n${synth.codeSnippet}\n\`\`\`\n\n**Isse kya kya fix/generate hua:**\n${synth.bulletPoints.map((b) => `• ${b}`).join('\n')}\n\nWordPress (${currentSite}) par plugin status verify ho chuka hai.`,
+          content: `${action === 'delete' ? `**Destructive action:** This will uninstall \`${pluginSlug}\` from ${currentSite} and run its uninstall procedure. Plugin data may be removed by the plugin. ` : ''}**Proposed action:** ${proposal.summary}\n\n**Command:** \`${proposal.cliCommand}\`\n\nNothing will run until you approve this proposal.`,
           timestamp: new Date().toISOString(),
           status: 'success',
           builderProposal: bProposal,
@@ -1624,7 +2163,13 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
 
       // 3. WP Agent Read-Only Mode
       if (currentMode === 'agent') {
-        const response = await sendAgentMessage(prompt, currentSite, false, controller.signal);
+        const response = await sendAgentMessage(
+          prompt,
+          currentSite,
+          false,
+          controller.signal,
+          conversationHistory
+        );
 
         const assistantMessage: ChatMessage = {
           id: `msg_asst_${Date.now()}`,
@@ -1676,7 +2221,11 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         );
       } else {
         // Direct pure AI chat (model without tools)
-        const content = await sendPureChatMessage(prompt, controller.signal);
+        const content = await sendPureChatMessage(
+          prompt,
+          controller.signal,
+          conversationHistory
+        );
 
         if (!content.trim()) {
           throw new Error('The model returned an empty response. Try again or switch models.');
@@ -1770,8 +2319,76 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
     }));
   };
 
-  const handleClearChat = () => {
+  const saveActiveConversation = () => {
+    if (!activeConversationId || messages.length === 0) return;
+
+    const updated = createChatConversation(messages);
+    setChatConversations((previous) => {
+      const existing = previous.find((item) => item.id === activeConversationId);
+      return [
+        ...previous.filter((item) => item.id !== activeConversationId),
+        {
+          ...updated,
+          id: activeConversationId,
+          createdAt: existing?.createdAt ?? updated.createdAt,
+          title: existing?.title && existing.title !== 'New conversation'
+            ? existing.title
+            : updated.title,
+        },
+      ].slice(-50);
+    });
+  };
+
+  const handleResumeConversation = (conversationId: string) => {
+    if (isLoading) return;
+    saveActiveConversation();
+    const conversation = chatConversations.find((item) => item.id === conversationId);
+    if (!conversation) return;
+    setActiveConversationId(conversation.id);
+    setMessages(fromPersistedChatHistory(conversation.messages));
+    setActiveTask(undefined);
+    setQueuedTasks([]);
+    setPreview((prev) => ({
+      ...prev,
+      activeView: 'welcome',
+      siteData: undefined,
+      pageData: undefined,
+      plan: undefined,
+      proposal: undefined,
+      appliedPost: undefined,
+      errorMessage: undefined,
+    }));
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    const conversation = chatConversations.find((item) => item.id === conversationId);
+    if (!conversation || !window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) {
+      return;
+    }
+    setChatConversations((previous) => previous.filter((item) => item.id !== conversationId));
+    if (activeConversationId === conversationId) {
+      setActiveConversationId(null);
+      setMessages([]);
+    }
+  };
+
+  const handleDeleteAllConversations = () => {
+    if (
+      chatConversations.length === 0 ||
+      !window.confirm('Delete all saved conversations? This cannot be undone.')
+    ) {
+      return;
+    }
+    setChatConversations([]);
+    setActiveConversationId(null);
     setMessages([]);
+  };
+
+  const handleClearChat = () => {
+    if (isLoading) return;
+    saveActiveConversation();
+    setMessages([]);
+    setActiveConversationId(null);
     setActiveTask(undefined);
     setQueuedTasks([]);
     setPreview((prev) => ({
@@ -1843,11 +2460,21 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         {/* Left: Chat panel — fixed 420px wide */}
         <ChatPanel
           messages={messages}
+          chatHistoryLoading={chatHistoryLoading}
+          chatHistoryReady={chatHistoryLoaded || continueWithoutChatHistory}
+          chatHistoryError={chatHistoryError}
+          onRetryChatHistory={handleRetryChatHistory}
+          onContinueWithoutChatHistory={handleContinueWithoutChatHistory}
           isLoading={isLoading}
           activeTask={activeTask}
           queuedTasks={queuedTasks}
           onSendMessage={handleSendMessage}
           onClearChat={handleClearChat}
+          conversations={chatConversations}
+          activeConversationId={activeConversationId}
+          onResumeConversation={handleResumeConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onDeleteAllConversations={handleDeleteAllConversations}
           selectedSite={selectedSite}
           onSelectSite={setSelectedSite}
           availableSites={AVAILABLE_SITES}
@@ -1899,6 +2526,12 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           selectedSectionId={selectedSectionId}
           onSelectSection={handleSelectSection}
           availableSections={availableSections}
+          targetPageId={targetPageId}
+          onSelectPage={(page) => {
+            setTargetPageId(page.id);
+            setCurrentRoute(`/${page.slug}`);
+            handleFetchPageSections(page.id);
+          }}
         />
       </div>
     </div>

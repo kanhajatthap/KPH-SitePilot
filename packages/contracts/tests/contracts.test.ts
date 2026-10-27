@@ -11,10 +11,88 @@ import {
   MissingPrerequisiteSchema,
   TaskActivityEventSchema,
   VerifiedResourceSchema,
+  PublishProposalResponseSchema,
   PublishApprovalRequestSchema,
+  PageLifecycleProposalRequestSchema,
+  PageDesignGenerationRequestSchema,
+  PageDesignSchema,
+  ChatHistorySchema,
+  CreatePageSnapshotSchema,
+  PAGE_SNAPSHOT_MAX_CONTENT_BYTES,
+  PageSnapshotListResponseSchema,
+  PageSnapshotSchema,
 } from '../src/index.js';
 
 describe('Contracts & Schemas', () => {
+  describe('PageSnapshotSchema', () => {
+    const snapshot = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      targetSite: 'http://plugin-test.local',
+      pageId: 42,
+      title: 'About',
+      slug: 'about',
+      status: 'publish',
+      content: '<p>About us</p>',
+      sourceOperation: 'page_update',
+      capturedAt: '2026-10-26T12:00:00.000Z',
+    } as const;
+
+    it('validates full snapshots and derives a create payload without generated fields', () => {
+      expect(PageSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+      expect(CreatePageSnapshotSchema.parse({
+        targetSite: snapshot.targetSite,
+        pageId: snapshot.pageId,
+        title: snapshot.title,
+        slug: snapshot.slug,
+        status: snapshot.status,
+        content: snapshot.content,
+        sourceOperation: snapshot.sourceOperation,
+      }).pageId).toBe(42);
+    });
+
+    it('rejects oversized content and list responses above the retention bound', () => {
+      expect(() => PageSnapshotSchema.parse({
+        ...snapshot,
+        content: 'a'.repeat(PAGE_SNAPSHOT_MAX_CONTENT_BYTES + 1),
+      })).toThrow();
+      expect(() => PageSnapshotListResponseSchema.parse({
+        snapshots: Array(21).fill({
+          id: snapshot.id,
+          targetSite: snapshot.targetSite,
+          pageId: snapshot.pageId,
+          title: snapshot.title,
+          slug: snapshot.slug,
+          status: snapshot.status,
+          sourceOperation: snapshot.sourceOperation,
+          capturedAt: snapshot.capturedAt,
+        }),
+      })).toThrow();
+    });
+  });
+
+  describe('ChatHistorySchema', () => {
+    it('accepts multiple conversations with an existing active conversation', () => {
+      const conversation = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        title: 'Build a landing page',
+        createdAt: '2026-10-26T12:00:00.000Z',
+        updatedAt: '2026-10-26T12:00:00.000Z',
+        messages: [],
+      };
+      expect(ChatHistorySchema.parse({
+        conversations: [conversation, { ...conversation, id: '550e8400-e29b-41d4-a716-446655440001' }],
+        activeConversationId: conversation.id,
+      }).conversations).toHaveLength(2);
+    });
+
+    it('rejects an active conversation ID that is not in the saved archive', () => {
+      expect(() => ChatHistorySchema.parse({
+        conversations: [],
+        activeConversationId: '550e8400-e29b-41d4-a716-446655440000',
+      })).toThrow();
+    });
+  });
+
   describe('SiteInspectInputSchema', () => {
     it('accepts valid site inspection parameters', () => {
       const valid = SiteInspectInputSchema.parse({
@@ -50,6 +128,80 @@ describe('Contracts & Schemas', () => {
         pageIdOrSlug: 'sample-page',
       });
       expect(valid.pageIdOrSlug).toBe('sample-page');
+    });
+
+    describe('PageLifecycleProposalRequestSchema', () => {
+      it('accepts page updates and reversible Trash proposals', () => {
+        expect(PageLifecycleProposalRequestSchema.parse({
+          targetSite: 'http://test.local',
+          action: 'update',
+          pageId: 42,
+          content: '<p>New page design</p>',
+        }).action).toBe('update');
+
+        expect(PageLifecycleProposalRequestSchema.parse({
+          targetSite: 'http://test.local',
+          action: 'trash',
+          pageId: 42,
+        }).action).toBe('trash');
+      });
+
+      it('requires update content and rejects content changes on Trash proposals', () => {
+        expect(() => PageLifecycleProposalRequestSchema.parse({
+          targetSite: 'http://test.local',
+          action: 'update',
+          pageId: 42,
+        })).toThrow();
+
+        expect(() => PageLifecycleProposalRequestSchema.parse({
+          targetSite: 'http://test.local',
+          action: 'trash',
+          pageId: 42,
+          content: '<p>Not allowed</p>',
+        })).toThrow();
+      });
+
+      describe('Page design generation schemas', () => {
+        const validDesign = {
+          sections: [
+            { type: 'hero', heading: 'Welcome', body: 'A useful introduction.' },
+            { type: 'features', heading: 'What we offer', items: ['First', 'Second'] },
+            { type: 'cta', heading: 'Get started', body: 'Contact our team.' },
+          ],
+        };
+
+        it('accepts bounded design requests and valid structured sections', () => {
+          expect(PageDesignGenerationRequestSchema.parse({
+            targetSite: 'http://test.local',
+            pageId: 42,
+            instruction: 'Make the page clearer and more welcoming.',
+          }).pageId).toBe(42);
+          expect(PageDesignSchema.parse(validDesign).sections).toHaveLength(3);
+        });
+
+        it('rejects invalid section order, unsupported fields, and invalid feature lists', () => {
+          expect(() => PageDesignSchema.parse({
+            ...validDesign,
+            sections: [
+              { type: 'content', heading: 'Not a hero' },
+              { type: 'cta', heading: 'Finish' },
+            ],
+          })).toThrow();
+          expect(() => PageDesignSchema.parse({
+            sections: [
+              { type: 'hero', heading: 'Welcome', html: '<script>bad()</script>' },
+              { type: 'cta', heading: 'Finish' },
+            ],
+          })).toThrow();
+          expect(() => PageDesignSchema.parse({
+            sections: [
+              { type: 'hero', heading: 'Welcome' },
+              { type: 'features', heading: 'Features', items: ['Only one'] },
+              { type: 'cta', heading: 'Finish' },
+            ],
+          })).toThrow();
+        });
+      });
     });
 
     it('rejects empty pageIdOrSlug', () => {
@@ -190,6 +342,59 @@ describe('Contracts & Schemas', () => {
       expect(parsed.id).toBe(23);
       expect(parsed.status).toBe('draft');
       expect(parsed.isLivePublished).toBe(false);
+    });
+
+    it('validates PublishProposalResponseSchema with optional pre-flight checklist', () => {
+      const resp = {
+        status: 'proposed' as const,
+        planId: '123e4567-e89b-12d3-a456-426614174000',
+        integrityHash: 'a1b2c3d4e5f6',
+        targetSite: 'http://test.local',
+        post: {
+          id: 23,
+          type: 'post' as const,
+          slug: 'test-post',
+          title: 'Test Post',
+          status: 'draft' as const,
+          content: '<p>Content</p>',
+          editLink: 'http://test.local/wp-admin/post.php?post=23&action=edit',
+          targetSite: 'http://test.local',
+          lastVerifiedAt: new Date().toISOString(),
+          isLivePublished: false,
+        },
+        intendedStatus: 'publish' as const,
+        warning: 'Warning text',
+        summary: 'Summary text',
+        createdAt: new Date().toISOString(),
+        checklist: {
+          passed: true,
+          hasBlockingFailures: false,
+          warningCount: 1,
+          items: [
+            {
+              id: 'target_environment',
+              label: 'Authorized Target Environment',
+              description: 'Must be local',
+              severity: 'blocking' as const,
+              passed: true,
+            },
+            {
+              id: 'seo_excerpt',
+              label: 'SEO Summary & Excerpt',
+              description: 'Excerpt advisory',
+              severity: 'warning' as const,
+              passed: false,
+              details: 'No excerpt provided',
+            },
+          ],
+        },
+      };
+
+      const parsed = PublishProposalResponseSchema.parse(resp);
+      expect(parsed.checklist?.passed).toBe(true);
+      expect(parsed.checklist?.hasBlockingFailures).toBe(false);
+      expect(parsed.checklist?.warningCount).toBe(1);
+      expect(parsed.checklist?.items).toHaveLength(2);
     });
 
     it('validates PublishApprovalRequestSchema with cryptographic hash binding', () => {
