@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   colors,
   spacing,
+  typography,
   radius,
   shadows,
+  viewports,
   designTokens,
   tokenToCssVars,
   tokensCss,
@@ -15,8 +17,27 @@ describe('design-system tokens', () => {
   it('exports all token categories', () => {
     expect(colors).toBeDefined();
     expect(spacing).toBeDefined();
+    expect(typography).toBeDefined();
     expect(radius).toBeDefined();
     expect(shadows).toBeDefined();
+    expect(viewports).toBeDefined();
+  });
+
+  it('has expected visual build surface tokens', () => {
+    expect(colors.selectionOutline).toBe('#f43f5e');
+    expect(colors.selectionRing).toBe('rgba(244, 63, 94, 0.25)');
+    expect(colors.selectionBg).toBe('rgba(244, 63, 94, 0.05)');
+    expect(colors.selectionBorder).toBe('#fecdd3');
+    expect(colors.hoverOutline).toBe('rgba(251, 113, 133, 0.6)');
+    expect(colors.focusRing).toBe('rgba(244, 63, 94, 0.35)');
+  });
+
+  it('has responsive viewport layout configurations', () => {
+    expect(viewports.desktop.width).toBe('100%');
+    expect(viewports.tablet.width).toBe('768px');
+    expect(viewports.tablet.borderRadius).toBe('18px');
+    expect(viewports.mobile.width).toBe('390px');
+    expect(viewports.mobile.borderRadius).toBe('28px');
   });
 
   it('has expected color keys', () => {

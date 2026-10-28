@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary } from '../lib/types';
+import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary, ViewportMode } from '../lib/types';
 import { RouteTree } from './RouteTree';
+import { viewports } from '@wp-agent/design-system';
 
 interface PreviewCanvasProps {
   preview: PreviewState;
@@ -26,6 +27,7 @@ interface PreviewCanvasProps {
   onRefreshPages?: () => void;
   targetPageId?: number;
   onSelectPage?: (page: SitePageSummary) => void;
+  onViewportChange?: (viewport: ViewportMode) => void;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -69,6 +71,7 @@ export function PreviewCanvas({
   onRefreshPages,
   targetPageId,
   onSelectPage,
+  onViewportChange,
 }: PreviewCanvasProps) {
   const [treeOpen, setTreeOpen] = useState(false);
   const {
@@ -132,30 +135,21 @@ export function PreviewCanvas({
     }
   };
 
-  const viewportStyle: React.CSSProperties =
-    viewport === 'tablet'
+  const activeViewportConfig = viewports[viewport] || viewports.desktop;
+  const viewportStyle: React.CSSProperties = {
+    width: activeViewportConfig.width,
+    maxWidth: activeViewportConfig.maxWidth,
+    height: activeViewportConfig.height,
+    ...(viewport !== 'desktop'
       ? {
-          width: '768px',
-          maxWidth: '100%',
-          height: '100%',
           margin: '0 auto',
-          borderRadius: '18px',
+          borderRadius: activeViewportConfig.borderRadius,
           overflow: 'hidden',
-          border: '1px solid #d9d2c7',
-          boxShadow: '0 1px 2px rgba(27,25,23,.05), 0 30px 60px -35px rgba(27,25,23,.45)',
+          border: activeViewportConfig.border,
+          boxShadow: activeViewportConfig.boxShadow,
         }
-      : viewport === 'mobile'
-      ? {
-          width: '390px',
-          maxWidth: '100%',
-          height: '100%',
-          margin: '0 auto',
-          borderRadius: '28px',
-          overflow: 'hidden',
-          border: '1px solid #d9d2c7',
-          boxShadow: '0 1px 2px rgba(27,25,23,.05), 0 30px 60px -35px rgba(27,25,23,.45)',
-        }
-      : { width: '100%', height: '100%' };
+      : {}),
+  };
 
   const activePlanPage =
     plan?.pages.find((page) => page.slug === (selectedPlanPageSlug || 'home')) || plan?.pages[0];
@@ -260,6 +254,43 @@ export function PreviewCanvas({
             >
               <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" className="h-3.5 w-3.5" />
             </button>
+          ) : null}
+
+          {/* Viewport switch controls in Canvas Chrome */}
+          {onViewportChange ? (
+            <div
+              className="flex items-center gap-0.5 rounded-lg border border-line bg-paper-deep/80 p-0.5"
+              role="group"
+              aria-label="Responsive layout viewport"
+            >
+              {(
+                [
+                  { id: 'desktop' as ViewportMode, label: 'Desktop', icon: 'M3 5h18v11H3z M8 20h8M12 16v4' },
+                  { id: 'tablet' as ViewportMode, label: 'Tablet', icon: 'M6 3h12v18H6z M11 18h2' },
+                  { id: 'mobile' as ViewportMode, label: 'Mobile', icon: 'M8 3h8v18H8z M11 18h2' },
+                ] as const
+              ).map((item) => {
+                const active = viewport === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onViewportChange(item.id)}
+                    title={`Switch to ${item.label} view (${viewports[item.id]?.width || '100%'})`}
+                    aria-label={`${item.label} viewport (${viewports[item.id]?.width || '100%'})`}
+                    aria-pressed={active}
+                    className={`focus-ring rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                      active
+                        ? 'bg-ink text-white shadow-xs'
+                        : 'text-ink-muted hover:bg-white hover:text-ink'
+                    }`}
+                  >
+                    <Icon d={item.icon} className="h-3 w-3 inline mr-1" />
+                    <span className="hidden xl:inline">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           ) : null}
 
           <button

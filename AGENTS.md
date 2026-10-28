@@ -66,8 +66,8 @@ Relevant files:
 
 At each completed milestone, recommend the next concrete task and a safe task the user can prepare in parallel.
 
-**Latest milestone:** Implemented accessible visual section selection and inline editing within the preview build surface (`PreviewCanvas`). Features hover and selected ring states, synchronized bidirectional highlighting with `RouteTree`, keyboard navigation (`Tab`, `Enter`/`Space`, `Escape` to reset to whole page), screen-reader aria region descriptors, and live iframe sandbox notice banners. Visual selection remains strictly read-only; inline editing routes exclusively through the existing approval-gated `proposeSectionEdit` endpoint without auto-applying mutations.
+**Latest milestone:** Implemented shared visual-build-surface design tokens and responsive layout controls across the design-system package and dashboard build surface. Consolidated typography, spacing, radius, selection/highlight colors (`selectionOutline`, `selectionRing`, `selectionBg`, `hoverOutline`, `focusRing`), and responsive viewports (`desktop`, `tablet`, `mobile`). Enhanced `PreviewCanvas` and `Header` with accessible layout viewport controls, active indicator badges, and keyboard operation. All viewport and selection switches remain strictly read-only with zero mutation calls to WordPress.
 
-**Next task:** Implement component/style tokens and responsive layout controls for the visual build surface.
+**Next task:** Implement component property inspector panel for selected Gutenberg blocks/sections.
 
-**Safe parallel task:** Review design token mappings and Tailwind CSS preset variables across the frontend packages without making WordPress modifications.
+**Safe parallel task:** Review Gutenberg block attribute schemas and core block style properties without modifying WordPress code.

@@ -2532,6 +2532,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
             setCurrentRoute(`/${page.slug}`);
             handleFetchPageSections(page.id);
           }}
+          onViewportChange={setViewport}
         />
       </div>
     </div>

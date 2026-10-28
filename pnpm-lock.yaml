@@ -218,6 +218,9 @@ importers:
       '@wp-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wp-agent/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       next:
         specifier: ^15.1.7
         version: 15.5.28(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

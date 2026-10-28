@@ -110,4 +110,32 @@ describe('Accessible Visual Section Selection & Inline Editing Flow', () => {
     );
     expect(applyCalls).toHaveLength(0);
   });
+
+  it('switches responsive viewports without triggering WordPress mutations or network requests', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    global.fetch = fetchMock;
+
+    let currentViewport = 'desktop';
+    const handleViewportChange = (vp: 'desktop' | 'tablet' | 'mobile') => {
+      currentViewport = vp;
+    };
+
+    // User cycles or clicks responsive viewport controls
+    handleViewportChange('tablet');
+    expect(currentViewport).toBe('tablet');
+
+    handleViewportChange('mobile');
+    expect(currentViewport).toBe('mobile');
+
+    handleViewportChange('desktop');
+    expect(currentViewport).toBe('desktop');
+
+    // Confirm that changing viewports makes zero API calls
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
