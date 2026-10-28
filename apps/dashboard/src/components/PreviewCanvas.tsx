@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary, ViewportMode } from '../lib/types';
+import { DraftProposal, BuilderProposal, PageSectionSummary, PreviewState, SitePageSummary, ViewportMode } from '../lib/types';
 import { RouteTree } from './RouteTree';
+import { BlockPropertyInspector } from './BlockPropertyInspector';
 import { viewports } from '@wp-agent/design-system';
 
 interface PreviewCanvasProps {
@@ -22,12 +23,16 @@ interface PreviewCanvasProps {
   currentRoute?: string;
   selectedSectionId?: string;
   onSelectSection?: (sectionId: string) => void;
-  availableSections?: Array<{ id: string; name: string }>;
+  availableSections?: PageSectionSummary[];
+  sectionsLoading?: boolean;
+  sectionsError?: string;
   livePages?: SitePageSummary[];
   onRefreshPages?: () => void;
   targetPageId?: number;
   onSelectPage?: (page: SitePageSummary) => void;
   onViewportChange?: (viewport: ViewportMode) => void;
+  onStageSectionProposal?: (sectionId: string, patch: Record<string, string | number | boolean>) => Promise<void>;
+  isStagingSection?: boolean;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -62,18 +67,19 @@ export function PreviewCanvas({
   currentRoute = '/',
   selectedSectionId = 'hero',
   onSelectSection,
-  availableSections = [
-    { id: 'hero', name: 'Hero' },
-    { id: 'features', name: 'Features' },
-    { id: 'metrics', name: 'Metrics' },
-  ],
+  availableSections = [],
+  sectionsLoading = false,
+  sectionsError,
   livePages = [],
   onRefreshPages,
   targetPageId,
   onSelectPage,
   onViewportChange,
+  onStageSectionProposal,
+  isStagingSection = false,
 }: PreviewCanvasProps) {
   const [treeOpen, setTreeOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const {
     targetSite,
     viewport,
@@ -103,17 +109,23 @@ export function PreviewCanvas({
   const refreshIframe = useCallback(() => setIframeKey((value) => value + 1), []);
 
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+  const selectedSection = availableSections.find((section) => section.id === selectedSectionId);
+
+  const handleSectionSelection = useCallback((sectionId: string) => {
+    onSelectSection?.(sectionId);
+    setInspectorOpen(sectionId !== 'all');
+  }, [onSelectSection]);
 
   // Keyboard navigation listener: Escape clears section selection
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && selectedSectionId && selectedSectionId !== 'all') {
-        onSelectSection?.('all');
+        handleSectionSelection('all');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedSectionId, onSelectSection]);
+  }, [selectedSectionId, handleSectionSelection]);
 
   const handleApprove = async () => {
     if (!proposal || !onApproveProposal) return;
@@ -309,6 +321,23 @@ export function PreviewCanvas({
             <span className="hidden sm:inline">Routes</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => setInspectorOpen((prev) => !prev)}
+            className={`focus-ring flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium transition ${
+              inspectorOpen
+                ? 'border-pink-300 bg-pink-50/80 text-pink-700 shadow-sm'
+                : 'border-line bg-white text-ink-soft hover:bg-paper-deep hover:text-ink'
+            }`}
+            title="Toggle block property inspector"
+            aria-label="Toggle block property inspector"
+            aria-expanded={inspectorOpen}
+            aria-controls="block-property-inspector"
+          >
+            <Icon d="M4 5h16v14H4z M8 9h8M8 13h5" className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Properties</span>
+          </button>
+
           <a
             href={targetSite}
             target="_blank"
@@ -392,7 +421,7 @@ export function PreviewCanvas({
           </span>
           <button
             type="button"
-            onClick={() => onSelectSection?.('all')}
+            onClick={() => handleSectionSelection('all')}
             className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition ${
               !selectedSectionId || selectedSectionId === 'all'
                 ? 'bg-ink text-white'
@@ -405,7 +434,7 @@ export function PreviewCanvas({
             <button
               key={section.id}
               type="button"
-              onClick={() => onSelectSection?.(section.id)}
+              onClick={() => handleSectionSelection(section.id)}
               className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition ${
                 selectedSectionId === section.id
                   ? 'bg-ink text-white'
@@ -492,7 +521,7 @@ export function PreviewCanvas({
                 onSelectPage?.(page);
               }}
               onSelectSection={(_pageId, sectionId) => {
-                onSelectSection?.(sectionId);
+                handleSectionSelection(sectionId);
               }}
               className="h-full"
             />
@@ -514,7 +543,7 @@ export function PreviewCanvas({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onSelectSection?.('all')}
+                  onClick={() => handleSectionSelection('all')}
                   className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
                     !selectedSectionId || selectedSectionId === 'all'
                       ? 'bg-ink text-white shadow-xs'
@@ -531,7 +560,7 @@ export function PreviewCanvas({
                     <button
                       key={sec.id}
                       type="button"
-                      onClick={() => onSelectSection?.(sec.id)}
+                      onClick={() => handleSectionSelection(sec.id)}
                       onMouseEnter={() => setHoveredSectionId(sec.id)}
                       onMouseLeave={() => setHoveredSectionId((prev) => (prev === sec.id ? null : prev))}
                       className={`group relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
@@ -557,7 +586,7 @@ export function PreviewCanvas({
                 {selectedSectionId && selectedSectionId !== 'all' ? (
                   <button
                     type="button"
-                    onClick={() => onSelectSection?.('all')}
+                    onClick={() => handleSectionSelection('all')}
                     className="ml-auto text-[10px] font-medium text-ink-muted hover:text-ink hover:underline"
                     title="Press Escape to clear selection"
                   >
@@ -884,6 +913,23 @@ export function PreviewCanvas({
           </div>
         ) : null}
         </div>
+        {inspectorOpen ? (
+          <div id="block-property-inspector" className="h-full shrink-0">
+            <BlockPropertyInspector
+              section={selectedSection}
+              pageId={targetPageId ?? 0}
+              loading={sectionsLoading}
+              error={sectionsError}
+              onClose={() => setInspectorOpen(false)}
+              onStageProposal={
+                selectedSection && onStageSectionProposal
+                  ? (patch) => onStageSectionProposal(selectedSection.id, patch)
+                  : undefined
+              }
+              isStaging={isStagingSection}
+            />
+          </div>
+        ) : null}
       </div>
     </main>
   );

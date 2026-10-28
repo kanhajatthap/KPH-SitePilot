@@ -66,8 +66,8 @@ Relevant files:
 
 At each completed milestone, recommend the next concrete task and a safe task the user can prepare in parallel.
 
-**Latest milestone:** Implemented shared visual-build-surface design tokens and responsive layout controls across the design-system package and dashboard build surface. Consolidated typography, spacing, radius, selection/highlight colors (`selectionOutline`, `selectionRing`, `selectionBg`, `hoverOutline`, `focusRing`), and responsive viewports (`desktop`, `tablet`, `mobile`). Enhanced `PreviewCanvas` and `Header` with accessible layout viewport controls, active indicator badges, and keyboard operation. All viewport and selection switches remain strictly read-only with zero mutation calls to WordPress.
+**Latest milestone:** Implemented editable Gutenberg block-property controls in the dashboard inspector for selected page sections. Edits remain strictly in local draft state (making zero network calls and never altering WordPress). A dirty state indicator, Discard button, and "Stage proposal" flow allow staging an exact `propertyPatch` (`align`, `backgroundColor`, `textColor`, `fontSize`, and `style.spacing.padding`). Staging creates an exact before/after `BuilderProposal` (`operationType: 'section'`) requiring explicit human approval before any WordPress modification can occur. Validations on both client and API enforce strict allow-lists, prevent prompt injection, fail closed on stale page state, take pre-mutation backup snapshots, and perform exact read-back verification upon apply.
 
-**Next task:** Implement component property inspector panel for selected Gutenberg blocks/sections.
+**Next task:** Implement visual section reordering or drag-and-drop hierarchy adjustments with staged proposal approval.
 
-**Safe parallel task:** Review Gutenberg block attribute schemas and core block style properties without modifying WordPress code.
+**Safe parallel task:** Review Gutenberg block wrapper and inner-block structure parsing rules, read-only and without modifying WordPress.

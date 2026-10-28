@@ -29,12 +29,14 @@ describe('RouteTree Logic & Client Contract Integration', () => {
       name: 'Hero Section',
       blockName: 'core/cover',
       excerpt: 'Hero headline...',
+      attributes: { align: 'full', backgroundColor: 'contrast' },
     },
     {
       id: 'features',
       name: 'Features Grid',
       blockName: 'core/columns',
       excerpt: 'Features list...',
+      attributes: { align: 'wide' },
     },
   ];
 
@@ -77,6 +79,10 @@ describe('RouteTree Logic & Client Contract Integration', () => {
     expect(result.pageId).toBe(32);
     expect(result.sections).toHaveLength(2);
     expect(result.sections[0].id).toBe('hero');
+    expect(result.sections[0].attributes).toEqual({
+      align: 'full',
+      backgroundColor: 'contrast',
+    });
     expect(result.sections[1].name).toBe('Features Grid');
     expect(fetchMock).toHaveBeenCalledWith('/api/site/pages/sections?id=32&targetSite=http%3A%2F%2Ftest.local');
   });

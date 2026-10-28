@@ -108,6 +108,7 @@ export interface PageSectionSummary {
   name: string;
   blockName: string;
   excerpt: string;
+  attributes?: Record<string, string | number | boolean>;
 }
 
 export interface AppliedDraftPost {

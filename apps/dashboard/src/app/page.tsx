@@ -15,6 +15,7 @@ import {
   AgentExecutionTask,
   TaskStep,
   QueuedTask,
+  PageSectionSummary,
   SitePageSummary,
   VerifiedResource,
   PublishProposalResponse,
@@ -142,12 +143,13 @@ export default function DashboardPage() {
 
   // Section selector state for scoped page editing (Live Preview vertical slice)
   const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
-  const [availableSections, setAvailableSections] = useState<Array<{ id: string; name: string }>>([
-    { id: 'hero', name: 'Hero Section' },
-    { id: 'features', name: 'Features Grid' },
-    { id: 'metrics', name: 'Metrics Bar' },
-  ]);
+  const [availableSections, setAvailableSections] = useState<PageSectionSummary[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [sectionsError, setSectionsError] = useState<string>();
+  const [sectionsPageId, setSectionsPageId] = useState<number>();
   const [targetPageId, setTargetPageId] = useState<number>(32); // Default page ID (modern-tech-home)
+  const sectionRequestId = useRef(0);
+  const sectionRequestPageId = useRef<number | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const approvalInFlightRef = useRef(false);
@@ -1058,14 +1060,148 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
 
   // Fetch page sections from API to populate the section strip
   const handleFetchPageSections = async (pageId: number) => {
+    const requestId = ++sectionRequestId.current;
+    sectionRequestPageId.current = pageId;
+    setSectionsPageId(undefined);
+    setAvailableSections([]);
+    setSectionsLoading(true);
+    setSectionsError(undefined);
+    setTargetPageId(pageId);
+    setSelectedSectionId('all');
     try {
-      const result = await fetchPageSections(pageId);
-      setAvailableSections(
-        result.sections.map((s) => ({ id: s.id, name: s.name }))
-      );
+      const result = await fetchPageSections(pageId, selectedSite);
+      if (requestId !== sectionRequestId.current) return;
+      setAvailableSections(result.sections);
+      setSectionsPageId(pageId);
+      sectionRequestPageId.current = null;
       setTargetPageId(pageId);
-    } catch {
-      // Keep default sections if fetch fails (site may be offline)
+    } catch (error) {
+      if (requestId !== sectionRequestId.current) return;
+      setSectionsError((error as Error).message || 'Failed to load block properties.');
+      sectionRequestPageId.current = null;
+    } finally {
+      if (requestId === sectionRequestId.current) setSectionsLoading(false);
+    }
+  };
+
+  const handleStageInspectorSectionProposal = async (
+    sectionId: string,
+    propertyPatch: Record<string, string | number | boolean>
+  ) => {
+    const targetSection = availableSections.find((s) => s.id === sectionId);
+    const sectionName = targetSection?.name || sectionId;
+
+    setCurrentRoute(`/editor/section/${sectionId}`);
+    setActiveCanvasTab('preview');
+    setIsLoading(true);
+    setPreview((prev) => ({ ...prev, isLoading: true }));
+
+    const planStepId = `step_section_props_${Date.now()}`;
+    const planStep: TaskStep = {
+      id: planStepId,
+      name: 'Staging section property changes',
+      description: `Staging inspector properties for "${sectionName}"`,
+      status: 'running',
+      toolName: 'section_edit',
+      startedAt: new Date().toISOString(),
+    };
+    const taskId = crypto.randomUUID();
+    setActiveTask({
+      id: taskId,
+      correlationId: taskId,
+      prompt: `Update ${sectionName} properties`,
+      targetSite: selectedSite,
+      mode: agentMode,
+      status: 'running',
+      summary: `Stage property edits for section "${sectionName}"`,
+      steps: [planStep],
+      currentStepIndex: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    try {
+      const sectionProposal = await proposeSectionEdit({
+        targetSite: selectedSite,
+        pageId: targetPageId,
+        sectionId,
+        propertyPatch,
+      });
+
+      const bProposal: BuilderProposal = {
+        status: 'proposed',
+        planId: sectionProposal.planId,
+        integrityHash: sectionProposal.integrityHash,
+        targetSite: selectedSite,
+        builderType: 'gutenberg',
+        title: `${sectionName} Property Update`,
+        diff: {
+          before: sectionProposal.diff.before,
+          after: sectionProposal.diff.after,
+        },
+        renderedPreviewHtml: sectionProposal.renderedPreviewHtml,
+        unsupportedFeatures: sectionProposal.unsupportedOperations,
+        summary: sectionProposal.summary,
+        createdAt: sectionProposal.createdAt,
+        operationType: 'section',
+        sectionDetails: {
+          pageId: sectionProposal.pageId,
+          sectionId: sectionProposal.sectionId,
+          sectionName: sectionProposal.sectionName,
+        },
+      };
+
+      const patchList = Object.entries(propertyPatch)
+        .map(([k, v]) => `• \`${k}\`: **${v}**`)
+        .join('\n');
+
+      const assistantMessage: ChatMessage = {
+        id: `msg_asst_${Date.now()}`,
+        role: 'assistant',
+        content: `🎯 **Section Property Update Proposal** — \`${sectionName}\` on Page #${targetPageId}
+
+**Staged Attribute Changes:**
+${patchList}
+
+**Summary:** ${sectionProposal.summary}
+
+Review the diff in the Preview panel. Click **✓ Approve & Apply** to write changes to WordPress, or **Reject** to cancel.`,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        builderProposal: bProposal,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      setPreview((prev) => ({
+        ...prev,
+        isLoading: false,
+        activeView: 'builder',
+        builderProposal: bProposal,
+        lastUpdated: new Date().toISOString(),
+      }));
+      setActiveTask((prev) =>
+        prev
+          ? { ...prev, status: 'waiting_for_approval', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) }
+          : undefined
+      );
+    } catch (err: any) {
+      const errorMsg = err.message || 'Failed to stage section properties';
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_err_${Date.now()}`,
+          role: 'assistant',
+          content: `Could not stage section properties: ${errorMsg}`,
+          timestamp: new Date().toISOString(),
+          status: 'error',
+          error: errorMsg,
+        },
+      ]);
+      setActiveTask(undefined);
+      throw err;
+    } finally {
+      setIsLoading(false);
+      setPreview((prev) => ({ ...prev, isLoading: false }));
     }
   };
 
@@ -2526,13 +2662,22 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           selectedSectionId={selectedSectionId}
           onSelectSection={handleSelectSection}
           availableSections={availableSections}
+          sectionsLoading={sectionsLoading}
+          sectionsError={sectionsError}
           targetPageId={targetPageId}
           onSelectPage={(page) => {
             setTargetPageId(page.id);
             setCurrentRoute(`/${page.slug}`);
-            handleFetchPageSections(page.id);
+            if (
+              page.id !== sectionsPageId &&
+              page.id !== sectionRequestPageId.current
+            ) {
+              handleFetchPageSections(page.id);
+            }
           }}
           onViewportChange={setViewport}
+          onStageSectionProposal={handleStageInspectorSectionProposal}
+          isStagingSection={isLoading}
         />
       </div>
     </div>

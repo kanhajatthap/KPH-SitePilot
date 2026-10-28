@@ -97,6 +97,8 @@ export function RouteTree({
   };
 
   const handleSectionClick = (pageId: number, sectionId: string) => {
+    const page = pages.find((item) => item.id === pageId);
+    if (page) onSelectPage?.(page);
     onSelectSection?.(pageId, sectionId);
   };
 

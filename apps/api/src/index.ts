@@ -3066,6 +3066,7 @@ export async function handleRequest(
           id: s.id,
           name: s.name,
           blockName: s.blockName,
+          attributes: s.attributes,
           excerpt: s.excerpt,
         })),
       });
@@ -3089,7 +3090,7 @@ export async function handleRequest(
         sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, issues: parseResult.error.issues });
         return;
       }
-      const { targetSite, pageId, sectionId, instruction } = parseResult.data;
+      const { targetSite, pageId, sectionId, instruction, propertyPatch } = parseResult.data;
       if (!isLocalPageTarget(targetSite)) {
         sendJson(res, 403, {
           error: ErrorCode.TARGET_NOT_ALLOWED,
@@ -3114,11 +3115,21 @@ export async function handleRequest(
       }
       const fullContent = currentPage.content;
 
-      const editResult = proposeSectionEdit({
-        fullContent,
-        sectionId,
-        instruction,
-      });
+      let editResult: ReturnType<typeof proposeSectionEdit>;
+      try {
+        editResult = proposeSectionEdit({
+          fullContent,
+          sectionId,
+          instruction: instruction || '',
+          propertyPatch,
+        });
+      } catch (err: any) {
+        sendJson(res, 400, {
+          error: ErrorCode.VALIDATION_FAILED,
+          message: err.message || 'Failed to validate section edit property patch.',
+        });
+        return;
+      }
 
       const planId = randomUUID();
       const plan: ChangePlan = {

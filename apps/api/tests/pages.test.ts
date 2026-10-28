@@ -472,6 +472,63 @@ describe('Page section edit proposal and approval endpoints', () => {
       await closeServer(server);
     }
   });
+
+  it('proposes section edit with propertyPatch without invoking LLM or mutating site', async () => {
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue(originalPage);
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/site/pages/section/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          pageId: 42,
+          sectionId: 'hero',
+          propertyPatch: {
+            align: 'wide',
+            backgroundColor: 'contrast',
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const proposal = await response.json();
+      expect(proposal.planId).toBeDefined();
+      expect(proposal.integrityHash).toBeDefined();
+      expect(proposal.diff.after).toContain('"align":"wide"');
+      expect(proposal.diff.after).toContain('"backgroundColor":"contrast"');
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects proposal with invalid propertyPatch returning HTTP 400', async () => {
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue(originalPage);
+    const { server, baseUrl } = await startServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/site/pages/section/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          pageId: 42,
+          sectionId: 'hero',
+          propertyPatch: {
+            arbitraryKey: 'malicious',
+          },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: 'VALIDATION_FAILED',
+      });
+    } finally {
+      await closeServer(server);
+    }
+  });
 });
 
 describe('Page snapshot history and restore endpoints', () => {

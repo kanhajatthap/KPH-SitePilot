@@ -14,6 +14,7 @@ import {
   PublishApprovalResponse,
   ReviseDraftResponse,
   SitePageSummary,
+  PageSectionSummary,
 } from './types';
 import {
   SitePlan,
@@ -796,12 +797,7 @@ export interface PageSectionsResult {
   title: string;
   status: string;
   url: string;
-  sections: Array<{
-    id: string;
-    name: string;
-    blockName: string;
-    excerpt: string;
-  }>;
+  sections: PageSectionSummary[];
 }
 
 export async function fetchPageSections(
@@ -916,7 +912,8 @@ export async function proposeSectionEdit(params: {
   targetSite: string;
   pageId: number;
   sectionId: string;
-  instruction: string;
+  instruction?: string;
+  propertyPatch?: Record<string, string | number | boolean>;
 }): Promise<SectionEditProposalResult> {
   const res = await fetch('/api/site/pages/section/propose', {
     method: 'POST',

@@ -1249,13 +1249,24 @@ export type PageLifecycleApplyResponse = z.infer<
 /**
  * Scoped Page Section Edit Contracts
  */
+export const PageSectionPropertyPatchSchema = z.record(
+  z.string().min(1).max(64),
+  z.union([z.string().max(160), z.number(), z.boolean()])
+);
+
+export type PageSectionPropertyPatch = z.infer<typeof PageSectionPropertyPatchSchema>;
+
 export const PageSectionEditProposalRequestSchema = z.object({
   targetSite: z.string().url(),
   pageId: z.number().int().positive(),
   sectionId: z.string().min(1),
-  instruction: z.string().min(1).max(2000),
+  instruction: z.string().min(1).max(2000).optional(),
+  propertyPatch: PageSectionPropertyPatchSchema.optional(),
   targetSectionName: z.string().optional(),
-});
+}).refine(
+  (data) => Boolean((data.instruction && data.instruction.trim().length > 0) || (data.propertyPatch && Object.keys(data.propertyPatch).length > 0)),
+  { message: 'Either "instruction" or "propertyPatch" must be provided.' }
+);
 
 export type PageSectionEditProposalRequest = z.infer<typeof PageSectionEditProposalRequestSchema>;
 
