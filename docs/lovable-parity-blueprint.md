@@ -96,7 +96,9 @@ Engineering rules:
 - [x] Deploy/publish checklist with pre-flight checks: pre-flight checks evaluate authorized local target environments, post status staging, content presence/integrity, and title requirements as blocking items, with SEO excerpt and permalink slug recommendations as advisory warnings. The checklist is surfaced in the dashboard publish approval modal, publish live action is disabled on blocking failures, and all checks are strictly re-verified on the API server during apply before executing verified publication. Automated tests pass across contracts, API, and dashboard routes.
 
 ### Phase 4 follow-on
-- **Next task:** Implement visual section reordering or drag-and-drop hierarchy adjustments with staged proposal approval.
+- [x] Approval-gated Gutenberg section reordering: drag-and-drop controls in the Pages & Sections tree allow reordering top-level blocks in local draft state with zero network calls until staging. Staging creates a structured, reviewable proposal requiring explicit approval. Server validation enforces page/section membership, exact set of top-level sections, duplicate/missing/unsupported checks, preserves block attributes/inner blocks/content exactly while reordering only slices, and applies all safeguards (local-target, plan integrity, stale-state rejection, snapshot-before-write, concurrency protection, exact read-back verification). Tests cover draft-zero-network, stage-without-apply, explicit approval, sibling preservation, rejection cases, and fail-closed behaviors.
+
+- **Next task:** Harden reorder for edge cases (very large pages, mixed content) and add UX polish while preserving all approval gates.
 - **Safe parallel task:** Review Gutenberg block wrapper and inner-block structure parsing rules, read-only and without modifying WordPress.
 
 ## 4. Acceptance for Phase 1

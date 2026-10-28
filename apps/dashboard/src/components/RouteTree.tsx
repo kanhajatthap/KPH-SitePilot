@@ -10,6 +10,8 @@ export interface RouteTreeProps {
   selectedSectionId?: string;
   onSelectPage?: (page: SitePageSummary) => void;
   onSelectSection?: (pageId: number, sectionId: string) => void;
+  onReorderSections?: (pageId: number, sectionIds: string[]) => Promise<void> | void;
+  reorderInFlight?: boolean;
   className?: string;
 }
 
@@ -27,6 +29,8 @@ export function RouteTree({
   selectedSectionId = 'all',
   onSelectPage,
   onSelectSection,
+  onReorderSections,
+  reorderInFlight = false,
   className = '',
 }: RouteTreeProps) {
   const [pages, setPages] = useState<SitePageSummary[]>([]);
@@ -39,6 +43,7 @@ export function RouteTree({
   const [sectionsByPage, setSectionsByPage] = useState<Record<number, PageSectionsResult['sections']>>({});
   const [loadingSections, setLoadingSections] = useState<Record<number, boolean>>({});
   const [sectionErrors, setSectionErrors] = useState<Record<number, string | null>>({});
+  const [reorderDraft, setReorderDraft] = useState<Record<number, string[]>>({});
 
   const loadPages = useCallback(async () => {
     setLoading(true);
@@ -100,6 +105,36 @@ export function RouteTree({
     const page = pages.find((item) => item.id === pageId);
     if (page) onSelectPage?.(page);
     onSelectSection?.(pageId, sectionId);
+  };
+
+  const moveSection = (pageId: number, index: number, direction: -1 | 1) => {
+    const current = reorderDraft[pageId] || sectionsByPage[pageId]?.map((s) => s.id) || [];
+    if (current.length === 0) return;
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= current.length) return;
+    const next = [...current];
+    const [moved] = next.splice(index, 1);
+    next.splice(targetIndex, 0, moved);
+    setReorderDraft((prev) => ({ ...prev, [pageId]: next }));
+  };
+
+  const discardReorder = (pageId: number) => {
+    setReorderDraft((prev) => {
+      const next = { ...prev };
+      delete next[pageId];
+      return next;
+    });
+  };
+
+  const stageReorder = async (pageId: number) => {
+    const draft = reorderDraft[pageId];
+    if (!draft || !onReorderSections) return;
+    await onReorderSections(pageId, draft);
+    setReorderDraft((prev) => {
+      const next = { ...prev };
+      delete next[pageId];
+      return next;
+    });
   };
 
   return (
@@ -238,28 +273,86 @@ export function RouteTree({
                             <span className="truncate">Entire page (all sections)</span>
                           </button>
 
-                          {sections.map((section) => {
-                            const isSecActive = isSelected && selectedSectionId === section.id;
+                          {(() => {
+                            const orderedIds = reorderDraft[page.id] || sections.map((s) => s.id);
+                            const sectionMap = new Map(sections.map((s) => [s.id, s]));
+                            const displaySections = orderedIds.map((id) => sectionMap.get(id)).filter(Boolean) as typeof sections;
+                            const isDirty = reorderDraft[page.id] && JSON.stringify(reorderDraft[page.id]) !== JSON.stringify(sections.map((s) => s.id));
                             return (
-                              <button
-                                key={section.id}
-                                type="button"
-                                onClick={() => handleSectionClick(page.id, section.id)}
-                                className={`flex w-full items-center justify-between gap-1.5 rounded px-2 py-1 text-left text-[10.5px] transition ${
-                                  isSecActive
-                                    ? 'bg-pink-100 text-pink-900 font-semibold'
-                                    : 'text-ink-soft hover:bg-paper-deep'
-                                }`}
-                                data-testid={`section-${page.id}-${section.id}`}
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <TreeIcon d="M4 7h16M4 12h8m-8 5h12" className="h-3 w-3 opacity-60 shrink-0" />
-                                  <span className="truncate">{section.name}</span>
-                                </div>
-                                <span className="font-mono text-[9px] opacity-60 shrink-0">#{section.id}</span>
-                              </button>
+                              <>
+                                {displaySections.map((section, idx) => {
+                                  const isSecActive = isSelected && selectedSectionId === section.id;
+                                  return (
+                                    <div
+                                      key={section.id}
+                                      className={`flex w-full items-center justify-between gap-1 rounded px-1.5 py-1 text-left text-[10.5px] transition ${
+                                        isSecActive
+                                          ? 'bg-pink-100 text-pink-900 font-semibold'
+                                          : 'text-ink-soft hover:bg-paper-deep'
+                                      }`}
+                                      data-testid={`section-${page.id}-${section.id}`}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSectionClick(page.id, section.id)}
+                                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                                      >
+                                        <TreeIcon d="M4 7h16M4 12h8m-8 5h12" className="h-3 w-3 opacity-60 shrink-0" />
+                                        <span className="truncate">{section.name}</span>
+                                        <span className="font-mono text-[9px] opacity-60 shrink-0">#{section.id}</span>
+                                      </button>
+                                      <div className="flex items-center gap-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            moveSection(page.id, idx, -1);
+                                          }}
+                                          disabled={idx === 0 || reorderInFlight}
+                                          className="rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
+                                          aria-label="Move section up"
+                                        >
+                                          <TreeIcon d="M18 15l-6-6-6 6" className="h-3 w-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            moveSection(page.id, idx, 1);
+                                          }}
+                                          disabled={idx === displaySections.length - 1 || reorderInFlight}
+                                          className="rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
+                                          aria-label="Move section down"
+                                        >
+                                          <TreeIcon d="M6 9l6 6 6-6" className="h-3 w-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {isDirty ? (
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => discardReorder(page.id)}
+                                      disabled={reorderInFlight}
+                                      className="rounded px-1.5 py-0.5 text-[9.5px] text-ink-muted hover:bg-paper-deep disabled:opacity-40"
+                                    >
+                                      Discard
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void stageReorder(page.id)}
+                                      disabled={reorderInFlight}
+                                      className="rounded bg-ink px-1.5 py-0.5 text-[9.5px] font-semibold text-white hover:bg-stone-800 disabled:opacity-40"
+                                    >
+                                      {reorderInFlight ? 'Staging…' : 'Stage reorder'}
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </>
                             );
-                          })}
+                          })()}
                         </>
                       ) : (
                         <div className="py-1 text-[10px] text-ink-muted italic">

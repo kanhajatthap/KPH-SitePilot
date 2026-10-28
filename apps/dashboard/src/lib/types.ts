@@ -79,7 +79,7 @@ export interface BuilderProposal {
   createdAt: string;
   isApplied?: boolean;
   /** Discriminates what the Approve button should actually DO */
-  operationType?: 'content' | 'plugin' | 'settings' | 'code' | 'page' | 'section' | 'page_update' | 'page_trash' | 'page_restore';
+  operationType?: 'content' | 'plugin' | 'settings' | 'code' | 'page' | 'section' | 'section_reorder' | 'page_update' | 'page_trash' | 'page_restore';
   /** For plugin ops only */
   pluginAction?: 'install' | 'activate' | 'deactivate' | 'delete';
   pluginSlug?: string;
@@ -96,6 +96,12 @@ export interface BuilderProposal {
     pageId: number;
     sectionId: string;
     sectionName: string;
+  };
+  /** For section reorder only */
+  reorderDetails?: {
+    pageId: number;
+    sectionIds: string[];
+    sectionNames: string[];
   };
   pageRestoreDetails?: {
     pageId: number;

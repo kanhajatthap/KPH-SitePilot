@@ -1314,6 +1314,60 @@ export const PageSectionEditApplyResponseSchema = z.object({
 
 export type PageSectionEditApplyResponse = z.infer<typeof PageSectionEditApplyResponseSchema>;
 
+/**
+ * Scoped Page Section Reorder Contracts
+ */
+export const PageSectionReorderProposalRequestSchema = z.object({
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  sectionIds: z.array(z.string().min(1)).min(1),
+}).strict();
+
+export type PageSectionReorderProposalRequest = z.infer<typeof PageSectionReorderProposalRequestSchema>;
+
+export const PageSectionReorderProposalResponseSchema = z.object({
+  status: z.literal('proposed'),
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int(),
+  sectionIds: z.array(z.string()),
+  sectionNames: z.array(z.string()),
+  diff: z.object({
+    before: z.string(),
+    after: z.string(),
+  }),
+  updatedFullContent: z.string(),
+  renderedPreviewHtml: z.string(),
+  summary: z.string(),
+  createdAt: z.string(),
+}).strict();
+
+export type PageSectionReorderProposalResponse = z.infer<typeof PageSectionReorderProposalResponseSchema>;
+
+export const PageSectionReorderApplyRequestSchema = z.object({
+  planId: z.string().uuid(),
+  integrityHash: z.string().min(1),
+  targetSite: z.string().url(),
+  pageId: z.number().int().positive(),
+  approvedBy: z.string().default('user'),
+}).strict();
+
+export type PageSectionReorderApplyRequest = z.infer<typeof PageSectionReorderApplyRequestSchema>;
+
+export const PageSectionReorderApplyResponseSchema = z.object({
+  status: z.literal('applied'),
+  planId: z.string().uuid(),
+  targetSite: z.string().url(),
+  pageId: z.number().int(),
+  pageUrl: z.string(),
+  sectionIds: z.array(z.string()),
+  verified: z.boolean(),
+  postModified: z.string(),
+}).strict();
+
+export type PageSectionReorderApplyResponse = z.infer<typeof PageSectionReorderApplyResponseSchema>;
+
 export const PAGE_SNAPSHOT_RETENTION_LIMIT = 20;
 export const PAGE_SNAPSHOT_MAX_CONTENT_BYTES = 2 * 1024 * 1024;
 
@@ -1330,7 +1384,7 @@ export const PageSnapshotSchema = z.object({
   slug: z.string().max(200),
   status: z.string().min(1).max(50),
   content: PageSnapshotContentSchema,
-  sourceOperation: z.enum(['page_update', 'page_section_edit', 'page_trash', 'page_restore']),
+  sourceOperation: z.enum(['page_update', 'page_section_edit', 'page_section_reorder', 'page_trash', 'page_restore']),
   capturedAt: z.string().datetime(),
 }).strict();
 

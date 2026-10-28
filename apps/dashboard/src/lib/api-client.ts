@@ -952,3 +952,64 @@ export async function applySectionEdit(params: {
   if (!res.ok) throw new Error(data.message || data.error || `Section apply failed (${res.status})`);
   return data;
 }
+
+export interface SectionReorderProposalResult {
+  status: 'proposed';
+  planId: string;
+  integrityHash: string;
+  targetSite: string;
+  pageId: number;
+  sectionIds: string[];
+  sectionNames: string[];
+  diff: {
+    before: string;
+    after: string;
+  };
+  updatedFullContent: string;
+  renderedPreviewHtml: string;
+  summary: string;
+  createdAt: string;
+}
+
+export async function proposeSectionReorder(params: {
+  targetSite: string;
+  pageId: number;
+  sectionIds: string[];
+}): Promise<SectionReorderProposalResult> {
+  const res = await fetch('/api/site/pages/section/reorder/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || `Section reorder proposal failed (${res.status})`);
+  return data;
+}
+
+export interface SectionReorderApplyResult {
+  status: 'applied';
+  planId: string;
+  targetSite: string;
+  pageId: number;
+  pageUrl: string;
+  sectionIds: string[];
+  verified: boolean;
+  postModified: string;
+}
+
+export async function applySectionReorder(params: {
+  planId: string;
+  integrityHash: string;
+  pageId: number;
+  targetSite: string;
+  approvedBy?: string;
+}): Promise<SectionReorderApplyResult> {
+  const res = await fetch('/api/site/pages/section/reorder/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, approvedBy: params.approvedBy || 'user' }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || `Section reorder apply failed (${res.status})`);
+  return data;
+}

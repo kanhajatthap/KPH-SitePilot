@@ -16,7 +16,15 @@ const originalPage = {
   title: 'About',
   slug: 'about',
   status: 'publish',
-  content: '<!-- wp:paragraph --><p>Original content</p><!-- /wp:paragraph -->',
+  content: [
+    '<!-- wp:group -->',
+    '<div><p>Original hero</p></div>',
+    '<!-- /wp:group -->',
+    '\n\n',
+    '<!-- wp:cover -->',
+    '<div><p>Original features</p></div>',
+    '<!-- /wp:cover -->',
+  ].join(''),
   url: 'http://test.local/about/',
 };
 
@@ -724,6 +732,91 @@ describe('Page snapshot history and restore endpoints', () => {
       expect(applied.status).toBe(409);
       expect(restorePage).not.toHaveBeenCalled();
       await expect(snapshotStore.list('http://test.local', 42)).resolves.toHaveLength(1);
+    } finally {
+      await closeServer(server);
+    }
+  });
+});
+
+describe('Page section reorder proposal and approval endpoints', () => {
+  async function proposeReorder(baseUrl: string, targetSite = 'http://test.local') {
+    return fetch(`${baseUrl}/api/site/pages/section/reorder/propose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetSite,
+        pageId: 42,
+        sectionIds: ['sec_2', 'hero'],
+      }),
+    });
+  }
+
+  async function applyReorder(baseUrl: string, proposal: any, targetSite = 'http://test.local') {
+    return fetch(`${baseUrl}/api/site/pages/section/reorder/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        planId: proposal.planId,
+        integrityHash: proposal.integrityHash,
+        targetSite,
+        pageId: 42,
+      }),
+    });
+  }
+
+  it('stages reorder proposal without calling updatePage', async () => {
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue(originalPage);
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+    try {
+      const proposed = await proposeReorder(baseUrl);
+      expect(proposed.status).toBe(200);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses to apply when page changed after staging reorder', async () => {
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails')
+      .mockResolvedValueOnce(originalPage)
+      .mockResolvedValueOnce({ ...originalPage, content: '<p>Changed elsewhere</p>' });
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+    try {
+      const proposed = await proposeReorder(baseUrl);
+      expect(proposed.status).toBe(200);
+      const applied = await applyReorder(baseUrl, await proposed.json());
+      expect(applied.status).toBe(409);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('applies reorder only after approval and verifies read-back', async () => {
+    const readPage = vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails');
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage').mockResolvedValue({
+      id: 42,
+      title: 'About',
+      status: 'publish',
+      url: originalPage.url,
+    });
+    const { server, baseUrl } = await startServer();
+    try {
+      readPage.mockResolvedValueOnce(originalPage);
+      const proposal = await (await proposeReorder(baseUrl)).json();
+      readPage
+        .mockResolvedValueOnce(originalPage)
+        .mockResolvedValueOnce({ ...originalPage, content: String(proposal.updatedFullContent).trim() });
+
+      const applied = await applyReorder(baseUrl, proposal);
+      expect(applied.status).toBe(200);
+      await expect(applied.json()).resolves.toMatchObject({ status: 'applied', verified: true });
+      expect(updatePage).toHaveBeenCalledOnce();
+      await expect(snapshotStore.list('http://test.local', 42)).resolves.toMatchObject([
+        { content: originalPage.content, sourceOperation: 'page_section_reorder' },
+      ]);
     } finally {
       await closeServer(server);
     }

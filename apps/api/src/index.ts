@@ -31,6 +31,8 @@ import {
   PageDesignGenerationRequestSchema,
   PageSectionEditProposalRequestSchema,
   PageSectionEditApplyRequestSchema,
+  PageSectionReorderProposalRequestSchema,
+  PageSectionReorderApplyRequestSchema,
   ConversationHistorySchema,
   PageSnapshotListRequestSchema,
   PageSnapshotReadRequestSchema,
@@ -64,6 +66,7 @@ import {
   LocalWpSiteManager,
   identifyPageSections,
   proposeSectionEdit,
+  proposeSectionReorder,
 } from '@wp-agent/wp-client';
 import {
   parsePageDesignResponse,
@@ -3303,6 +3306,237 @@ export async function handleRequest(
         pageId,
         pageUrl: updateRes.url,
         sectionId: stored.extraData?.sectionId || 'unknown',
+        verified,
+        postModified,
+      });
+      return;
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 23b. Page Section Reorder Propose Endpoint
+  if (url === '/api/site/pages/section/reorder/propose' || url === '/site/pages/section/reorder/propose') {
+    if (method !== 'POST') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only POST is accepted.' });
+      return;
+    }
+    try {
+      const rawBody = await readJsonBody(req);
+      const parseResult = PageSectionReorderProposalRequestSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, issues: parseResult.error.issues });
+        return;
+      }
+      const { targetSite, pageId, sectionIds } = parseResult.data;
+      if (!isLocalPageTarget(targetSite)) {
+        sendJson(res, 403, {
+          error: ErrorCode.TARGET_NOT_ALLOWED,
+          message: 'Page section reorder is restricted to local WordPress test sites.',
+        });
+        return;
+      }
+      const siteMgr = new LocalWpSiteManager();
+      let currentPage: Awaited<ReturnType<LocalWpSiteManager['readPageDetails']>>;
+      try {
+        currentPage = await siteMgr.readPageDetails(pageId);
+      } catch {
+        sendJson(res, 404, { error: 'NOT_FOUND', message: `Target page #${pageId} not found on ${targetSite}.` });
+        return;
+      }
+      if (currentPage.status === 'trash') {
+        sendJson(res, 409, {
+          error: ErrorCode.VALIDATION_FAILED,
+          message: `Page #${pageId} is in the trash.`,
+        });
+        return;
+      }
+      const fullContent = currentPage.content;
+
+      let reorderResult: ReturnType<typeof proposeSectionReorder>;
+      try {
+        reorderResult = proposeSectionReorder({
+          fullContent,
+          sectionIds,
+        });
+      } catch (err: any) {
+        sendJson(res, 400, {
+          error: ErrorCode.VALIDATION_FAILED,
+          message: err.message || 'Failed to validate section reorder.',
+        });
+        return;
+      }
+
+      const planId = randomUUID();
+      const plan: ChangePlan = {
+        id: planId,
+        correlationId,
+        targetSite,
+        author: 'user',
+        operations: [
+          {
+            operationId: randomUUID(),
+            type: 'update_page_section' as any,
+            targetResource: `page:${pageId}:sections:reorder`,
+            summary: reorderResult.summary,
+            diff: {
+              before: reorderResult.diff.before,
+              after: reorderResult.diff.after,
+            },
+            isDestructive: false,
+          },
+        ],
+        status: 'proposed',
+        preconditions: [],
+        requiresHumanApproval: true,
+        summary: reorderResult.summary,
+        createdAt: new Date().toISOString(),
+      };
+
+      const integrityHash = calculatePlanHash(plan);
+      activeProposals.set(planId, {
+        plan,
+        integrityHash,
+        extraData: {
+          pageId,
+          sectionIds: reorderResult.sectionIds,
+          updatedFullContent: reorderResult.updatedFullContent,
+          original: {
+            title: currentPage.title,
+            status: currentPage.status,
+            content: currentPage.content,
+          },
+        },
+      });
+
+      sendJson(res, 200, {
+        status: 'proposed',
+        planId,
+        integrityHash,
+        targetSite,
+        pageId,
+        sectionIds: reorderResult.sectionIds,
+        sectionNames: reorderResult.sectionNames,
+        diff: reorderResult.diff,
+        updatedFullContent: reorderResult.updatedFullContent,
+        renderedPreviewHtml: reorderResult.renderedPreviewHtml,
+        summary: plan.summary,
+        createdAt: plan.createdAt,
+      });
+      return;
+    } catch (err: any) {
+      sendJson(res, 500, { error: 'INTERNAL_ERROR', message: err.message });
+      return;
+    }
+  }
+
+  // 23c. Page Section Reorder Apply Endpoint
+  if (url === '/api/site/pages/section/reorder/apply' || url === '/site/pages/section/reorder/apply') {
+    if (method !== 'POST') {
+      sendJson(res, 405, { error: 'Method Not Allowed', message: 'Only POST is accepted.' });
+      return;
+    }
+    try {
+      const rawBody = await readJsonBody(req);
+      const parseResult = PageSectionReorderApplyRequestSchema.safeParse(rawBody);
+      if (!parseResult.success) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, issues: parseResult.error.issues });
+        return;
+      }
+      const { planId, integrityHash, pageId, targetSite, approvedBy } = parseResult.data;
+      const stored = activeProposals.get(planId);
+      if (!stored || stored.integrityHash !== integrityHash) {
+        sendJson(res, 409, { error: ErrorCode.VALIDATION_FAILED, message: 'Invalid or tampered plan.' });
+        return;
+      }
+
+      if (stored.extraData?.pageId && stored.extraData.pageId !== pageId) {
+        sendJson(res, 400, { error: ErrorCode.VALIDATION_FAILED, message: 'Page ID does not match proposed plan.' });
+        return;
+      }
+
+      const updatedFullContent = stored.extraData?.updatedFullContent;
+      const original = stored.extraData?.original as
+        | { title: string; status: string; content: string }
+        | undefined;
+      if (!updatedFullContent || !original) {
+        sendJson(res, 409, { error: ErrorCode.VALIDATION_FAILED, message: 'Stored section reorder proposal is invalid.' });
+        return;
+      }
+      if (stored.plan.targetSite !== targetSite || !isLocalPageTarget(targetSite)) {
+        sendJson(res, 403, {
+          error: ErrorCode.TARGET_NOT_ALLOWED,
+          message: 'Approval target does not match the section reorder proposal target.',
+        });
+        return;
+      }
+      if (stored.applying) {
+        sendJson(res, 409, { error: 'APPLY_IN_PROGRESS', message: 'This proposal is already being applied.' });
+        return;
+      }
+      stored.applying = true;
+
+      const siteMgr = new LocalWpSiteManager();
+      let updateRes: Awaited<ReturnType<LocalWpSiteManager['updatePage']>>;
+      let verifiedPage: Awaited<ReturnType<LocalWpSiteManager['readPageDetails']>>;
+      try {
+        const current = await siteMgr.readPageDetails(pageId);
+        if (
+          current.title !== original.title ||
+          current.content !== original.content ||
+          current.status !== original.status
+        ) {
+          stored.applying = false;
+          sendJson(res, 409, {
+            error: ErrorCode.VALIDATION_FAILED,
+            message: `Page #${pageId} changed after this section reorder was staged. Refresh it and create a new proposal.`,
+          });
+          return;
+        }
+
+        await pageSnapshotStore.create({
+          targetSite,
+          pageId: current.id,
+          title: current.title,
+          slug: current.slug,
+          status: current.status,
+          content: current.content,
+          sourceOperation: 'page_section_reorder',
+        });
+        updateRes = await siteMgr.updatePage({ id: pageId, content: updatedFullContent });
+
+        verifiedPage = await siteMgr.readPageDetails(pageId);
+        if (verifiedPage.content !== String(updatedFullContent).trim()) {
+          throw new Error(`Page #${pageId} section reorder could not be verified.`);
+        }
+      } catch (err) {
+        stored.applying = false;
+        throw err;
+      }
+      const verified = true;
+      const postModified = new Date().toISOString();
+
+      activeProposals.delete(planId);
+      auditLogger.log({
+        type: 'agent_request',
+        actor: approvedBy,
+        targetSite,
+        action: 'update_page_section',
+        payload: {
+          pageId,
+          sectionIds: stored.extraData?.sectionIds,
+          verified,
+        },
+      });
+
+      sendJson(res, 200, {
+        status: 'applied',
+        planId,
+        targetSite,
+        pageId,
+        pageUrl: updateRes.url,
+        sectionIds: stored.extraData?.sectionIds || [],
         verified,
         postModified,
       });

@@ -59,6 +59,8 @@ import {
   fetchPageSections,
   proposeSectionEdit,
   applySectionEdit,
+  proposeSectionReorder,
+  applySectionReorder,
   listSitePages,
   listPageSnapshots,
   comparePageSnapshot,
@@ -153,6 +155,7 @@ export default function DashboardPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const approvalInFlightRef = useRef(false);
+  const [reorderInFlight, setReorderInFlight] = useState(false);
   const chatHistorySaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -952,6 +955,50 @@ The live site has been updated. Refresh the Preview tab to see changes.`,
         return;
       }
 
+      // ── ROUTE: Section Reorder ──────────────────────────────────────────
+      if (proposal.operationType === 'section_reorder') {
+        const { reorderDetails } = proposal;
+        if (!reorderDetails) {
+          throw new Error('Section reorder proposal is missing reorderDetails.');
+        }
+        const result = await applySectionReorder({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          pageId: reorderDetails.pageId,
+          targetSite: proposal.targetSite,
+          approvedBy: 'user',
+        });
+        const successMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: `✅ **Sections reordered** on WordPress Page #${reorderDetails.pageId}!\n\n• **New order:** ${(reorderDetails.sectionNames || reorderDetails.sectionIds).join(' → ')}\n• **Page URL:** [${result.pageUrl}](${result.pageUrl})\n• **Last Modified:** ${result.postModified}\n• **Verified:** ${result.verified ? 'Yes (read-only GET confirmed)' : 'Pending'}\n\nThe live site has been updated. Refresh the Preview tab to see changes.`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        };
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.builderProposal?.planId === proposal.planId
+              ? { ...m, builderProposal: { ...m.builderProposal, isApplied: true } }
+              : m
+          )
+        );
+        setMessages((prev) => [...prev, successMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'builder',
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        setActiveCanvasTab('live');
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) } : undefined
+          );
+        }
+        return;
+      }
+
       // ── ROUTE: Content / Post Creation (default) ─────────────────────────
       const content =
         proposal.renderedPreviewHtml ||
@@ -1202,6 +1249,61 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
     } finally {
       setIsLoading(false);
       setPreview((prev) => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleReorderSections = async (pageId: number, sectionIds: string[]) => {
+    if (!selectedSite) return;
+    setReorderInFlight(true);
+    try {
+      const reorderProposal = await proposeSectionReorder({
+        targetSite: selectedSite,
+        pageId,
+        sectionIds,
+      });
+
+      const bProposal: BuilderProposal = {
+        status: 'proposed',
+        planId: reorderProposal.planId,
+        integrityHash: reorderProposal.integrityHash,
+        targetSite: selectedSite,
+        builderType: 'gutenberg',
+        title: `Reorder Sections (Page #${pageId})`,
+        diff: {
+          before: reorderProposal.diff.before,
+          after: reorderProposal.diff.after,
+        },
+        renderedPreviewHtml: reorderProposal.renderedPreviewHtml,
+        unsupportedFeatures: [],
+        summary: reorderProposal.summary,
+        createdAt: reorderProposal.createdAt,
+        operationType: 'section_reorder',
+        reorderDetails: {
+          pageId: reorderProposal.pageId,
+          sectionIds: reorderProposal.sectionIds,
+          sectionNames: reorderProposal.sectionNames,
+        },
+      };
+
+      const assistantMessage: ChatMessage = {
+        id: `msg_asst_${Date.now()}`,
+        role: 'assistant',
+        content: `🔀 **Section Reorder Proposal** — Page #${pageId}\n\n**New order:** ${reorderProposal.sectionNames.join(' → ')}\n**Summary:** ${reorderProposal.summary}\n\nReview the order in the Preview panel. Click **✓ Approve & Apply** to write changes to WordPress, or **Reject** to cancel.`,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        builderProposal: bProposal,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      setPreview((prev) => ({
+        ...prev,
+        isLoading: false,
+        activeView: 'builder',
+        builderProposal: bProposal,
+        lastUpdated: new Date().toISOString(),
+      }));
+    } finally {
+      setReorderInFlight(false);
     }
   };
 
@@ -2678,6 +2780,8 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           onViewportChange={setViewport}
           onStageSectionProposal={handleStageInspectorSectionProposal}
           isStagingSection={isLoading}
+          onReorderSections={handleReorderSections}
+          reorderInFlight={reorderInFlight}
         />
       </div>
     </div>

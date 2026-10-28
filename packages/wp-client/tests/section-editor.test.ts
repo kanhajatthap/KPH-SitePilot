@@ -175,3 +175,65 @@ describe('Gutenberg section inspector attributes', () => {
     });
   });
 });
+
+describe('Gutenberg section reorder', () => {
+  it('preserves block attributes and inner blocks when reordering top-level sections', async () => {
+    const { proposeSectionReorder } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group {"align":"wide","backgroundColor":"contrast"} -->',
+      '<div class="wp-block-group"><!-- wp:paragraph -->',
+      '<p>Group content</p>',
+      '<!-- /wp:paragraph --></div>',
+      '<!-- /wp:group -->',
+      '',
+      '<!-- wp:cover {"align":"full"} -->',
+      '<div class="wp-block-cover"><h1>Cover</h1></div>',
+      '<!-- /wp:cover -->',
+    ].join('\n\n');
+
+    const result = proposeSectionReorder({ fullContent: content, sectionIds: ['sec_2', 'hero'] });
+    expect(result.updatedFullContent).toContain('wp:cover');
+    expect(result.updatedFullContent).toContain('wp:group');
+    expect(result.updatedFullContent).toContain('Group content');
+    expect(result.updatedFullContent).toContain('Cover');
+    expect((result.updatedFullContent.match(/<!-- wp:/g) || []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('rejects duplicate sections', async () => {
+    const { proposeSectionReorder } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div></div>',
+      '<!-- /wp:group -->',
+      '',
+      '<!-- wp:cover -->',
+      '<div></div>',
+      '<!-- /wp:cover -->',
+    ].join('\n\n');
+    expect(() => proposeSectionReorder({ fullContent: content, sectionIds: ['sec_1', 'sec_1'] })).toThrow(/duplicate/i);
+  });
+
+  it('rejects missing sections', async () => {
+    const { proposeSectionReorder } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div></div>',
+      '<!-- /wp:group -->',
+    ].join('\n\n');
+    expect(() => proposeSectionReorder({ fullContent: content, sectionIds: ['sec_1', 'missing'] })).toThrow(/not found/i);
+  });
+
+  it('rejects partial reorder (must include all top-level sections)', async () => {
+    const { proposeSectionReorder } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div></div>',
+      '<!-- /wp:group -->',
+      '',
+      '<!-- wp:cover -->',
+      '<div></div>',
+      '<!-- /wp:cover -->',
+    ].join('\n\n');
+    expect(() => proposeSectionReorder({ fullContent: content, sectionIds: ['hero'] })).toThrow(/exactly once/i);
+  });
+});

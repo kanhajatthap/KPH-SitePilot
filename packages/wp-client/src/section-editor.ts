@@ -237,6 +237,18 @@ export interface SectionEditProposalResult {
   summary: string;
 }
 
+export interface SectionReorderProposalResult {
+  updatedFullContent: string;
+  sectionIds: string[];
+  sectionNames: string[];
+  diff: {
+    before: string;
+    after: string;
+  };
+  renderedPreviewHtml: string;
+  summary: string;
+}
+
 const ALLOWED_ALIGN_VALUES = new Set(['none', 'wide', 'full', 'center', 'left', 'right']);
 const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const ALLOWED_PRESET_COLORS = new Set([
@@ -578,5 +590,106 @@ export function proposeSectionEdit(params: {
     renderedPreviewHtml: updatedFullContent,
     unsupportedOperations,
     summary,
+  };
+}
+
+/**
+ * Reorders top-level Gutenberg sections exactly by section IDs.
+ * Preserves each block's serialized attributes, inner blocks, and content.
+ * Only reorders the selected top-level block slices - non-block content is not supported for reorder.
+ */
+export function proposeSectionReorder(params: {
+  fullContent: string;
+  sectionIds: string[];
+}): SectionReorderProposalResult {
+  const { fullContent, sectionIds } = params;
+
+  if (!Array.isArray(sectionIds) || sectionIds.length === 0) {
+    throw new Error('sectionIds must contain at least one section.');
+  }
+
+  // Ensure unique section IDs
+  const seen = new Set<string>();
+  for (const id of sectionIds) {
+    const normalized = id.trim();
+    if (!normalized) {
+      throw new Error('sectionIds cannot contain empty values.');
+    }
+    if (seen.has(normalized.toLowerCase())) {
+      throw new Error('sectionIds must not contain duplicate sections.');
+    }
+    seen.add(normalized.toLowerCase());
+  }
+
+  const sections = identifyPageSections(fullContent);
+  if (sections.length === 0) {
+    throw new Error('No reorderable top-level sections found in page content.');
+  }
+
+  // Build map of sections by normalized id
+  const sectionById = new Map<string, IdentifiedSection>();
+  for (const section of sections) {
+    sectionById.set(section.id.toLowerCase(), section);
+  }
+
+  // Validate all requested sections exist
+  for (const id of sectionIds) {
+    if (!sectionById.has(id.toLowerCase())) {
+      throw new Error(`Section "${id}" not found in page content.`);
+    }
+  }
+
+  // Ensure we are reordering only existing sections - we must reorder exactly the provided set
+  // All requested sections must be present; we do not allow reordering subsets in a way that drops blocks
+  // Validate that sectionIds correspond exactly to reorderable top-level sections from the page
+  if (sectionIds.length !== sections.length) {
+    throw new Error('Section reorder must include all top-level sections exactly once.');
+  }
+
+  // Build ordered blocks
+  const orderedBlocks: IdentifiedSection[] = [];
+  for (const id of sectionIds) {
+    const section = sectionById.get(id.toLowerCase());
+    if (!section) {
+      throw new Error(`Section "${id}" not found.`);
+    }
+    orderedBlocks.push(section);
+  }
+
+  // Reconstruct content: extract all top-level blocks in original order, replace with reordered ones
+  const topBlocks = extractTopLevelBlocks(fullContent);
+  if (topBlocks.length !== sections.length) {
+    throw new Error('Unsupported page structure for section reordering.');
+  }
+
+  // Verify sections correspond 1:1 to top blocks by position
+  // Build new content by taking non-block prefix/suffix around blocks and reordering blocks
+  // Find first block start and last block end
+  const firstBlockStart = topBlocks[0].startIndex;
+  const lastBlockEnd = topBlocks[topBlocks.length - 1].endIndex;
+  const prefix = fullContent.slice(0, firstBlockStart);
+  const suffix = fullContent.slice(lastBlockEnd);
+
+  // Check if there is non-block content outside of blocks - for now, only allow pure block content
+  // or content that is fully covered by blocks
+  if (prefix.trim() !== '' || suffix.trim() !== '') {
+    throw new Error('Section reordering is only supported when all content is in reorderable top-level blocks.');
+  }
+
+  // Reorder: take blocks in new order
+  const reorderedContent = orderedBlocks.map((s) => s.rawBlock).join('\n\n');
+
+  const beforeContent = topBlocks.map((b) => b.rawBlock).join('\n\n');
+
+  return {
+    updatedFullContent: reorderedContent,
+    sectionIds: orderedBlocks.map((s) => s.id),
+    sectionNames: orderedBlocks.map((s) => s.name),
+    diff: {
+      before: beforeContent,
+      after: reorderedContent,
+    },
+    renderedPreviewHtml: reorderedContent,
+    summary: `Reorder sections: ${orderedBlocks.map((s, i) => `${i + 1}. ${s.name}`).join(' → ')}`,
   };
 }

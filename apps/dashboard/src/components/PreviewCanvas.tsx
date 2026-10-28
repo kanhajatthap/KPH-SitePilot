@@ -33,6 +33,8 @@ interface PreviewCanvasProps {
   onViewportChange?: (viewport: ViewportMode) => void;
   onStageSectionProposal?: (sectionId: string, patch: Record<string, string | number | boolean>) => Promise<void>;
   isStagingSection?: boolean;
+  onReorderSections?: (pageId: number, sectionIds: string[]) => Promise<void> | void;
+  reorderInFlight?: boolean;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -77,6 +79,8 @@ export function PreviewCanvas({
   onViewportChange,
   onStageSectionProposal,
   isStagingSection = false,
+  onReorderSections,
+  reorderInFlight = false,
 }: PreviewCanvasProps) {
   const [treeOpen, setTreeOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -523,6 +527,8 @@ export function PreviewCanvas({
               onSelectSection={(_pageId, sectionId) => {
                 handleSectionSelection(sectionId);
               }}
+              onReorderSections={onReorderSections}
+              reorderInFlight={reorderInFlight}
               className="h-full"
             />
           </aside>
