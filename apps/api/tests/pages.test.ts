@@ -821,4 +821,233 @@ describe('Page section reorder proposal and approval endpoints', () => {
       await closeServer(server);
     }
   });
+
+  // --- Edge-case hardening at the HTTP boundary ---
+
+  function buildLargePage(sectionCount: number) {
+    const blocks: string[] = [];
+    const sectionIds: string[] = [];
+    for (let i = 0; i < sectionCount; i++) {
+      blocks.push('<!-- wp:group -->', `<div>Content ${i}</div>`, '<!-- /wp:group -->');
+      sectionIds.push(i === 0 ? 'hero' : `sec_${i + 1}`);
+    }
+    return { content: blocks.join('\n\n'), sectionIds };
+  }
+
+  it('stages and applies a 150-section reorder with exact read-back', async () => {
+    const { content, sectionIds } = buildLargePage(150);
+    const largePage = { ...originalPage, content };
+    const reversed = [...sectionIds].reverse();
+
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue(largePage);
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage').mockResolvedValue({
+      id: 42,
+      title: 'About',
+      status: 'publish',
+      url: originalPage.url,
+    });
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposed = await fetch(`${baseUrl}/api/site/pages/section/reorder/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetSite: 'http://test.local', pageId: 42, sectionIds: reversed }),
+      });
+      expect(proposed.status).toBe(200);
+      const proposal = await proposed.json();
+      expect(proposal.sectionIds).toHaveLength(150);
+      expect(proposal.sectionIds).toEqual(reversed);
+
+      // Apply: current page unchanged, verified content equals the proposal exactly.
+      vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails')
+        .mockResolvedValueOnce(largePage)
+        .mockResolvedValueOnce({ ...largePage, content: String(proposal.updatedFullContent).trim() });
+
+      const applied = await fetch(`${baseUrl}/api/site/pages/section/reorder/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: proposal.planId,
+          integrityHash: proposal.integrityHash,
+          targetSite: 'http://test.local',
+          pageId: 42,
+        }),
+      });
+      expect(applied.status).toBe(200);
+      await expect(applied.json()).resolves.toMatchObject({ status: 'applied', verified: true });
+      expect(updatePage).toHaveBeenCalledOnce();
+      const written = updatePage.mock.calls[0][0].content as string;
+      expect(written).toContain('Content 149');
+      expect(written.indexOf('Content 149')).toBeLessThan(written.indexOf('Content 0'));
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects a page above the 200-section limit before staging anything', async () => {
+    const { content, sectionIds } = buildLargePage(201);
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue({ ...originalPage, content });
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposed = await fetch(`${baseUrl}/api/site/pages/section/reorder/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetSite: 'http://test.local', pageId: 42, sectionIds }),
+      });
+      expect(proposed.status).toBe(400);
+      const body = await proposed.json();
+      expect(String(body.message)).toMatch(/more than 200 sections/i);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects mixed content between blocks with a diagnostic message', async () => {
+    const mixedContent = [
+      '<!-- wp:group -->',
+      '<div>First</div>',
+      '<!-- /wp:group -->',
+      '<p>Raw HTML between blocks</p>',
+      '<!-- wp:cover -->',
+      '<div>Second</div>',
+      '<!-- /wp:cover -->',
+    ].join('\n\n');
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue({
+      ...originalPage,
+      content: mixedContent,
+    });
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposed = await proposeReorder(baseUrl);
+      expect(proposed.status).toBe(400);
+      const body = await proposed.json();
+      expect(String(body.message)).toMatch(/not supported when non-whitespace/i);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses to apply a tampered reorder proposal', async () => {
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue(originalPage);
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposal = await (await proposeReorder(baseUrl)).json();
+      const tampered = await applyReorder(baseUrl, { ...proposal, integrityHash: 'tampered-hash' });
+      expect(tampered.status).toBe(409);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('restricts reorder propose/apply to local targets', async () => {
+    const readPage = vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails');
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage');
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposed = await proposeReorder(baseUrl, 'https://example.com');
+      expect(proposed.status).toBe(403);
+      expect(readPage).not.toHaveBeenCalled();
+
+      const applied = await applyReorder(
+        baseUrl,
+        { planId: '00000000-0000-4000-8000-000000000000', integrityHash: 'missing' },
+        'https://example.com'
+      );
+      // Unknown plan → 409 before any target check; either way no mutation is attempted.
+      expect([403, 409]).toContain(applied.status);
+      expect(updatePage).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('consumes the proposal so a second apply is rejected', async () => {
+    const readPage = vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails');
+    const updatePage = vi.spyOn(LocalWpSiteManager.prototype, 'updatePage').mockResolvedValue({
+      id: 42,
+      title: 'About',
+      status: 'publish',
+      url: originalPage.url,
+    });
+    const { server, baseUrl } = await startServer();
+
+    try {
+      readPage.mockResolvedValueOnce(originalPage);
+      const proposal = await (await proposeReorder(baseUrl)).json();
+      readPage
+        .mockResolvedValueOnce(originalPage)
+        .mockResolvedValueOnce({ ...originalPage, content: String(proposal.updatedFullContent).trim() });
+
+      const first = await applyReorder(baseUrl, proposal);
+      expect(first.status).toBe(200);
+
+      const second = await applyReorder(baseUrl, proposal);
+      expect(second.status).toBe(409);
+      expect(updatePage).toHaveBeenCalledOnce();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('preserves attributes, nested inner blocks, and separators through the API', async () => {
+    const richContent = [
+      '<!-- wp:group {"align":"wide","backgroundColor":"#ff0000","fontSize":"large"} -->',
+      '<div class="wp-block-group alignwide"><!-- wp:heading {"level":2} -->',
+      '<h2>Title</h2>',
+      '<!-- /wp:heading --><!-- wp:paragraph -->',
+      '<p>Body</p>',
+      '<!-- /wp:paragraph --></div>',
+      '<!-- /wp:group -->',
+      '<!-- separator-comment -->',
+      '<!-- wp:columns {"align":"full"} -->',
+      '<div class="wp-block-columns alignfull"><!-- wp:column -->',
+      '<div class="wp-block-column"><p>Column A</p></div>',
+      '<!-- /wp:column --></div>',
+      '<!-- /wp:columns -->',
+    ].join('\n\n');
+    vi.spyOn(LocalWpSiteManager.prototype, 'readPageDetails').mockResolvedValue({
+      ...originalPage,
+      content: richContent,
+    });
+    const { server, baseUrl } = await startServer();
+
+    try {
+      const proposed = await fetch(`${baseUrl}/api/site/pages/section/reorder/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetSite: 'http://test.local',
+          pageId: 42,
+          sectionIds: ['sec_2', 'hero'],
+        }),
+      });
+      expect(proposed.status).toBe(200);
+      const proposal = await proposed.json();
+
+      expect(proposal.updatedFullContent).toContain('"backgroundColor":"#ff0000"');
+      expect(proposal.updatedFullContent).toContain('"fontSize":"large"');
+      expect(proposal.updatedFullContent).toContain('"align":"full"');
+      expect(proposal.updatedFullContent).toContain('<h2>Title</h2>');
+      expect(proposal.updatedFullContent).toContain('<p>Body</p>');
+      expect(proposal.updatedFullContent).toContain('Column A');
+      expect(proposal.updatedFullContent).toContain('<!-- separator-comment -->');
+      // Reordered: columns first, then the group section.
+      expect(proposal.updatedFullContent.indexOf('wp:columns')).toBeLessThan(
+        proposal.updatedFullContent.indexOf('wp:group')
+      );
+    } finally {
+      await closeServer(server);
+    }
+  });
 });

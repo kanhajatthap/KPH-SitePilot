@@ -15,6 +15,13 @@ export interface RouteTreeProps {
   className?: string;
 }
 
+/** Show a performance warning above this count; allow staging up to the server hard limit. */
+const REORDER_WARN_THRESHOLD = 100;
+/** Must match the server-side MAX_SECTIONS guard in section-editor.ts. */
+const REORDER_MAX_SECTIONS = 200;
+
+type ReorderNotice = { tone: 'warning' | 'error' | 'info'; message: string };
+
 function TreeIcon({ d, className = 'h-3.5 w-3.5' }: { d: string; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -44,6 +51,7 @@ export function RouteTree({
   const [loadingSections, setLoadingSections] = useState<Record<number, boolean>>({});
   const [sectionErrors, setSectionErrors] = useState<Record<number, string | null>>({});
   const [reorderDraft, setReorderDraft] = useState<Record<number, string[]>>({});
+  const [reorderNotices, setReorderNotices] = useState<Record<number, ReorderNotice | null>>({});
 
   const loadPages = useCallback(async () => {
     setLoading(true);
@@ -107,15 +115,51 @@ export function RouteTree({
     onSelectSection?.(pageId, sectionId);
   };
 
+  const setReorderNotice = (pageId: number, notice: ReorderNotice | null) => {
+    setReorderNotices((prev) => ({ ...prev, [pageId]: notice }));
+  };
+
   const moveSection = (pageId: number, index: number, direction: -1 | 1) => {
     const current = reorderDraft[pageId] || sectionsByPage[pageId]?.map((s) => s.id) || [];
     if (current.length === 0) return;
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= current.length) return;
+
+    // Hard guard: never stage beyond the server's supported maximum.
+    const pageSectionCount = sectionsByPage[pageId]?.length || current.length;
+    if (pageSectionCount > REORDER_MAX_SECTIONS) {
+      setReorderNotice(pageId, {
+        tone: 'error',
+        message: `This page has ${pageSectionCount} sections, above the supported maximum of ${REORDER_MAX_SECTIONS}. Reordering is disabled to protect page integrity.`,
+      });
+      return;
+    }
+
     const next = [...current];
     const [moved] = next.splice(index, 1);
     next.splice(targetIndex, 0, moved);
+
+    // Safety check: the resulting order must always be a permutation of the original.
+    if (new Set(next).size !== next.length) {
+      setReorderNotice(pageId, {
+        tone: 'error',
+        message: 'Invalid section order — discard the draft and try again.',
+      });
+      return;
+    }
+
     setReorderDraft((prev) => ({ ...prev, [pageId]: next }));
+
+    // Non-blocking performance hint for very large pages (still allowed up to the hard limit).
+    setReorderNotice(
+      pageId,
+      pageSectionCount > REORDER_WARN_THRESHOLD
+        ? {
+            tone: 'warning',
+            message: `Large page: ${pageSectionCount} sections. Reordering still works, but staging may take longer.`,
+          }
+        : null
+    );
   };
 
   const discardReorder = (pageId: number) => {
@@ -124,17 +168,34 @@ export function RouteTree({
       delete next[pageId];
       return next;
     });
+    setReorderNotice(pageId, null);
   };
 
   const stageReorder = async (pageId: number) => {
     const draft = reorderDraft[pageId];
     if (!draft || !onReorderSections) return;
-    await onReorderSections(pageId, draft);
-    setReorderDraft((prev) => {
-      const next = { ...prev };
-      delete next[pageId];
-      return next;
-    });
+    if (draft.length > REORDER_MAX_SECTIONS) {
+      setReorderNotice(pageId, {
+        tone: 'error',
+        message: `Cannot stage ${draft.length} sections — the maximum is ${REORDER_MAX_SECTIONS}.`,
+      });
+      return;
+    }
+    try {
+      await onReorderSections(pageId, draft);
+      // Only clear the draft once staging succeeded; keep it on failure so the user can retry.
+      setReorderDraft((prev) => {
+        const next = { ...prev };
+        delete next[pageId];
+        return next;
+      });
+      setReorderNotice(pageId, null);
+    } catch (err) {
+      setReorderNotice(pageId, {
+        tone: 'error',
+        message: (err as Error).message || 'Failed to stage reorder. Your draft order was kept so you can retry.',
+      });
+    }
   };
 
   return (
@@ -273,13 +334,39 @@ export function RouteTree({
                             <span className="truncate">Entire page (all sections)</span>
                           </button>
 
+                          <div aria-live="polite" data-testid={`reorder-notice-${page.id}`}>
+                            {reorderNotices[page.id] ? (
+                              <div
+                                className={`mt-1 rounded border px-2 py-1 text-[9.5px] leading-tight ${
+                                  reorderNotices[page.id]!.tone === 'error'
+                                    ? 'border-rose-200 bg-rose-50 text-rose-800'
+                                    : reorderNotices[page.id]!.tone === 'warning'
+                                      ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                      : 'border-line bg-paper-deep text-ink-soft'
+                                }`}
+                                role={reorderNotices[page.id]!.tone === 'error' ? 'alert' : 'status'}
+                              >
+                                {reorderNotices[page.id]!.message}
+                              </div>
+                            ) : null}
+                          </div>
+
                           {(() => {
                             const orderedIds = reorderDraft[page.id] || sections.map((s) => s.id);
                             const sectionMap = new Map(sections.map((s) => [s.id, s]));
                             const displaySections = orderedIds.map((id) => sectionMap.get(id)).filter(Boolean) as typeof sections;
-                            const isDirty = reorderDraft[page.id] && JSON.stringify(reorderDraft[page.id]) !== JSON.stringify(sections.map((s) => s.id));
+                            const isDirty = Boolean(
+                              reorderDraft[page.id] &&
+                              JSON.stringify(reorderDraft[page.id]) !== JSON.stringify(sections.map((s) => s.id))
+                            );
+                            const canReorder = sections.length > 1;
                             return (
                               <>
+                                {canReorder ? (
+                                  <p className="px-1.5 pb-0.5 text-[9px] text-ink-muted" data-testid={`reorder-hint-${page.id}`}>
+                                    Drag-free reorder: use ↑/↓ (or Alt+↑/↓ on a focused section). Changes stay local until you stage and approve.
+                                  </p>
+                                ) : null}
                                 {displaySections.map((section, idx) => {
                                   const isSecActive = isSelected && selectedSectionId === section.id;
                                   return (
@@ -295,8 +382,20 @@ export function RouteTree({
                                       <button
                                         type="button"
                                         onClick={() => handleSectionClick(page.id, section.id)}
-                                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                                        onKeyDown={(e) => {
+                                          if (!e.altKey) return;
+                                          if (e.key === 'ArrowUp') {
+                                            e.preventDefault();
+                                            moveSection(page.id, idx, -1);
+                                          } else if (e.key === 'ArrowDown') {
+                                            e.preventDefault();
+                                            moveSection(page.id, idx, 1);
+                                          }
+                                        }}
+                                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left focus-ring rounded"
+                                        aria-label={`${section.name} — position ${idx + 1} of ${displaySections.length}. Alt+Arrow keys reorder.`}
                                       >
+                                        <span className="w-3 shrink-0 text-right font-mono text-[9px] opacity-50">{idx + 1}</span>
                                         <TreeIcon d="M4 7h16M4 12h8m-8 5h12" className="h-3 w-3 opacity-60 shrink-0" />
                                         <span className="truncate">{section.name}</span>
                                         <span className="font-mono text-[9px] opacity-60 shrink-0">#{section.id}</span>
@@ -309,8 +408,9 @@ export function RouteTree({
                                             moveSection(page.id, idx, -1);
                                           }}
                                           disabled={idx === 0 || reorderInFlight}
-                                          className="rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
+                                          className="focus-ring rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
                                           aria-label="Move section up"
+                                          title={idx === 0 ? 'Already first' : 'Move up'}
                                         >
                                           <TreeIcon d="M18 15l-6-6-6 6" className="h-3 w-3" />
                                         </button>
@@ -321,8 +421,9 @@ export function RouteTree({
                                             moveSection(page.id, idx, 1);
                                           }}
                                           disabled={idx === displaySections.length - 1 || reorderInFlight}
-                                          className="rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
+                                          className="focus-ring rounded p-0.5 hover:bg-black/10 disabled:opacity-30"
                                           aria-label="Move section down"
+                                          title={idx === displaySections.length - 1 ? 'Already last' : 'Move down'}
                                         >
                                           <TreeIcon d="M6 9l6 6 6-6" className="h-3 w-3" />
                                         </button>
@@ -331,23 +432,24 @@ export function RouteTree({
                                   );
                                 })}
                                 {isDirty ? (
-                                  <div className="mt-1 flex items-center gap-1">
+                                  <div className="mt-1 flex items-center gap-1" data-testid={`reorder-actions-${page.id}`}>
                                     <button
                                       type="button"
                                       onClick={() => discardReorder(page.id)}
                                       disabled={reorderInFlight}
-                                      className="rounded px-1.5 py-0.5 text-[9.5px] text-ink-muted hover:bg-paper-deep disabled:opacity-40"
+                                      className="focus-ring rounded px-1.5 py-0.5 text-[9.5px] text-ink-muted hover:bg-paper-deep disabled:opacity-40"
                                     >
-                                      Discard
+                                      Reset order
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => void stageReorder(page.id)}
                                       disabled={reorderInFlight}
-                                      className="rounded bg-ink px-1.5 py-0.5 text-[9.5px] font-semibold text-white hover:bg-stone-800 disabled:opacity-40"
+                                      className="focus-ring rounded bg-ink px-1.5 py-0.5 text-[9.5px] font-semibold text-white hover:bg-stone-800 disabled:opacity-40"
                                     >
                                       {reorderInFlight ? 'Staging…' : 'Stage reorder'}
                                     </button>
+                                    <span className="text-[9px] text-ink-muted">Not applied yet — approval required.</span>
                                   </div>
                                 ) : null}
                               </>

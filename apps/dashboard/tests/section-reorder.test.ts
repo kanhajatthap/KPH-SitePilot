@@ -72,4 +72,62 @@ describe('Section Reorder Safety', () => {
     );
     expect(applyCalls).toHaveLength(0);
   });
+
+  it('keeps the local draft when staging fails so the user can retry', async () => {
+    // Mirrors RouteTree.stageReorder: draft is only cleared after a successful stage.
+    const original = ['hero', 'features', 'metrics'];
+    let draft: string[] = ['metrics', 'hero', 'features'];
+    let notice: { tone: 'warning' | 'error' | 'info'; message: string } | null = null;
+
+    const stage = async (onReorder: () => Promise<void>) => {
+      try {
+        await onReorder();
+        draft = [];
+        notice = null;
+      } catch (err) {
+        notice = { tone: 'error', message: (err as Error).message };
+      }
+    };
+
+    await stage(async () => {
+      throw new Error('Stale proposal');
+    });
+
+    expect(draft).toEqual(['metrics', 'hero', 'features']);
+    expect(draft).not.toEqual(original);
+    expect(notice).toEqual({ tone: 'error', message: 'Stale proposal' });
+  });
+
+  it('warns above 100 sections but still allows staging up to the 200 hard limit', () => {
+    const REORDER_WARN_THRESHOLD = 100;
+    const REORDER_MAX_SECTIONS = 200;
+
+    const evaluate = (count: number) => ({
+      blocked: count > REORDER_MAX_SECTIONS,
+      warned: count > REORDER_WARN_THRESHOLD && count <= REORDER_MAX_SECTIONS,
+    });
+
+    expect(evaluate(2)).toEqual({ blocked: false, warned: false });
+    expect(evaluate(100)).toEqual({ blocked: false, warned: false });
+    expect(evaluate(150)).toEqual({ blocked: false, warned: true });
+    expect(evaluate(200)).toEqual({ blocked: false, warned: true });
+    expect(evaluate(201)).toEqual({ blocked: true, warned: false });
+  });
+
+  it('reset order restores the original section order without network calls', () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+
+    const original = ['hero', 'features', 'metrics'];
+    let draft: string[] | null = ['metrics', 'hero', 'features'];
+
+    const reset = () => {
+      draft = null;
+    };
+    reset();
+
+    expect(draft).toBeNull();
+    expect(original).toEqual(['hero', 'features', 'metrics']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

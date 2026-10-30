@@ -176,6 +176,137 @@ describe('Gutenberg section inspector attributes', () => {
   });
 });
 
+describe('Gutenberg block parsing', () => {
+  it('does not confuse prefixed nested block names with the outer block', async () => {
+    const { extractTopLevelBlocks } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:query {"queryId":1} -->',
+      '<div class="wp-block-query">',
+      '<!-- wp:query-title {"type":"archive"} /-->',
+      '<!-- wp:query-pagination -->',
+      '<div class="wp-block-query-pagination"><!-- wp:query-pagination-previous /--></div>',
+      '<!-- /wp:query-pagination -->',
+      '</div>',
+      '<!-- /wp:query -->',
+      '<!-- wp:group -->',
+      '<div><p>Group After Query</p></div>',
+      '<!-- /wp:group -->',
+    ].join('\n');
+
+    const blocks = extractTopLevelBlocks(content);
+    expect(blocks.map((b) => b.blockName)).toEqual(['query', 'group']);
+    // The following group must not be swallowed by the query block.
+    expect(blocks[0].rawBlock).not.toContain('Group After Query');
+    expect(blocks[1].rawBlock).toContain('Group After Query');
+  });
+
+  it('records only the outermost block when names are identical and nested', async () => {
+    const { extractTopLevelBlocks } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group {"className":"outer"} -->',
+      '<div class="wp-block-group outer">',
+      '<!-- wp:group {"className":"inner"} -->',
+      '<div class="wp-block-group inner"><p>Inner</p></div>',
+      '<!-- /wp:group -->',
+      '</div>',
+      '<!-- /wp:group -->',
+    ].join('\n');
+
+    const blocks = extractTopLevelBlocks(content);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].blockName).toBe('group');
+    expect(blocks[0].rawBlock).toContain('"className":"outer"');
+    expect(blocks[0].rawBlock).toContain('"className":"inner"');
+    expect(blocks[0].rawBlock).toContain('<p>Inner</p>');
+  });
+
+  it('keeps nested self-closing blocks inside their parent slice', async () => {
+    const { extractTopLevelBlocks } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div>',
+      '<!-- wp:spacer {"height":20} /-->',
+      '<p>Group body</p>',
+      '</div>',
+      '<!-- /wp:group -->',
+      '<!-- wp:spacer {"height":40} /-->',
+    ].join('\n');
+
+    const blocks = extractTopLevelBlocks(content);
+    expect(blocks.map((b) => b.blockName)).toEqual(['group', 'spacer']);
+    expect(blocks[0].rawBlock).toContain('"height":20');
+    expect(blocks[0].rawBlock).toContain('Group body');
+    expect(blocks[1].rawBlock).toContain('"height":40');
+  });
+
+  it('degrades an unclosed top-level block to one slice instead of dropping content', async () => {
+    const { extractTopLevelBlocks } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div><p>Unclosed body</p></div>',
+      '<!-- wp:paragraph -->',
+      '<p>Still inside</p>',
+      '<!-- /wp:paragraph -->',
+    ].join('\n');
+
+    const blocks = extractTopLevelBlocks(content);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].blockName).toBe('group');
+    expect(blocks[0].rawBlock).toContain('Unclosed body');
+    expect(blocks[0].rawBlock).toContain('Still inside');
+  });
+
+  it('assigns unique, stable ids regardless of section content', async () => {
+    const { identifyPageSections } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:group -->',
+      '<div><h1>Hero headline</h1><p>hero copy</p></div>',
+      '<!-- /wp:group -->',
+      '<!-- wp:group -->',
+      '<div><p>hero metrics 99.9% latency</p></div>',
+      '<!-- /wp:group -->',
+      '<!-- wp:group -->',
+      '<div><p>hero features zero-delay</p></div>',
+      '<!-- /wp:group -->',
+    ].join('\n');
+
+    const sections = identifyPageSections(content);
+    expect(sections.map((s) => s.id)).toEqual(['hero', 'sec_2', 'sec_3']);
+    expect(new Set(sections.map((s) => s.id)).size).toBe(3);
+    expect(sections.map((s) => s.name)).toEqual([
+      'Hero Section',
+      'Section 2 (group)',
+      'Section 3 (group)',
+    ]);
+  });
+
+  it('reorders a query page with following sections as distinct sections', async () => {
+    const { proposeSectionReorder, identifyPageSections } = await import('../src/section-editor');
+    const content = [
+      '<!-- wp:query {"queryId":1} -->',
+      '<div class="wp-block-query">',
+      '<!-- wp:query-pagination -->',
+      '<div class="wp-block-query-pagination">Pages</div>',
+      '<!-- /wp:query-pagination -->',
+      '</div>',
+      '<!-- /wp:query -->',
+      '<!-- wp:group -->',
+      '<div><p>Trailing group</p></div>',
+      '<!-- /wp:group -->',
+    ].join('\n');
+
+    const sections = identifyPageSections(content);
+    expect(sections.map((s) => s.blockName)).toEqual(['query', 'group']);
+
+    const result = proposeSectionReorder({ fullContent: content, sectionIds: ['sec_2', 'hero'] });
+    expect(result.updatedFullContent.indexOf('wp:group')).toBeLessThan(
+      result.updatedFullContent.indexOf('wp:query')
+    );
+    expect(result.updatedFullContent).toContain('Trailing group');
+    expect(result.updatedFullContent).toContain('wp:query-pagination');
+  });
+});
+
 describe('Gutenberg section reorder', () => {
   it('preserves block attributes and inner blocks when reordering top-level sections', async () => {
     const { proposeSectionReorder } = await import('../src/section-editor');
@@ -235,5 +366,187 @@ describe('Gutenberg section reorder', () => {
       '<!-- /wp:cover -->',
     ].join('\n\n');
     expect(() => proposeSectionReorder({ fullContent: content, sectionIds: ['hero'] })).toThrow(/exactly once/i);
+  });
+
+  describe('edge case hardening', () => {
+    it('reorders very large pages (150 sections) successfully', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const blocks: string[] = [];
+      const sectionIds: string[] = [];
+      // First top-level block is always identified as "hero"; later ones are sec_<n>
+      for (let i = 0; i < 150; i++) {
+        blocks.push('<!-- wp:group -->', '<div>Content ' + i + '</div>', '<!-- /wp:group -->', '');
+        sectionIds.push(i === 0 ? 'hero' : 'sec_' + (i + 1));
+      }
+      const content = blocks.join('\n\n');
+
+      // Reverse the order to exercise a real reorder at scale
+      const reversed = [...sectionIds].reverse();
+      const result = proposeSectionReorder({ fullContent: content, sectionIds: reversed });
+      expect(result.sectionIds.length).toBe(150);
+      expect(result.sectionIds).toEqual(reversed);
+      expect(result.updatedFullContent).toContain('Content 0');
+      expect(result.updatedFullContent).toContain('Content 149');
+    });
+
+    it('rejects pages with more than 200 sections with a helpful message', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const blocks: string[] = [];
+      const sectionIds: string[] = [];
+      for (let i = 0; i < 201; i++) {
+        blocks.push('<!-- wp:group -->', '<div>Content ' + i + '</div>', '<!-- /wp:group -->', '');
+        sectionIds.push('sec_' + (i + 1));
+      }
+      const content = blocks.join('\n\n');
+      expect(() => proposeSectionReorder({ fullContent: content, sectionIds })).toThrow(/more than 200 sections/i);
+    });
+
+    it('preserves HTML comments and whitespace separators between blocks', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- wp:group -->',
+        '<div>Section One Content</div>',
+        '<!-- /wp:group -->',
+        '\n\n<!-- separator-comment -->\n\n',
+        '<!-- wp:cover -->',
+        '<div>Cover Content</div>',
+        '<!-- /wp:cover -->',
+        '\t\n',
+        '<!-- wp:columns -->',
+        '<div>Columns Content</div>',
+        '<!-- /wp:columns -->',
+      ].join('\n\n');
+
+      const result = proposeSectionReorder({
+        fullContent: content,
+        sectionIds: ['hero', 'sec_2', 'sec_3'],
+      });
+
+      expect(result.updatedFullContent).toContain('Section One Content');
+      expect(result.updatedFullContent).toContain('Cover Content');
+      expect(result.updatedFullContent).toContain('Columns Content');
+      expect(result.updatedFullContent).toContain('<!-- separator-comment -->');
+    });
+
+    it('is byte-stable: an unchanged order is a no-op and the inverse order restores the original', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- wp:group -->',
+        '<div>Section One Content</div>',
+        '<!-- /wp:group -->',
+        '\n\t\n<!-- keep -->\n',
+        '<!-- wp:cover -->',
+        '<div>Cover Content</div>',
+        '<!-- /wp:cover -->',
+        '\n\n\n',
+        '<!-- wp:paragraph -->',
+        '<p>Three</p>',
+        '<!-- /wp:paragraph -->',
+        '\n<!-- trailing -->\n',
+      ].join('\n\n');
+
+      // Same order must not add, trim, or re-synthesize separators.
+      const noop = proposeSectionReorder({
+        fullContent: content,
+        sectionIds: ['hero', 'sec_2', 'sec_3'],
+      });
+      expect(noop.updatedFullContent).toBe(content);
+
+      // Reverse, then apply the same reversal to the new document: the original
+      // file layout must come back byte-for-byte (no whitespace/comment drift).
+      const reversedIds = ['sec_3', 'sec_2', 'hero'];
+      const forward = proposeSectionReorder({ fullContent: content, sectionIds: reversedIds });
+      expect(forward.updatedFullContent).not.toBe(content);
+
+      const back = proposeSectionReorder({
+        fullContent: forward.updatedFullContent,
+        sectionIds: reversedIds,
+      });
+      expect(back.updatedFullContent).toBe(content);
+    });
+
+    it('preserves self-closing blocks during reorder', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- wp:spacer {"height":30} /-->',
+        '<!-- wp:group -->',
+        '<div>Section content</div>',
+        '<!-- /wp:group -->',
+        '<!-- wp:spacer {"height":60} /-->',
+      ].join('\n\n');
+
+      const result = proposeSectionReorder({
+        fullContent: content,
+        sectionIds: ['sec_2', 'hero', 'sec_3'],
+      });
+      expect(result.updatedFullContent).toContain('"height":30');
+      expect(result.updatedFullContent).toContain('"height":60');
+      expect(result.updatedFullContent).toContain('Section content');
+      // Group block moved to the front
+      expect(result.updatedFullContent.indexOf('Section content')).toBeLessThan(
+        result.updatedFullContent.indexOf('"height":30')
+      );
+    });
+
+    it('preserves whitespace/comments in prefix and suffix', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- preamble comment -->',
+        '<!-- wp:group -->',
+        '<div>Section One Content</div>',
+        '<!-- /wp:group -->',
+        '<!-- wp:cover -->',
+        '<div>Cover Content</div>',
+        '<!-- /wp:cover -->',
+        '<!-- postamble comment -->',
+      ].join('\n\n');
+
+      const result = proposeSectionReorder({ fullContent: content, sectionIds: ['hero', 'sec_2'] });
+      expect(result.updatedFullContent).toContain('<!-- preamble comment -->');
+      expect(result.updatedFullContent).toContain('<!-- postamble comment -->');
+    });
+
+    it('preserves attributes and nested inner blocks exactly', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- wp:group {"align":"wide","backgroundColor":"#ff0000","fontSize":"large"} -->',
+        '<div class="wp-block-group alignwide"><h2>Title</h2><p>Content</p></div>',
+        '<!-- /wp:group -->',
+        '<!-- wp:columns {"align":"full"} -->',
+        '<div class="wp-block-columns alignfull"><!-- wp:column -->',
+        '<div class="wp-block-column"><p>Column 1</p></div>',
+        '<!-- /wp:column --><!-- wp:column -->',
+        '<div class="wp-block-column"><p>Column 2</p></div>',
+        '<!-- /wp:column --></div>',
+        '<!-- /wp:columns -->',
+      ].join('\n\n');
+
+      const result = proposeSectionReorder({ fullContent: content, sectionIds: ['sec_2', 'hero'] });
+      expect(result.updatedFullContent).toContain('"backgroundColor":"#ff0000"');
+      expect(result.updatedFullContent).toContain('"align":"full"');
+      expect(result.updatedFullContent).toContain('Column 1');
+      expect(result.updatedFullContent).toContain('Column 2');
+      // Reordered: columns first, then group
+      expect(result.updatedFullContent.indexOf('wp:columns')).toBeLessThan(
+        result.updatedFullContent.indexOf('wp:group')
+      );
+    });
+
+    it('rejects mixed content between blocks (raw HTML)', async () => {
+      const { proposeSectionReorder } = await import('../src/section-editor');
+      const content = [
+        '<!-- wp:group -->',
+        '<div>Section One Content</div>',
+        '<!-- /wp:group -->',
+        '<p>Raw HTML paragraph between blocks</p>',
+        '<!-- wp:cover -->',
+        '<div>Cover Content</div>',
+        '<!-- /wp:cover -->',
+      ].join('\n\n');
+
+      expect(() =>
+        proposeSectionReorder({ fullContent: content, sectionIds: ['hero', 'sec_2'] })
+      ).toThrow(/not supported when non-whitespace/i);
+    });
   });
 });

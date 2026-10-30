@@ -11,6 +11,7 @@
     "test": "turbo run test",
     "test:live": "pnpm --filter @wp-agent/model-adapters test:live",
     "test:wp:live": "pnpm --filter @wp-agent/agent-core test:live",
+    "setup:agent-bridge": "pnpm --filter @wp-agent/agent-bridge build && pnpm --filter @wp-agent/agent-bridge configure:user",
     "start:api": "pnpm --filter @wp-agent/api start",
     "dev:dashboard": "pnpm --filter @wp-agent/dashboard dev",
     "start:dashboard": "pnpm --filter @wp-agent/dashboard start",

@@ -75,6 +75,15 @@ export function extractInspectableBlockAttributes(
 
 /**
  * Splits top-level Gutenberg blocks while strictly preserving markup and non-block text.
+ *
+ * Uses a stack of open block delimiters so that nested blocks whose names share a
+ * prefix with an outer block (e.g. `wp:query` + `wp:query-pagination`/`wp:query-title`)
+ * cannot be confused with the outer block. Only the outermost frame is recorded as a
+ * top-level section; nested blocks remain inside their parent's raw slice.
+ *
+ * Fail-soft: an unclosed top-level block is recorded from its start to end-of-document,
+ * so a malformed page degrades to a single (non-reorderable) section instead of losing
+ * content.
  */
 export function extractTopLevelBlocks(html: string): Array<{
   blockName: string;
@@ -91,88 +100,79 @@ export function extractTopLevelBlocks(html: string): Array<{
     endIndex: number;
   }> = [];
 
-  // Match top-level wp:block tags. We support nested structures by balancing open/close tags for that block.
-  const openTagRegex = /<!--\s+wp:([a-z0-9\/-]+)(?:\s+({[\s\S]*?}))?\s*(\/)?-->/gi;
+  // Matches open, close, and self-closing delimiters:
+  //   open:        <!-- wp:name {json} -->
+  //   close:       <!-- /wp:name -->
+  //   self-closing:<!-- wp:name {json} /-->
+  const tokenRegex = /<!--\s+(\/)?wp:([a-z0-9\/-]+)(?:\s+({[\s\S]*?}))?\s*(\/)?-->/gi;
+
+  type Frame = {
+    blockName: string;
+    attrs: Record<string, unknown>;
+    startIndex: number;
+  };
+  const stack: Frame[] = [];
+
+  const record = (frame: Frame, endIndex: number) => {
+    blocks.push({
+      blockName: frame.blockName,
+      rawBlock: html.slice(frame.startIndex, endIndex),
+      attrs: frame.attrs,
+      startIndex: frame.startIndex,
+      endIndex,
+    });
+  };
+
   let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(html)) !== null) {
+    const isClose = Boolean(match[1]);
+    const blockName = match[2];
+    const isSelfClosing = Boolean(match[4]);
+    const tokenStart = match.index;
+    const tokenEnd = tokenStart + match[0].length;
 
-  let searchFrom = 0;
-  while ((match = openTagRegex.exec(html)) !== null) {
-    if (match.index < searchFrom) continue;
+    if (isClose) {
+      // Find the nearest matching frame. Ignore stray or mismatched closing tags.
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].blockName === blockName) {
+          // Only the outermost frame becomes a top-level section.
+          if (i === 0) {
+            record(stack[0], tokenEnd);
+          }
+          // Drop this frame and any unclosed frames nested inside it.
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
 
-    const rawBlockName = match[1];
-    const isSelfClosing = !!match[3];
-    const startIndex = match.index;
     let attrs: Record<string, unknown> = {};
-    if (match[2]) {
+    if (match[3]) {
       try {
-        attrs = JSON.parse(match[2]);
+        attrs = JSON.parse(match[3]);
       } catch {
         attrs = {};
       }
     }
 
     if (isSelfClosing) {
-      const endIndex = startIndex + match[0].length;
-      blocks.push({
-        blockName: rawBlockName,
-        rawBlock: html.slice(startIndex, endIndex),
-        attrs,
-        startIndex,
-        endIndex,
-      });
-      searchFrom = endIndex;
-      openTagRegex.lastIndex = searchFrom;
+      // Nested self-closing blocks stay inside their parent slice.
+      if (stack.length === 0) {
+        record({ blockName, attrs, startIndex: tokenStart }, tokenEnd);
+      }
       continue;
     }
 
-    // Find matching closing tag with nesting counter
-    const closeTagStr = `<!-- /wp:${rawBlockName} -->`;
-    const innerOpenStr = `<!-- wp:${rawBlockName}`;
-    let depth = 1;
-    let scanPos = startIndex + match[0].length;
-    let finalEnd = -1;
-
-    while (depth > 0 && scanPos < html.length) {
-      const nextOpen = html.indexOf(innerOpenStr, scanPos);
-      const nextClose = html.indexOf(closeTagStr, scanPos);
-
-      if (nextClose === -1) {
-        // Unclosed block: consume till end
-        finalEnd = html.length;
-        depth = 0;
-        break;
-      }
-
-      if (nextOpen !== -1 && nextOpen < nextClose) {
-        // Verify this isn't a self-closing inner tag
-        const afterOpen = html.slice(nextOpen, nextOpen + 200);
-        const selfCloseCheck = afterOpen.match(/^<!--\s+wp:[a-z0-9\/-]+(?:\s+({[\s\S]*?}))?\s*\/-->/);
-        if (!selfCloseCheck) {
-          depth++;
-        }
-        scanPos = nextOpen + innerOpenStr.length;
-      } else {
-        depth--;
-        scanPos = nextClose + closeTagStr.length;
-        if (depth === 0) {
-          finalEnd = scanPos;
-        }
-      }
-    }
-
-    if (finalEnd !== -1) {
-      blocks.push({
-        blockName: rawBlockName,
-        rawBlock: html.slice(startIndex, finalEnd),
-        attrs,
-        startIndex,
-        endIndex: finalEnd,
-      });
-      searchFrom = finalEnd;
-      openTagRegex.lastIndex = searchFrom;
-    }
+    stack.push({ blockName, attrs, startIndex: tokenStart });
   }
 
+  // Fail-soft: an unclosed outermost block consumes the remainder of the document.
+  if (stack.length > 0) {
+    record(stack[0], html.length);
+  }
+
+  blocks.sort((a, b) => a.startIndex - b.startIndex);
   return blocks;
 }
 
@@ -185,29 +185,18 @@ export function identifyPageSections(html: string): IdentifiedSection[] {
 
   for (let i = 0; i < topBlocks.length; i++) {
     const b = topBlocks[i];
-    const rawLower = b.rawBlock.toLowerCase();
 
-    let id = `section-${i + 1}`;
-    let name = `Section ${i + 1} (${b.blockName})`;
-    let excerpt = '';
-
-    if (rawLower.includes('level":1') || rawLower.includes('wp-block-heading has-text-align-center') || rawLower.includes('hero') || i === 0) {
-      id = 'hero';
-      name = 'Hero Section';
-      excerpt = 'Hero headline, value proposition lead, and call-to-action buttons.';
-    } else if (rawLower.includes('engineered for performance') || rawLower.includes('wp:columns') && (rawLower.includes('feature') || rawLower.includes('zero-delay'))) {
-      id = 'features';
-      name = 'Features Grid';
-      excerpt = 'Three-column architectural features grid with security highlights.';
-    } else if (rawLower.includes('99.9%') || rawLower.includes('metric') || rawLower.includes('latency') || (rawLower.includes('wp:columns') && rawLower.includes('100%'))) {
-      id = 'metrics';
-      name = 'Metrics Bar';
-      excerpt = 'Three-column operational performance stats and accuracy metrics.';
-    } else {
-      id = `sec_${i + 1}`;
-      name = `Section ${i + 1}`;
-      excerpt = b.rawBlock.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) + '...';
-    }
+    // IDs must be stable and unique: reorder/approval APIs key sections by id, so
+    // content-based heuristics (which can match several blocks) would collide.
+    // The first top-level block is always "hero"; the rest are index-based.
+    const id = i === 0 ? 'hero' : `sec_${i + 1}`;
+    const name = i === 0 ? 'Hero Section' : `Section ${i + 1} (${b.blockName})`;
+    const excerpt =
+      b.rawBlock
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80) + '...';
 
     sections.push({
       id,
@@ -597,7 +586,50 @@ export function proposeSectionEdit(params: {
  * Reorders top-level Gutenberg sections exactly by section IDs.
  * Preserves each block's serialized attributes, inner blocks, and content.
  * Only reorders the selected top-level block slices - non-block content is not supported for reorder.
+ * Hardened for edge cases: very large pages, mixed content, malformed HTML.
  */
+const MAX_SECTIONS = 200;
+const WARNING_SECTION_THRESHOLD = 100;
+
+/**
+ * Checks if content consists only of allowed prefix/suffix content (whitespace and HTML comments).
+ */
+function isAllowedContentBlock(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed === '') return true;
+  // Allow only HTML comments and whitespace
+  const cleaned = trimmed.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, '');
+  return cleaned === '';
+}
+
+/**
+ * Extracts separators between blocks (whitespace and HTML comments only).
+ * Returns { separators: string[], hasInvalid: boolean }
+ */
+function extractSeparatorsSafely(fullContent: string, topBlocks: Array<{
+  startIndex: number;
+  endIndex: number;
+}>): { separators: string[]; hasInvalidSeparators: boolean } {
+  const separators: string[] = [];
+  let hasInvalidSeparators = false;
+
+  for (let i = 0; i < topBlocks.length - 1; i++) {
+    const blockEnd = topBlocks[i].endIndex;
+    const nextBlockStart = topBlocks[i + 1].startIndex;
+    const separator = fullContent.slice(blockEnd, nextBlockStart);
+
+    const hasOnlyWhitespaceAndComments = /^(?:<!--[\s\S]*?-->|\s)*$/.test(separator);
+
+    if (hasOnlyWhitespaceAndComments) {
+      separators.push(separator);
+    } else {
+      hasInvalidSeparators = true;
+    }
+  }
+
+  return { separators, hasInvalidSeparators };
+}
+
 export function proposeSectionReorder(params: {
   fullContent: string;
   sectionIds: string[];
@@ -621,9 +653,14 @@ export function proposeSectionReorder(params: {
     seen.add(normalized.toLowerCase());
   }
 
+  // Performance guard: hard limit at MAX_SECTIONS
+  if (sectionIds.length > MAX_SECTIONS) {
+    throw new Error(`Cannot reorder pages with more than ${MAX_SECTIONS} sections. Page contains ${sectionIds.length} sections. For best performance, consider keeping sections under ${WARNING_SECTION_THRESHOLD}.`);
+  }
+
   const sections = identifyPageSections(fullContent);
   if (sections.length === 0) {
-    throw new Error('No reorderable top-level sections found in page content.');
+    throw new Error('No reorderable top-level sections found in page content. Ensure the page contains Gutenberg blocks (wp:...).');
   }
 
   // Build map of sections by normalized id
@@ -635,7 +672,7 @@ export function proposeSectionReorder(params: {
   // Validate all requested sections exist
   for (const id of sectionIds) {
     if (!sectionById.has(id.toLowerCase())) {
-      throw new Error(`Section "${id}" not found in page content.`);
+      throw new Error(`Section "${id}" not found in page content. Available sections: ${sections.map(s => s.id).join(', ')}`);
     }
   }
 
@@ -643,7 +680,7 @@ export function proposeSectionReorder(params: {
   // All requested sections must be present; we do not allow reordering subsets in a way that drops blocks
   // Validate that sectionIds correspond exactly to reorderable top-level sections from the page
   if (sectionIds.length !== sections.length) {
-    throw new Error('Section reorder must include all top-level sections exactly once.');
+    throw new Error(`Section reorder must include all top-level sections exactly once. Page has ${sections.length} sections, but ${sectionIds.length} were specified.`);
   }
 
   // Build ordered blocks
@@ -659,25 +696,63 @@ export function proposeSectionReorder(params: {
   // Reconstruct content: extract all top-level blocks in original order, replace with reordered ones
   const topBlocks = extractTopLevelBlocks(fullContent);
   if (topBlocks.length !== sections.length) {
-    throw new Error('Unsupported page structure for section reordering.');
+    throw new Error(`Unsupported page structure for section reordering. Found ${topBlocks.length} top-level blocks but ${sections.length} sections were identified. Page may have malformed or unclosed block tags.`);
   }
 
-  // Verify sections correspond 1:1 to top blocks by position
-  // Build new content by taking non-block prefix/suffix around blocks and reordering blocks
   // Find first block start and last block end
   const firstBlockStart = topBlocks[0].startIndex;
   const lastBlockEnd = topBlocks[topBlocks.length - 1].endIndex;
   const prefix = fullContent.slice(0, firstBlockStart);
   const suffix = fullContent.slice(lastBlockEnd);
 
-  // Check if there is non-block content outside of blocks - for now, only allow pure block content
-  // or content that is fully covered by blocks
-  if (prefix.trim() !== '' || suffix.trim() !== '') {
-    throw new Error('Section reordering is only supported when all content is in reorderable top-level blocks.');
+  // Check prefix and suffix for non-allowed content
+  // Allow: leading/trailing whitespace, HTML comments only
+  // Reject: text, HTML tags, shortcodes, or other markup outside blocks
+  const prefixAllowed = isAllowedContentBlock(prefix);
+  const suffixAllowed = isAllowedContentBlock(suffix);
+
+  if (!prefixAllowed || !suffixAllowed) {
+    let errorMsg = 'Section reordering is only supported when all content is in reorderable top-level blocks.\n\n';
+
+    if (!prefixAllowed) {
+      const cleanedPrefix = prefix.replace(/\s+/g, ' ').trim();
+      const prefixWithoutComments = cleanedPrefix.replace(/<!--[\s\S]*?-->/g, '').trim();
+      errorMsg += `✖ Prefix contains non-whitespace content: "${prefixWithoutComments.substring(0, 80)}${prefixWithoutComments.length > 80 ? '...' : ''}"\n`;
+    }
+    if (!suffixAllowed) {
+      const cleanedSuffix = suffix.replace(/\s+/g, ' ').trim();
+      const suffixWithoutComments = cleanedSuffix.replace(/<!--[\s\S]*?-->/g, '').trim();
+      errorMsg += `✖ Suffix contains non-whitespace content: "${suffixWithoutComments.substring(0, 80)}${suffixWithoutComments.length > 80 ? '...' : ''}"\n`;
+    }
+    errorMsg += '\nThis can happen with:\n';
+    errorMsg += '- HTML comments or markup before the first block\n';
+    errorMsg += '- Text or shortcodes after the last block\n';
+    errorMsg += '- Other unsupported markup types outside block boundaries\n\n';
+    errorMsg += 'To reorder, ensure all content is wrapped in Gutenberg blocks, or accept that only the block content will be reordered.';
+    throw new Error(errorMsg);
   }
 
-  // Reorder: take blocks in new order
-  const reorderedContent = orderedBlocks.map((s) => s.rawBlock).join('\n\n');
+  // Extract separators between blocks
+  const { separators, hasInvalidSeparators } = extractSeparatorsSafely(fullContent, topBlocks);
+
+  if (hasInvalidSeparators && topBlocks.length > 1) {
+    throw new Error(`Section reordering is not supported when non-whitespace or non-comment content exists between blocks. Section reorder requires all content to be in reorderable top-level blocks with only whitespace/comments between them.`);
+  }
+
+  // Reorder by placing blocks into the original separator slots. Separators are
+  // positional (the gap between block N and N+1), so prefix, separators, and
+  // suffix are emitted byte-for-byte instead of being re-synthesized. This makes
+  // reordering stable: applying the inverse order restores the original document
+  // exactly, with no whitespace or comment drift.
+  const reorderedParts: string[] = [];
+  for (let i = 0; i < orderedBlocks.length; i++) {
+    if (i > 0) {
+      reorderedParts.push(separators[i - 1] ?? '');
+    }
+    reorderedParts.push(orderedBlocks[i].rawBlock);
+  }
+
+  const reorderedContent = prefix + reorderedParts.join('') + suffix;
 
   const beforeContent = topBlocks.map((b) => b.rawBlock).join('\n\n');
 
