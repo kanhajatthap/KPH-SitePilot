@@ -102,7 +102,7 @@ Engineering rules:
 - [x] Gutenberg block parsing hardened (read-only review follow-up): replaced the prefix-matching depth counter with a stack-based delimiter tokenizer. Nested blocks whose names extend the outer name (core `wp:query` + `wp:query-pagination`/`wp:query-title`) no longer swallow subsequent sections; nested same-name blocks and nested self-closing blocks stay inside their parent slice; unclosed top-level blocks degrade fail-soft to a single non-reorderable section instead of dropping content. Regression tests added for query pages, nested groups, nested self-closing blocks, unclosed blocks, and query-page reorder. Known residual limitation: an attribute JSON string containing the literal `-->` can still confuse delimiter detection (rare; no data-loss path). Evidence: wp-client 71/71 tests.
 
 - **Next task (blocked on environment):** Live end-to-end reorder verification against `plugin-test.local`. Blocker: the site's MySQL endpoint (`127.0.0.1:10029`) is not listening and HTTP returns 502, so the site must be started in LocalWP (a user/GUI action; no supported CLI was found). Once running: stage, approve, and confirm exact read-back for a page near the 100-section warning boundary, then confirm a stale proposal fails closed without losing the dashboard draft.
-- **Safe parallel task:** Review Gutenberg block wrapper and inner-block structure parsing rules, read-only and without modifying WordPress.
+- **Safe parallel task (completed):** Reviewed Gutenberg block wrapper and inner-block structure parsing rules read-only. Confirmed stack-based delimiter tracking correctly handles nested blocks, self-closing blocks, and unclosed blocks. No modifications needed.
 
 ## 4. Acceptance for Phase 1
 - `tsc --noEmit` passes for the dashboard.
