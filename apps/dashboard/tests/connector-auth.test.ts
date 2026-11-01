@@ -13,6 +13,7 @@ import {
   handleClaim,
   handleHeartbeat,
   handleJobResult,
+  handleUnpair,
   type ConnectorHandlerDeps,
   type SiteWriter,
 } from '../src/lib/connector/handlers';
@@ -79,6 +80,7 @@ class FakeJobStore implements ConnectorJobStore {
 class FakeSiteWriter implements SiteWriter {
   heartbeats: Array<Record<string, unknown>> = [];
   siteInfo: Array<Record<string, unknown>> = [];
+  revoked: string[] = [];
 
   async applyHeartbeat(siteId: string, input: Record<string, unknown>) {
     this.heartbeats.push({ siteId, ...input });
@@ -86,6 +88,12 @@ class FakeSiteWriter implements SiteWriter {
 
   async applySiteInfo(siteId: string, info: Record<string, unknown>) {
     this.siteInfo.push({ siteId, ...info });
+  }
+
+  async revokeSite(siteId: string) {
+    this.revoked.push(siteId);
+    const site = sites.sites.find((candidate) => candidate.id === siteId);
+    if (site) site.status = 'revoked';
   }
 }
 
@@ -422,6 +430,35 @@ describe('connector handlers', () => {
 
     expect(output.status).toBe(404);
     expect((output.body as { error: string }).error).toBe('JOB_NOT_FOUND');
+  });
+});
+
+describe('handleUnpair', () => {
+  it('revokes the site when the request is signed', async () => {
+    const body = JSON.stringify({ siteId: SITE_ID });
+    const result = await handleUnpair(signed(body), body, deps);
+
+    expect(result.status).toBe(200);
+    expect((result.body as { status: string }).status).toBe('revoked');
+    expect(writer.revoked).toEqual([SITE_ID]);
+  });
+
+  it('refuses an unsigned unpair, so nobody can revoke a site by guessing its id', async () => {
+    const body = JSON.stringify({ siteId: SITE_ID });
+    const result = await handleUnpair(signed(body, { secret: 'c'.repeat(64) }), body, deps);
+
+    expect(result.status).toBe(401);
+    expect(writer.revoked).toEqual([]);
+  });
+
+  it('reports SITE_REVOKED for a second call instead of revoking twice', async () => {
+    const body = JSON.stringify({ siteId: SITE_ID });
+    await handleUnpair(signed(body), body, deps);
+
+    const second = await handleUnpair(signed(body), body, deps);
+    expect(second.status).toBe(403);
+    expect((second.body as { error: string }).error).toBe('SITE_REVOKED');
+    expect(writer.revoked).toEqual([SITE_ID]);
   });
 });
 

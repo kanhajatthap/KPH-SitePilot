@@ -1,22 +1,35 @@
 import { NextResponse } from 'next/server';
+import { LOCAL_TARGET_PATTERNS, isTargetAllowed } from './target';
 
 export const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
 
-export const ALLOWED_TARGET_PATTERNS = [
-  /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
-  /^https?:\/\/localhost(:\d+)?$/i,
-  /^https?:\/\/127\.0\.0\.1(:\d+)?$/i,
-];
+/**
+ * @deprecated Local-only allowlist. Kept for backwards compatibility with
+ * existing imports; new code should use `isTargetAllowed` from `lib/target`.
+ */
+export const ALLOWED_TARGET_PATTERNS = LOCAL_TARGET_PATTERNS;
 
 export type TargetValidation =
   | { ok: true; targetSite: string }
   | { ok: false; response: NextResponse };
 
+export interface ValidateTargetOptions {
+  /**
+   * Hosted deployments (Supabase configured) may target any paired site;
+   * the caller must follow up with `authorizeTargetSite` for ownership.
+   * Local mode keeps the original localhost-only restriction.
+   */
+  saasMode?: boolean;
+}
+
 /**
- * Validates a target site before any request is forwarded to the local API.
- * This is the same local-only allowlist used by the existing proxy routes.
+ * Validates a target site before any request is forwarded to the API server.
+ * Structural checks happen here; ownership is enforced separately.
  */
-export function validateLocalTarget(targetSite: unknown): TargetValidation {
+export function validateLocalTarget(
+  targetSite: unknown,
+  { saasMode = false }: ValidateTargetOptions = {}
+): TargetValidation {
   if (!targetSite || typeof targetSite !== 'string') {
     return {
       ok: false,
@@ -50,14 +63,16 @@ export function validateLocalTarget(targetSite: unknown): TargetValidation {
     };
   }
 
-  const isAllowed = ALLOWED_TARGET_PATTERNS.some((pattern) => pattern.test(parsed.origin));
+  const isAllowed = isTargetAllowed(parsed.origin, { saasMode });
   if (!isAllowed) {
     return {
       ok: false,
       response: NextResponse.json(
         {
           error: 'TARGET_NOT_ALLOWED',
-          message: `Target "${targetSite}" is not an authorized local development environment.`,
+          message: saasMode
+            ? `Target "${targetSite}" is not an authorized address.`
+            : `Target "${targetSite}" is not an authorized local development environment.`,
         },
         { status: 403 }
       ),

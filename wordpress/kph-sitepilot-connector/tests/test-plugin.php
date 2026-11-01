@@ -131,8 +131,36 @@ $tools_source = file_get_contents( $plugin_dir . '/includes/class-tools.php' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'site.info'" ), 'site.info tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "kph_sp_unknown_tool" ), 'unknown tools are rejected' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'has_scope' ), 'tools check the site scope' );
-kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'this build ships no write tools' );
+kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'tools never touch post meta' );
 kph_sp_static_assert( false === strpos( $tools_source, 'wp_remote_' ), 'tools never make their own HTTP calls' );
+
+// Write tools (0.4.0): declared, scoped, snapshotted, verified, and reversible.
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.update'" ), 'content.update tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.create'" ), 'content.create tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.restore'" ), 'content.restore tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content' =>" ), 'write tools map to the content scope' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'plugins.list'" ), 'plugins.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'theme.info'" ), 'theme.info tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'users.list'" ), 'users.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.list'" ), 'media.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'terms.list'" ), 'terms.list tool registered' );
+kph_sp_static_assert( false === strpos( $tools_source, "user_email" ), 'users.list never returns email addresses' );
+kph_sp_static_assert( false === strpos( $tools_source, "user_pass" ), 'users.list never returns password hashes' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media'      =>" ) || false !== strpos( $tools_source, "'media.list'      => 'media'" ), 'media reads require the media scope' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'terms.list is limited to public taxonomies' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'menus.list'" ), 'menus.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_get_nav_menu_items' ), 'menus.list reads real menu items' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'esc_url_raw' ), 'menu item URLs are sanitised' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'is_writable_type' ), 'write tools refuse unsupported post types' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function snapshot' ), 'write tools take a before-snapshot' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function read_back' ), 'write tools read the post back' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function verify' ), 'write tools verify the result' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_verification_failed' ), 'verification failures are reported by code' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_slash' ), 'content is slashed before wp_update_post' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_kses_post' ), 'write tools sanitise content' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'draft' =>" ) || false !== strpos( $tools_source, "'draft'," ), 'create defaults to draft' );
+kph_sp_static_assert( false === strpos( $tools_source, 'delete_post' ), 'write tools never delete content' );
+kph_sp_static_assert( false === strpos( $tools_source, 'unfiltered_html' ), 'write tools never grant unfiltered HTML' );
 
 // Job runner: signed, outbound-only, lease-safe.
 $runner_source = file_get_contents( $plugin_dir . '/includes/class-job-runner.php' );
@@ -145,6 +173,23 @@ kph_sp_static_assert( false === strpos( $runner_source, 'error_log' ), 'runner n
 kph_sp_static_assert( false === strpos( $runner_source, "'secret' =>" ), 'runner never puts the secret in a payload' );
 kph_sp_static_assert( false === strpos( $runner_source, 'print_r' ), 'runner never dumps request data' );
 kph_sp_static_assert( false !== strpos( $runner_source, "'retryable'" ), 'runner classifies retryable failures' );
+kph_sp_static_assert( false !== strpos( $runner_source, "'snapshot'" ), 'runner forwards the before-snapshot for undo' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'SITE_REVOKED' ), 'runner reacts to a revoked connection' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function disconnect' ), 'runner can forget dead credentials' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'wp_schedule_single_event' ), 'live polls are scheduled as single events' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'LIVE_POLL_SECONDS' ), 'live mode polls every five seconds' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'IDLE_BACKOFF_AFTER' ), 'idle sites back off after an hour' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function current_job' ), 'the fatal handler can see the running job' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function report_failure' ), 'a failure can be reported outside the normal path' );
+
+// Fatal capture: a tool that dies must still produce a result.
+$fatal_source = file_get_contents( $plugin_dir . '/includes/class-fatal.php' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'register_shutdown_function' ), 'fatal handler runs at shutdown' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'error_get_last' ), 'fatal handler reads the real error' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'redact_paths' ), 'fatal messages are redacted before leaving the site' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'kph_sp_fatal_error' ), 'fatals are reported as a typed job failure' );
+kph_sp_static_assert( false === strpos( $fatal_source, 'error_log' ), 'fatal handler never writes to the PHP error log' );
+kph_sp_static_assert( false === strpos( $fatal_source, 'var_dump' ), 'fatal handler never dumps data' );
 
 // Cron wiring: one-minute poll scheduled on activation, cleared on deactivate.
 $plugin_source_wiring = file_get_contents( $plugin_dir . '/includes/class-plugin.php' );
@@ -158,6 +203,9 @@ kph_sp_static_assert( false !== strpos( $pairing_source, 'register_rest_route' )
 kph_sp_static_assert( false !== strpos( $pairing_source, "current_user_can( 'manage_options' )" ), 'pairing requires an administrator' );
 kph_sp_static_assert( false !== strpos( $pairing_source, 'wp_remote_post' ), 'pairing calls the platform over HTTP' );
 kph_sp_static_assert( false !== strpos( $pairing_source, "'/api/connector/pair'" ), 'pairing targets the documented endpoint' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'/api/connector/unpair'" ), 'unpair is reported to the platform' );
+kph_sp_static_assert( false !== strpos( $pairing_source, 'KPH_SP_Job_Runner::disconnect' ), 'unpair clears credentials through one code path' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'revoked' =>" ), 'the admin sees whether the platform accepted the revoke' );
 kph_sp_static_assert( false === strpos( $pairing_source, 'error_log' ), 'pairing never logs request or response bodies' );
 kph_sp_static_assert( false === strpos( $pairing_source, "'secret'" . ' =>' ), 'pairing response never returns the secret' );
 kph_sp_static_assert( false === strpos( $pairing_source, "'token'" . ' =>' ), 'pairing response never returns the token' );

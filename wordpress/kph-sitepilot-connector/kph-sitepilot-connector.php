@@ -3,7 +3,7 @@
  * Plugin Name:       KPH SitePilot Connector
  * Plugin URI:        https://github.com/kanhajatthap/KPH-SitePilot
  * Description:       Connects this WordPress site to KPH SitePilot so an administrator can manage content, media, menus, settings, plugins, themes, WooCommerce, files and code from prompts — with plans, approval, snapshots and undo.
- * Version:           0.3.0
+ * Version:           0.5.1
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            KPH SitePilot
@@ -18,7 +18,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'KPH_SP_VERSION', '0.3.0' );
+define( 'KPH_SP_VERSION', '0.5.1' );
 define( 'KPH_SP_FILE', __FILE__ );
 define( 'KPH_SP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'KPH_SP_URL', plugin_dir_url( __FILE__ ) );
@@ -30,6 +30,7 @@ require_once KPH_SP_DIR . 'includes/class-settings.php';
 require_once KPH_SP_DIR . 'includes/class-capabilities.php';
 require_once KPH_SP_DIR . 'includes/class-tools.php';
 require_once KPH_SP_DIR . 'includes/class-job-runner.php';
+require_once KPH_SP_DIR . 'includes/class-fatal.php';
 require_once KPH_SP_DIR . 'includes/class-pairing.php';
 require_once KPH_SP_DIR . 'includes/class-plugin.php';
 
@@ -37,3 +38,6 @@ register_activation_hook( __FILE__, array( 'KPH_SP_Plugin', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'KPH_SP_Plugin', 'deactivate' ) );
 
 add_action( 'plugins_loaded', array( 'KPH_SP_Plugin', 'instance' ) );
+
+// Registered before any job runs so a fatal in a tool is reported, not lost.
+KPH_SP_Fatal::register();

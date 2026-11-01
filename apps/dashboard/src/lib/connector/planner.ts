@@ -1,0 +1,181 @@
+/**
+ * Deterministic planner v1.
+ *
+ * Turns a plain-language request into a small, auditable list of connector
+ * steps. It deliberately refuses when it is not sure: a wrong guess here would
+ * become a real WordPress write after one click.
+ *
+ * The LLM planner (E3-02) replaces `planFromPrompt` behind the same return type,
+ * so the plan/approval machinery does not change when it lands.
+ */
+
+export type Risk = 'R0' | 'R1' | 'R2' | 'R3';
+
+export interface PlanStep {
+  tool: string;
+  args: Record<string, unknown>;
+  risk: Risk;
+  summary: string;
+}
+
+export type PlannerResult =
+  | { ok: true; summary: string; risk: Risk; steps: PlanStep[] }
+  | { ok: false; reason: string };
+
+const WRITABLE_TYPES = ['post', 'page'];
+
+function highestRisk(steps: PlanStep[]): Risk {
+  const order: Risk[] = ['R0', 'R1', 'R2', 'R3'];
+  return steps.reduce<Risk>(
+    (worst, step) => (order.indexOf(step.risk) > order.indexOf(worst) ? step.risk : worst),
+    'R0'
+  );
+}
+
+/** Pulls a post/page id out of "#123", "post 123" or "page 42". */
+export function extractPostId(prompt: string): number | null {
+  const explicit = prompt.match(/#(\d{1,9})\b/);
+  if (explicit) return Number(explicit[1]);
+
+  const named = prompt.match(/\b(?:post|page|article)\s+(\d{1,9})\b/i);
+  if (named) return Number(named[1]);
+
+  return null;
+}
+
+/** Extracts a quoted fragment, if the user supplied one. */
+export function extractQuotedText(prompt: string): string | null {
+  const straight = prompt.match(/"([^"]{2,4000})"/);
+  if (straight) return straight[1];
+
+  const curly = prompt.match(/[\u201c\u201d]([^\u201c\u201d]{2,4000})[\u201c\u201d]/);
+  if (curly) return curly[1];
+
+  const single = prompt.match(/'([^']{2,4000})'/);
+  if (single) return single[1];
+
+  return null;
+}
+
+function looksLikeHtml(value: string): boolean {
+  return /<!--\s*wp:|<[a-z][\s\S]*>/i.test(value);
+}
+
+function fail(reason: string): PlannerResult {
+  return { ok: false, reason };
+}
+
+/**
+ * Maps a prompt to connector steps, or explains why it cannot.
+ */
+export function planFromPrompt(prompt: string): PlannerResult {
+  const text = (prompt ?? '').trim();
+  if (text.length < 4) {
+    return fail('Describe what should change on the site, for example: change the title of post #12 to "Hello".');
+  }
+
+  const lower = text.toLowerCase();
+  const postId = extractPostId(text);
+  const quoted = extractQuotedText(text);
+
+  const wantsCreate = /\b(create|add|new)\b/.test(lower) && /\b(page|post|article)\b/.test(lower);
+  const wantsTitle = /\btitle\b/.test(lower);
+  const wantsContent = /\b(content|body|text|copy|rewrite|replace|paragraph|section)\b/.test(lower);
+  const wantsPublish = /\b(publish|go live|live karo)\b/.test(lower);
+
+  if (wantsCreate) {
+    if (!quoted) {
+      return fail('For a new page, put the title in quotes: create a page called "About us".');
+    }
+
+    const type = /\bpost\b/i.test(lower) && !/\bpage\b/i.test(lower) ? 'post' : 'page';
+    const bodyMatch = text.match(/(?:with|containing|body)[:\s]+([\s\S]{10,8000})$/i);
+    const body = bodyMatch ? bodyMatch[1].trim() : '';
+
+    const steps: PlanStep[] = [
+      {
+        tool: 'content.create',
+        args: {
+          title: quoted,
+          type,
+          status: wantsPublish ? 'publish' : 'draft',
+          content: looksLikeHtml(body) ? body : body ? `<p>${body}</p>` : '',
+        },
+        risk: wantsPublish ? 'R2' : 'R1',
+        summary: `Create a ${type} titled “${quoted}”${wantsPublish ? ' and publish it' : ' as a draft'}`,
+      },
+    ];
+
+    return {
+      ok: true,
+      summary: `Create ${type} “${quoted}”`,
+      risk: highestRisk(steps),
+      steps,
+    };
+  }
+
+  if (!postId) {
+    return fail(
+      'Tell me which post or page to change, for example: update post #42 title to "Spring sale". You can find the id in Content → All Posts.'
+    );
+  }
+
+  if (!wantsTitle && !wantsContent) {
+    return fail('Say whether the title or the content should change (for example “change the title of post #12 to …”).');
+  }
+
+  if (!quoted) {
+    return fail('Put the new text in quotes so I copy it exactly, for example: change the title of post #12 to "Hello".');
+  }
+
+  const steps: PlanStep[] = [];
+
+  if (wantsTitle) {
+    steps.push({
+      tool: 'content.update',
+      args: { id: postId, title: quoted },
+      risk: 'R1',
+      summary: `Change the title of #${postId} to “${quoted}”`,
+    });
+  }
+
+  if (wantsContent) {
+    steps.push({
+      tool: 'content.update',
+      args: { id: postId, content: looksLikeHtml(quoted) ? quoted : `<p>${quoted}</p>` },
+      risk: 'R1',
+      summary: `Replace the content of #${postId} with the quoted text`,
+    });
+  }
+
+  if (wantsPublish) {
+    steps.push({
+      tool: 'content.update',
+      args: { id: postId, status: 'publish' },
+      risk: 'R2',
+      summary: `Publish #${postId}`,
+    });
+  }
+
+  if (steps.length === 0) {
+    return fail('I could not find a change to make in that request.');
+  }
+
+  // Title and content are independent writes: never merge them into one step,
+  // so a partial failure is always explainable (and undoable) per field.
+  const unique = steps.filter(
+    (step, index) => steps.findIndex((other) => other.tool === step.tool && JSON.stringify(other.args) === JSON.stringify(step.args)) === index
+  );
+
+  return {
+    ok: true,
+    summary: unique.map((step) => step.summary).join(' · '),
+    risk: highestRisk(unique),
+    steps: unique,
+  };
+}
+
+/** Post types this planner knows how to write. */
+export function writableTypes(): string[] {
+  return [...WRITABLE_TYPES];
+}

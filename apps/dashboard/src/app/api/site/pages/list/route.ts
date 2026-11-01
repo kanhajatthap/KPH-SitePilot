@@ -14,7 +14,9 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(req.url);
-  const target = validateLocalTarget(searchParams.get('targetSite'));
+  const target = validateLocalTarget(searchParams.get('targetSite'), {
+    saasMode: auth.context.mode === 'saas',
+  });
   if (!target.ok) return target.response;
 
   const siteAccess = await authorizeTargetSite(auth.context, target.targetSite);

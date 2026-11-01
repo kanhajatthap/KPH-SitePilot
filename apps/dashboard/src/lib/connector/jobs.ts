@@ -63,11 +63,39 @@ export const JOB_LEASE_SECONDS = 120;
 
 /** Jobs a connector is allowed to see; everything else stays platform-only. */
 export const CONNECTOR_TOOL_ALLOWLIST = new Set([
+  // read-only
   'site.info',
   'site.health',
   'content.list',
   'content.get',
+  'plugins.list',
+  'theme.info',
+  'users.list',
+  'media.list',
+  'terms.list',
+  'menus.list',
+  // mutations: snapshot → write → verify, reversible via content.restore
+  'content.update',
+  'content.create',
+  'content.restore',
 ]);
+
+/** Risk floor per tool; a plan may raise it, never lower it. */
+export const TOOL_RISK: Record<string, 'R0' | 'R1' | 'R2' | 'R3'> = {
+  'site.info': 'R0',
+  'site.health': 'R0',
+  'content.list': 'R0',
+  'content.get': 'R0',
+  'plugins.list': 'R0',
+  'theme.info': 'R0',
+  'users.list': 'R0',
+  'media.list': 'R0',
+  'terms.list': 'R0',
+  'menus.list': 'R0',
+  'content.update': 'R1',
+  'content.create': 'R1',
+  'content.restore': 'R1',
+};
 
 export function toClaimPayload(job: JobRow) {
   return {

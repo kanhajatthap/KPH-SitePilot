@@ -16,6 +16,7 @@
     "start:dashboard": "pnpm --filter @wp-agent/dashboard start",
     "lint": "turbo run lint && node scripts/php-lint.mjs && pnpm typecheck:edge",
     "lint:php": "node scripts/php-lint.mjs",
+    "connector:zip": "bash scripts/build-connector-zip.sh",
     "test:php": "php wordpress/kph-sitepilot-connector/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-protocol.php && php wordpress/wp-agent-bridge/tests/test-plugin.php"
   },
   "devDependencies": {

@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isTargetAllowed } from '../../../../lib/target';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../../lib/auth/site-access';
 import { callApi } from '../../../../lib/api-call';
-
-const ALLOWED_TARGET_PATTERNS = [
-  /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
-  /^https?:\/\/localhost(:\d+)?$/i,
-  /^https?:\/\/127\.0\.0\.1(:\d+)?$/i,
-];
 
 export async function POST(req: NextRequest) {
   const auth = await authenticateApiRequest();
@@ -37,7 +32,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isAllowed = ALLOWED_TARGET_PATTERNS.some((p) => p.test(parsed.origin));
+    const isAllowed = isTargetAllowed(parsed.origin, {
+        saasMode: auth.context.mode === 'saas',
+      });
     if (!isAllowed) {
       return NextResponse.json(
         {

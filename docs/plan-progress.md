@@ -25,6 +25,28 @@
 | 2026-11-01 | E2-07 / E2-11 / E2-09 (plugin) | Plugin **v0.3.0**: capability manifest (`site`, theme/FSE, plugins ≤80, post types ≤40, taxonomies, builders, environment, role counts), deny-by-default tool registry (`site.info`, `site.health`, `content.list`, `content.get`), signed outbound runner (20 s timeout, no redirects, 1 MB response cap, transient poll lock, 5-min heartbeat throttle, immediate heartbeat + 5 s poll after pairing), WP-Cron `kph_sp_minute`, local unpair clears schedule + transients, admin screen shows last contact and last job error. | `php-lint` **14 files parse** · static suite extended (+23 assertions: manifest bounds, no emails/secrets, allowlist, signed headers, nonce entropy, poll lock, connected guard, no `error_log`, no payload dumps, cron wiring) and simulated locally · real `php -l` + static run in CI job `wordpress-plugin` | CI |
 | 2026-11-01 | GATE | Full gate after the job-pipeline batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **401 pass / 0 fail** (was 382) · `pnpm build` **11/11** | next batch |
 
+| 2026-11-01 | E3-05 / E3-06 | **Plan → approve → execute, API-first.** Deterministic planner (`lib/connector/planner.ts`) turns a prompt into a typed step list (`content.update` / `content.create`) — extracts `#12`/“post 12”, straight/curly/single-quoted text, and refuses with a reason when the target or replacement text is missing. Plans are immutable and SHA-256 hashed; approval pins the hash and re-checks it at approval time (`PLAN_CHANGED`), destructive steps require a typed confirmation equal to the first 8 characters of the plan id (`CONFIRMATION_REQUIRED`), and execution queues **one step at a time**, advancing only behind a `succeeded` job (idempotency key `plan:<id>:step:<n>`). | `apps/dashboard/tests/connector-plans.test.ts` → **13 tests** (extraction, refusals, hash tamper, typed confirm, approval gate, step chaining → `applied`, failure → `failed`, no duplicate step) | E3-12 |
+| 2026-11-01 | E3-12 / E3-08 | **First writes with snapshot, verify, undo** — plugin **v0.4.0**: `content.update`, `content.create`, `content.restore` (scope `content`), post-type guard, `wp_kses_post`, status allowlist, create defaulting to draft; every write snapshots the post, calls `wp_update_post(wp_slash(…))`, reads it back and compares (title/status exact, content whitespace-normalised because KSES may reorder attributes); mismatches return `kph_sp_verification_failed` with expected/actual. Job results carry the snapshot, the platform stores it (`snapshots.restored_at`, `restore_job_id` columns) and `POST /api/connector/snapshots/{id}/undo` enqueues a `content.restore` job (idempotency `undo:<snapshotId>`, 409 `ALREADY_RESTORED` on replay). | Migration applied live as **`snapshot_undo_columns`** · plugin static suite **+15 assertions** and `php-lint` **14 files** · dashboard typecheck green | E2-17 |
+| 2026-11-01 | CONNECTIVITY | **“Any WordPress site”, enforced in code.** Removed the localhost-only target gate for hosted deployments: `lib/target.ts` now splits structural safety (http/https, no credentials, cloud-metadata endpoints blocked) from ownership, which `authorizeTargetSite` proves against the paired `sites` table. All 9 legacy routes plus the 3 `site/pages` routes pass `saasMode: auth.context.mode === 'saas'`, and local mode keeps the original localhost restriction. | `apps/dashboard/tests/target-policy.test.ts` → **4 tests** (any https host allowed in SaaS, metadata endpoints refused, localhost-only in local mode) | GATE |
+| 2026-11-01 | GATE | Full gate after the plan/write/undo batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **418 pass / 0 fail** (was 401; dashboard 130 → 147) · `pnpm build` **11/11** | E2-17 |
+
+| 2026-11-01 | E2-17 | **Revoke/unpair on both sides.** Signed `POST /api/connector/unpair` lets a site revoke itself (auth first, so only the secret holder can); owner-facing `DELETE /api/connector/sites/{id}` checks ownership via `siteBelongsToUser`, revokes the row and cancels queued jobs. The plugin tells the platform *before* it forgets its credentials, and `KPH_SP_Job_Runner::disconnect()` clears them automatically when any signed call answers `SITE_REVOKED`. | dashboard **151 tests** (+3 unpair handler tests, +1 route test: signed revoke, wrong secret refused, second call → `SITE_REVOKED`, no-account → 400) · plugin static suite +7 assertions · `php-lint` **15 files** | E2-09 |
+| 2026-11-01 | E2-09 / E2-11 | **Live poll + fatal capture.** `schedule_next()` polls 5 s after any job, 60 s while idle, 300 s after an hour without work; the pending single event carries a `live` argument so clearing it never disturbs the recurring cron. New `KPH_SP_Fatal` registers a shutdown hook, stores the last fatal for the admin screen and reports `kph_sp_fatal_error` for the in-flight job (the runner now publishes `current_job()`/`report_failure()`); messages have paths stripped and are capped at 300 chars. | `php-lint` 15 files · static suite +9 assertions · real `php -l` + static run in CI | GATE |
+| 2026-11-01 | GATE | Full gate after the revoke + liveness batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | studio UI |
+
+| 2026-11-01 | E9-18 *(new)* | **The prompt surface exists.** New `/studio` page: choose a connected site, type a request (with example prompts), get a plan, approve it — typed confirmation required for R3 — run it, and watch each step's job move `queued → claimed → succeeded` by polling `GET /api/connector/plans/{id}` every 2 s. The same screen lists the last ten snapshots with an **Undo** button per write. `/connect` gained a matching **Disconnect** action (site name must be typed; calls `DELETE /api/connector/sites/{id}`). Navigation added to the header. | `next build` lists `○ /studio` (3.32 kB / 109 kB first load) · `pnpm typecheck` green · `pnpm lint` 11/11 + 15 PHP files · `pnpm test` **422 pass / 0 fail** · no new dependencies | GATE |
+| 2026-11-01 | GATE | Full gate after the studio batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** (`/studio`, `/connect`) | next: model planner |
+
+| 2026-11-01 | E2-18 / E2-19 | **Installable plugin + install guide.** `scripts/build-connector-zip.sh` (`pnpm connector:zip`) stages only production files, refuses a header/constant version mismatch, excludes `tests/`, and smoke-checks the archive; CI now builds it and uploads the `kph-sitepilot-connector` artifact. New `/docs/connector` page: requirements, five install/pair/ship steps, honest safety list, six troubleshooting rows. | `bash scripts/build-connector-zip.sh` → **31 091 bytes, version 0.4.0**, “main file present, no tests included” · `next build` lists `○ /docs/connector` (168 B) · dev smoke: `/studio` 200, `/docs/connector` 200, `/connect` 200 | GATE |
+| 2026-11-01 | GATE | Gate after packaging + guide. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
+
+| 2026-11-01 | E4-04 | **Site inventory reads (plugin 0.5.0).** `plugins.list` (≤100, slug/name/version/active, no file paths), `theme.info` (block-theme + parent + menus), `users.list` (≤50, roles only — `user_email`/`user_pass` never referenced), `media.list` (paged, MIME-filtered, alt text), `terms.list` (public taxonomies only, `kph_sp_invalid_taxonomy` otherwise). Scopes keep reads narrow: `site_ops` for plugins/users, `media` for media, `read` for theme/terms. Platform allowlist and `TOOL_RISK` extended, and a new test fails if the two drift apart. | plugin static suite **+9 assertions** · `php-lint` 15 files · `connector-allowlist.test.ts` **5 tests** (dashboard 151 → 156) · `pnpm connector:zip` → **0.5.0, 32 753 bytes** | GATE |
+| 2026-11-01 | GATE | Full gate after inventory reads. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **427 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
+
+| 2026-11-01 | E4-04 (done) + PACKAGING FIX | `menus.list` completes the inventory set (plugin **0.5.1**: ≤20 menus, ≤100 links, `esc_url_raw`, assigned locations). While rebuilding the ZIP the packaging script failed spuriously: `unzip -l … | grep -q` closes the pipe early, and under `set -o pipefail` the SIGPIPE is reported as a build failure. The listing is now captured once into `LISTING` and parsed, and the script also asserts the archive has exactly one top-level directory. | `bash scripts/build-connector-zip.sh` → **0.5.1, 33 142 bytes, “main file present, no tests included”**, repeatable · `php-lint` 15 files · `pnpm test` **427 pass / 0 fail** | deployment |
+| 2026-11-01 | DEPLOY-DIAG | **Deployment self-diagnosis.** New `GET /api/connector/config` answers with booleans (`authEnabled`, `storage`, `encryption`, `ready`) plus one hint per missing piece — never a key, host or prefix — and `/connect` renders it as a banner, so a 503 now says exactly which setting is missing instead of “storage unavailable”. | `connector-config.test.ts` **2 tests** (all-missing path; encryption-missing path; asserts the payload contains no `eyJ`/`supabase.co`/`sk_`) · dashboard **158 tests** · `next build` lists `ƒ /api/connector/config` | human: 2 secrets |
+| 2026-11-01 | DEPLOY | **Vercel project found and configured.** `kph-sitepilot` (`prj_iHQjzuoYG8uhYKV14hEHIPvNTfl8`, Hobby, root `apps/dashboard`) had **zero** environment variables. Added the two public ones for production/preview/development: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon key is public by design). Login/session and the Studio pages can now boot on the deployment. The two secrets (`SITEPILOT_ENCRYPTION_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) stay a human action: they must never be pasted into the repository or this session. | `vercel list_env_vars` → 2 vars, targets production/preview/development · `vercel list_projects` → `env: []` before, 2 after | human: 2 secrets |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -46,20 +68,23 @@
 | E2-10 claim endpoint | ✅ done | batch 4 |
 | E2-12 tool registry + site.info | ✅ done | batch 4 |
 | E2-13 result endpoint + state machine | ✅ done | batch 4 |
-| E2-09 scheduler (live mode, backoff) | ⏳ partial | batch 4 |
-| E2-11 runner (fatal capture) | ⏳ partial | batch 4 |
+| E3-05 planner + plan APIs | ✅ done | batch 5 |
+| E3-06 execution chaining | ✅ done | batch 5 |
+| E3-12 write tools (content.update/create/restore) | ✅ done | batch 5 |
+| E3-08 snapshot store + undo | ✅ done | batch 5 |
+| E2-09 scheduler (live mode, backoff) | ✅ done | batch 6 |
+| E2-11 runner (fatal capture) | ✅ done | batch 6 |
+| E2-17 revoke / unpair | ✅ done | batch 6 |
+| E4-04 inventory reads (6 of 6) | ✅ done | batch 9 |
 
 ## Open blockers
 
 | Blocker | Owner | Workaround |
 |---|---|---|
 | CI red on `main` at the old commit | us | fixed in this branch; green run expected on the PR |
-| No job runner yet: a paired site cannot be driven by prompts until E2-08 (connector auth) + E1-03/E2-10 (claim/execute) land | us | pairing + scopes are live; the UI does not pretend otherwise |
 | `SITEPILOT_ENCRYPTION_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are not set on Vercel yet | us | pairing fails closed with `CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
-| Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
-| No write tools yet (all shipped tools are `read`) | us (E2-18 → E5/E6) | mutations arrive with the plan/approval/snapshot engine, not before |
-| Fatal-error capture + live 5 s poll mode | us (E2-09, E2-11) | cron poll + lease retry cover the gap |
+| Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset (`NEXT_PUBLIC_SUPABASE_*` were added on 2026-11-01) | **human** — these two values must not be written into a repository or a chat transcript | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set; everything else (login, Studio, sites list) works |
 
 ## Gate history
 
@@ -70,3 +95,10 @@
 | 2026-11-01 | — | PHP 8.2 protocol + static tests pass in CI | — | CI run `41285152374` all green |
 | 2026-11-01 | 19/19 | 382 pass / 0 fail | 11/11 | after E1-02/E1-06/E1-07/E2-02/E2-05/E2-06 (lint: 11/11 + 11 PHP files) |
 | 2026-11-01 | 20/20 | 401 pass / 0 fail | 11/11 | after E1-03 + E2-04/07/08/10/12/13 (lint: 11/11 + 14 PHP files) |
+| 2026-11-01 | 20/20 | **418 pass / 0 fail** | 11/11 | after E3-05/06/08/12 + any-site target policy (lint: 11/11 + 14 PHP files) |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-17 + E2-09/E2-11 (lint: 11/11 + 15 PHP files) |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E9-18 studio surface + disconnect UI |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-18 connector.zip + E2-19 install guide |
+| 2026-11-01 | 20/20 | **427 pass / 0 fail** | 11/11 | after E4-04 inventory reads (plugin 0.5.0) |
+| 2026-11-01 | 20/20 | **427 pass / 0 fail** | 11/11 | after menus.list (0.5.1) + zip-script SIGPIPE fix + Vercel public env |
+| 2026-11-01 | 20/20 | **429 pass / 0 fail** | 11/11 | after /api/connector/config probe + /connect banner |

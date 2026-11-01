@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,7 +20,7 @@ Connecting as an administrator enables full access by default, including files a
 scopes. A scope only makes a capability available: every write still requires a plan, a human
 approval, a snapshot and a read-back verification.
 
-**This build (0.3.0) connects and polls.** Pairing exchanges a one-time code for site
+**This build (0.5.1) connects, polls, writes with undo, and inventories the site.** Pairing exchanges a one-time code for site
 credentials, the connector then signs every request, uploads a capability manifest, claims one
 job per minute and reports the result. The shipped tools are read-only (`site.info`,
 `site.health`, `content.list`, `content.get`); write tools land with the platform's
@@ -51,6 +51,22 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.5.1 =
+* `menus.list`: navigation menus with assigned locations and items (≤20 menus, ≤100 links), URLs passed through `esc_url_raw`.
+
+= 0.5.0 =
+* Inventory reads: `plugins.list` (slug, name, version, active — no file paths), `theme.info` (block-theme detection, parent theme, menu support), `users.list` (roles only — never an email or a password hash), `media.list` (paged, MIME-filtered, alt text) and `terms.list` (public taxonomies only).
+* Read tools never carry the `content` scope: media reads need `media`, plugin and user reads need `site_ops`.
+
+= 0.4.0 =
+* Write tools: `content.update`, `content.create`, `content.restore`, all scoped to `content`.
+* Every write snapshots the post first, reads it back, and verifies the result; mismatches return `kph_sp_verification_failed` with the expected and actual values.
+* Snapshots travel back with the job result so the platform can offer one-click undo (`content.restore`).
+* Writes are sanitised with `wp_kses_post`, statuses are allowlisted, and create defaults to draft.
+* Live polling: five seconds after any job, one minute while idle, five minutes after an hour without work.
+* Fatal-error capture: if a tool dies mid-run, the failure is still reported (paths redacted) so the platform stops retrying blindly.
+* Disconnect now revokes the connection on the platform as well as locally; a revocation made in SitePilot clears the local credentials automatically.
 
 = 0.3.0 =
 * Job runner: signed claim → execute → signed result, one job per poll, transient lock against

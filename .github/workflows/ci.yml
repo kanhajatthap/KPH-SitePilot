@@ -38,6 +38,17 @@ jobs:
       - name: Legacy bridge static checks
         run: php wordpress/wp-agent-bridge/tests/test-plugin.php
 
+      - name: Build installable connector ZIP
+        run: bash scripts/build-connector-zip.sh
+
+      - name: Upload connector ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: kph-sitepilot-connector
+          path: dist/kph-sitepilot-connector-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
   validate:
     name: Build, Lint & Test
     runs-on: ubuntu-latest

@@ -34,6 +34,14 @@ function summarizeCapabilities(capabilities: Record<string, unknown> | null): st
   return parts.length ? parts.join(' · ') : null;
 }
 
+interface ConnectorConfig {
+  authEnabled: boolean;
+  storage: boolean;
+  encryption: boolean;
+  ready: boolean;
+  hints: string[];
+}
+
 interface PairingCode {
   code: string;
   expiresAt: string;
@@ -55,6 +63,7 @@ export default function ConnectPage() {
   const [remaining, setRemaining] = useState(0);
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
   const [jobBusy, setJobBusy] = useState<string | null>(null);
+  const [config, setConfig] = useState<ConnectorConfig | null>(null);
 
   const loadSites = useCallback(async () => {
     try {
@@ -75,6 +84,22 @@ export default function ConnectPage() {
   useEffect(() => {
     void loadSites();
   }, [loadSites]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/connector/config', { cache: 'no-store' });
+        const body = (await res.json()) as ConnectorConfig;
+        if (!cancelled) setConfig(body);
+      } catch {
+        // The banner is advisory; a failure here must not block pairing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -130,11 +155,45 @@ export default function ConnectPage() {
     }
   };
 
+  const disconnect = async (site: ConnectedSite) => {
+    const typed = window.prompt(
+      `Type the site name to disconnect ${site.url} — queued jobs are cancelled and the connector must be paired again.\n\n${site.name}`
+    );
+    if (typed === null) return;
+
+    if (typed.trim() !== site.name) {
+      setJobNotice((current) => ({ ...current, [site.id]: 'The name did not match, so nothing was changed.' }));
+      return;
+    }
+
+    setJobBusy(site.id);
+    try {
+      const res = await fetch(`/api/connector/sites/${site.id}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: res.ok ? 'Disconnected. The site can no longer claim jobs.' : body.message ?? 'Disconnect failed.',
+      }));
+      if (res.ok) {
+        await loadSites();
+      }
+    } catch (error) {
+      setJobNotice((current) => ({ ...current, [site.id]: (error as Error).message }));
+    } finally {
+      setJobBusy(null);
+    }
+  };
+
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
-      <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
-        ← Back to SitePilot
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
+          ← Back to SitePilot
+        </Link>
+        <Link href="/docs/connector" className="text-sm text-pink-700 underline">
+          Install guide
+        </Link>
+      </div>
 
       <h1 className="mt-6 text-2xl font-semibold text-ink">Connect a WordPress site</h1>
       <p className="mt-2 text-sm text-ink-muted">
@@ -179,6 +238,20 @@ export default function ConnectPage() {
           <li>Paste the code and press <strong>Connect site</strong>.</li>
         </ol>
       </section>
+
+      {config && !config.ready ? (
+        <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">This deployment is not ready to pair sites yet</p>
+          <ul className="mt-2 space-y-1 text-sm text-amber-900/80">
+            {config.hints.map((hint) => (
+              <li key={hint}>• {hint}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-900/70">
+            Nothing is wrong on the WordPress side: these are deployment settings. Pairing fails closed until they are set.
+          </p>
+        </section>
+      ) : null}
 
       <section className="mt-6 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-ink">Connected sites</h2>
@@ -231,6 +304,16 @@ export default function ConnectPage() {
                 >
                   {jobBusy === site.id ? 'Queueing…' : 'Refresh capabilities'}
                 </button>
+                {site.status === 'active' ? (
+                  <button
+                    type="button"
+                    onClick={() => void disconnect(site)}
+                    disabled={jobBusy === site.id}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-60"
+                  >
+                    Disconnect
+                  </button>
+                ) : null}
                 {jobNotice[site.id] ? (
                   <span className="text-xs text-ink-muted">{jobNotice[site.id]}</span>
                 ) : null}
