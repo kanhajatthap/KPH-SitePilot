@@ -67,13 +67,20 @@ SIZE="$(wc -c < "$ZIP" | tr -d ' ')"
 echo "built $ZIP ($SIZE bytes, version $VERSION)"
 
 # Smoke-test the archive: one root directory, a main file, and no tests.
-unzip -l "$ZIP" | awk '{print $4}' | grep -v '^$' | tail -n +4 >/dev/null
-if ! unzip -l "$ZIP" | grep -q 'kph-sitepilot-connector/kph-sitepilot-connector.php'; then
+# The listing is captured once: piping into `grep -q` under `pipefail` reports
+# the SIGPIPE from grep exiting early as a failure of the whole pipeline.
+LISTING="$(unzip -Z1 "$ZIP")"
+
+if ! printf '%s\n' "$LISTING" | grep -q '^kph-sitepilot-connector/kph-sitepilot-connector\.php$'; then
   echo "build-connector-zip: archive is missing the plugin bootstrap" >&2
   exit 1
 fi
-if unzip -l "$ZIP" | grep -q '/tests/'; then
+if printf '%s\n' "$LISTING" | grep -q '/tests/'; then
   echo "build-connector-zip: archive leaked development tests" >&2
+  exit 1
+fi
+if printf '%s\n' "$LISTING" | awk -F/ '{print $1}' | sort -u | grep -qv '^kph-sitepilot-connector$'; then
+  echo "build-connector-zip: archive must have exactly one top-level directory" >&2
   exit 1
 fi
 

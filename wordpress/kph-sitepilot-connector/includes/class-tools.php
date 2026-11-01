@@ -41,6 +41,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'users.list',
 				'media.list',
 				'terms.list',
+				'menus.list',
 			);
 		}
 
@@ -64,6 +65,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'users.list'      => 'site_ops',
 				'media.list'      => 'media',
 				'terms.list'      => 'read',
+				'menus.list'      => 'read',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -121,6 +123,8 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::media_list( $args );
 				case 'terms.list':
 					return self::terms_list( $args );
+				case 'menus.list':
+					return self::menus_list();
 			}
 
 			return new WP_Error( 'kph_sp_unknown_tool', 'Tool dispatch failed.' );
@@ -385,6 +389,58 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'taxonomy' => $taxonomy,
 				'count'    => count( $items ),
 				'items'    => $items,
+			);
+		}
+
+		/**
+		 * Navigation menus with their locations and items (bounded).
+		 *
+		 * @return array<string,mixed>
+		 */
+		private static function menus_list() {
+			$menus     = wp_get_nav_menus();
+			$locations = get_nav_menu_locations();
+			$items     = array();
+			$budget    = 100;
+
+			foreach ( array_slice( (array) $menus, 0, 20 ) as $menu ) {
+				$assigned = array();
+				foreach ( (array) $locations as $location => $menu_id ) {
+					if ( (int) $menu_id === (int) $menu->term_id ) {
+						$assigned[] = sanitize_key( (string) $location );
+					}
+				}
+
+				$links = array();
+				foreach ( (array) wp_get_nav_menu_items( $menu->term_id ) as $link ) {
+					if ( $budget <= 0 ) {
+						break;
+					}
+					$budget--;
+
+					$links[] = array(
+						'id'     => (int) $link->ID,
+						'title'  => (string) $link->title,
+						'url'    => (string) esc_url_raw( (string) $link->url ),
+						'parent' => (int) $link->menu_item_parent,
+						'order'  => (int) $link->menu_order,
+					);
+				}
+
+				$items[] = array(
+					'id'        => (int) $menu->term_id,
+					'name'      => (string) $menu->name,
+					'slug'      => (string) $menu->slug,
+					'locations' => $assigned,
+					'items'     => $links,
+				);
+			}
+
+			return array(
+				'count'      => count( $items ),
+				'locations'  => array_keys( (array) $locations ),
+				'items'      => $items,
+				'truncated'  => $budget <= 0,
 			);
 		}
 

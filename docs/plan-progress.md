@@ -43,6 +43,9 @@
 | 2026-11-01 | E4-04 | **Site inventory reads (plugin 0.5.0).** `plugins.list` (≤100, slug/name/version/active, no file paths), `theme.info` (block-theme + parent + menus), `users.list` (≤50, roles only — `user_email`/`user_pass` never referenced), `media.list` (paged, MIME-filtered, alt text), `terms.list` (public taxonomies only, `kph_sp_invalid_taxonomy` otherwise). Scopes keep reads narrow: `site_ops` for plugins/users, `media` for media, `read` for theme/terms. Platform allowlist and `TOOL_RISK` extended, and a new test fails if the two drift apart. | plugin static suite **+9 assertions** · `php-lint` 15 files · `connector-allowlist.test.ts` **5 tests** (dashboard 151 → 156) · `pnpm connector:zip` → **0.5.0, 32 753 bytes** | GATE |
 | 2026-11-01 | GATE | Full gate after inventory reads. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **427 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
 
+| 2026-11-01 | E4-04 (done) + PACKAGING FIX | `menus.list` completes the inventory set (plugin **0.5.1**: ≤20 menus, ≤100 links, `esc_url_raw`, assigned locations). While rebuilding the ZIP the packaging script failed spuriously: `unzip -l … | grep -q` closes the pipe early, and under `set -o pipefail` the SIGPIPE is reported as a build failure. The listing is now captured once into `LISTING` and parsed, and the script also asserts the archive has exactly one top-level directory. | `bash scripts/build-connector-zip.sh` → **0.5.1, 33 142 bytes, “main file present, no tests included”**, repeatable · `php-lint` 15 files · `pnpm test` **427 pass / 0 fail** | deployment |
+| 2026-11-01 | DEPLOY | **Vercel project found and configured.** `kph-sitepilot` (`prj_iHQjzuoYG8uhYKV14hEHIPvNTfl8`, Hobby, root `apps/dashboard`) had **zero** environment variables. Added the two public ones for production/preview/development: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon key is public by design). Login/session and the Studio pages can now boot on the deployment. The two secrets (`SITEPILOT_ENCRYPTION_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) stay a human action: they must never be pasted into the repository or this session. | `vercel list_env_vars` → 2 vars, targets production/preview/development · `vercel list_projects` → `env: []` before, 2 after | human: 2 secrets |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -71,7 +74,7 @@
 | E2-09 scheduler (live mode, backoff) | ✅ done | batch 6 |
 | E2-11 runner (fatal capture) | ✅ done | batch 6 |
 | E2-17 revoke / unpair | ✅ done | batch 6 |
-| E4-04 inventory reads (5 of 6) | ✅ done | batch 8 |
+| E4-04 inventory reads (6 of 6) | ✅ done | batch 9 |
 
 ## Open blockers
 
@@ -80,7 +83,7 @@
 | CI red on `main` at the old commit | us | fixed in this branch; green run expected on the PR |
 | `SITEPILOT_ENCRYPTION_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are not set on Vercel yet | us | pairing fails closed with `CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
-| Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
+| Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset (`NEXT_PUBLIC_SUPABASE_*` were added on 2026-11-01) | **human** — these two values must not be written into a repository or a chat transcript | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set; everything else (login, Studio, sites list) works |
 
 ## Gate history
 
@@ -96,3 +99,4 @@
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E9-18 studio surface + disconnect UI |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-18 connector.zip + E2-19 install guide |
 | 2026-11-01 | 20/20 | **427 pass / 0 fail** | 11/11 | after E4-04 inventory reads (plugin 0.5.0) |
+| 2026-11-01 | 20/20 | **427 pass / 0 fail** | 11/11 | after menus.list (0.5.1) + zip-script SIGPIPE fix + Vercel public env |

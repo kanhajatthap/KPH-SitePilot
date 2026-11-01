@@ -17,6 +17,7 @@ const READ_TOOLS = [
   'users.list',
   'media.list',
   'terms.list',
+  'menus.list',
 ];
 
 const WRITE_TOOLS = ['content.update', 'content.create', 'content.restore'];
