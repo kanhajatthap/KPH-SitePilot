@@ -14,7 +14,7 @@ describe('Workspace Intent & Task API Endpoints', () => {
     const mockModel = new MockModelAdapter();
     const mockWpClient = new WordPressClient({
       allowedTargets: ['http://test.local'],
-      fetchFn: vi.fn(async () => {
+      transport: vi.fn(async () => {
         return new Response(
           JSON.stringify({ name: 'Test Site', home: 'http://test.local', version: '6.4' }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }

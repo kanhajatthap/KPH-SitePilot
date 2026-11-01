@@ -103,7 +103,7 @@ describe('Intelligent Intent Detection & Task Engine', () => {
     const mockModel = new MockModelAdapter();
     const mockWpClient = new WordPressClient({
       allowedTargets: ['http://test.local'],
-      fetchFn: vi.fn(async (url: string) => {
+      transport: vi.fn(async (url: string) => {
         if (url.includes('/wp-json/wp/v2/posts')) {
           return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }

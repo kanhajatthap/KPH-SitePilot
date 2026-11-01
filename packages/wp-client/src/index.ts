@@ -35,7 +35,18 @@ export type HttpTransport = (
 
 export interface WordPressClientOptions {
   allowedTargets?: string[];
+  /** Injectable HTTP transport (defaults to the global fetch). */
   transport?: HttpTransport;
+  /**
+   * @deprecated Use `transport`.
+   *
+   * Kept as an alias because the earlier API named this option `fetchFn`
+   * while the constructor read `transport`. Passing the old name was silently
+   * ignored, which made tests and callers hit the real network instead of the
+   * injected transport. Accepting both removes that trap; new code must use
+   * `transport`.
+   */
+  fetchFn?: HttpTransport;
   username?: string;
   applicationPassword?: string;
 }
@@ -142,7 +153,7 @@ export class WordPressClient {
   private readonly authHeader?: string;
 
   constructor(options: WordPressClientOptions = {}) {
-    this.transport = options.transport ?? fetch;
+    this.transport = options.transport ?? options.fetchFn ?? fetch;
     this.allowedTargets = options.allowedTargets;
 
     if (options.username && options.applicationPassword) {
