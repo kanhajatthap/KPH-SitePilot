@@ -37,6 +37,9 @@
 | 2026-11-01 | E9-18 *(new)* | **The prompt surface exists.** New `/studio` page: choose a connected site, type a request (with example prompts), get a plan, approve it — typed confirmation required for R3 — run it, and watch each step's job move `queued → claimed → succeeded` by polling `GET /api/connector/plans/{id}` every 2 s. The same screen lists the last ten snapshots with an **Undo** button per write. `/connect` gained a matching **Disconnect** action (site name must be typed; calls `DELETE /api/connector/sites/{id}`). Navigation added to the header. | `next build` lists `○ /studio` (3.32 kB / 109 kB first load) · `pnpm typecheck` green · `pnpm lint` 11/11 + 15 PHP files · `pnpm test` **422 pass / 0 fail** · no new dependencies | GATE |
 | 2026-11-01 | GATE | Full gate after the studio batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** (`/studio`, `/connect`) | next: model planner |
 
+| 2026-11-01 | E2-18 / E2-19 | **Installable plugin + install guide.** `scripts/build-connector-zip.sh` (`pnpm connector:zip`) stages only production files, refuses a header/constant version mismatch, excludes `tests/`, and smoke-checks the archive; CI now builds it and uploads the `kph-sitepilot-connector` artifact. New `/docs/connector` page: requirements, five install/pair/ship steps, honest safety list, six troubleshooting rows. | `bash scripts/build-connector-zip.sh` → **31 091 bytes, version 0.4.0**, “main file present, no tests included” · `next build` lists `○ /docs/connector` (168 B) · dev smoke: `/studio` 200, `/docs/connector` 200, `/connect` 200 | GATE |
+| 2026-11-01 | GATE | Gate after packaging + guide. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -87,3 +90,4 @@
 | 2026-11-01 | 20/20 | **418 pass / 0 fail** | 11/11 | after E3-05/06/08/12 + any-site target policy (lint: 11/11 + 14 PHP files) |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-17 + E2-09/E2-11 (lint: 11/11 + 15 PHP files) |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E9-18 studio surface + disconnect UI |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-18 connector.zip + E2-19 install guide |

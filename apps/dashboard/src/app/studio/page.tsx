@@ -242,9 +242,14 @@ export default function StudioPage() {
             Describe the change. Review the plan. Approve it. SitePilot writes it, verifies it, and can undo it.
           </p>
         </div>
-        <Link className="text-sm text-pink-700 underline" href="/connect">
-          Connected sites
-        </Link>
+        <div className="flex gap-4 text-sm">
+          <Link className="text-pink-700 underline" href="/connect">
+            Connected sites
+          </Link>
+          <Link className="text-pink-700 underline" href="/docs/connector">
+            Install guide
+          </Link>
+        </div>
       </header>
 
       {activeSites.length === 0 ? (

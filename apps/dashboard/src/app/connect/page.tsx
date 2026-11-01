@@ -161,9 +161,14 @@ export default function ConnectPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
-      <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
-        ← Back to SitePilot
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
+          ← Back to SitePilot
+        </Link>
+        <Link href="/docs/connector" className="text-sm text-pink-700 underline">
+          Install guide
+        </Link>
+      </div>
 
       <h1 className="mt-6 text-2xl font-semibold text-ink">Connect a WordPress site</h1>
       <p className="mt-2 text-sm text-ink-muted">
