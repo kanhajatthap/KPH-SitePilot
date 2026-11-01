@@ -20,7 +20,8 @@ type AuthErrorCode =
   | 'reset-link-invalid'
   | 'signout-failed'
   | 'auth-failed'
-  | 'resend-failed';
+  | 'resend-failed'
+  | 'auth-unreachable';
 
 function formValue(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -81,12 +82,17 @@ async function siteUrl(): Promise<string> {
   return siteOrigin();
 }
 
-function mapAuthError(error: { code?: string; status?: number; message?: string } | null): AuthErrorCode {
+function mapAuthError(
+  error: { code?: string; status?: number; message?: string; name?: string } | null
+): AuthErrorCode {
   const code = error?.code ?? '';
-  const status = error?.status ?? 0;
+  // `null`, not 0: an absent status is not the same statement as "status 0"
+  // (a transport failure), and conflating them mislabels ordinary API errors.
+  const status = typeof error?.status === 'number' ? error.status : null;
   const message = (error?.message ?? '').toLowerCase();
+  const name = error?.name ?? '';
 
-  if (code === 'invalid_credentials' || code === 'invalid_grant' || status === 400 && message.includes('invalid login')) {
+  if (code === 'invalid_credentials' || code === 'invalid_grant' || (status === 400 && message.includes('invalid login'))) {
     return 'invalid-credentials';
   }
   if (code === 'email_not_confirmed' || message.includes('email not confirmed')) return 'email-not-confirmed';
@@ -97,6 +103,20 @@ function mapAuthError(error: { code?: string; status?: number; message?: string 
   if (code === 'same_password' || message.includes('should be different')) return 'same-password';
   if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || status === 429) {
     return 'rate-limited';
+  }
+  // A transport failure is not "something went wrong": it means the Auth server
+  // was never reached (project paused, deleted, or a wrong URL). Naming it turns
+  // an hour of guessing into one line of copy.
+  if (
+    name === 'AuthRetryableFetchError' ||
+    status === 0 ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('econnrefused') ||
+    message.includes('enotfound') ||
+    message.includes('timed out')
+  ) {
+    return 'auth-unreachable';
   }
   return 'auth-failed';
 }
@@ -165,10 +185,13 @@ export async function requestPasswordReset(formData: FormData): Promise<void> {
 
   if (error) {
     const mapped = mapAuthError(error);
-    if (mapped === 'rate-limited') fail('/forgot-password', 'rate-limited');
+    // Rate limits and an unreachable provider say nothing about whether an
+    // account exists, so naming them leaks nothing — and claiming "reset sent"
+    // when nothing was sent would send the user to an inbox that stays empty.
+    if (mapped === 'rate-limited' || mapped === 'auth-unreachable') fail('/forgot-password', mapped);
   }
 
-  // Always report success so the endpoint cannot be used to enumerate accounts.
+  // Otherwise always report success so the endpoint cannot be used to enumerate accounts.
   ok('/forgot-password', 'reset-sent');
 }
 
@@ -221,9 +244,11 @@ export async function resendConfirmation(formData: FormData): Promise<void> {
 
   if (!error) ok('/login', 'confirmation-resent', next);
 
-  // Rate limits are the one failure worth naming: they are the most common
-  // reason a second email never arrives.
-  if (mapAuthError(error) === 'rate-limited') fail('/login', 'rate-limited', next);
+  // Two failures are worth naming because they change what the user should do:
+  // the hourly quota is spent, or the provider cannot be reached at all.
+  const mapped = mapAuthError(error);
+  if (mapped === 'rate-limited') fail('/login', 'rate-limited', next);
+  if (mapped === 'auth-unreachable') fail('/login', 'auth-unreachable', next);
 
   // Everything else stays neutral so the form cannot be used to enumerate accounts.
   ok('/login', 'confirmation-resent', next);
