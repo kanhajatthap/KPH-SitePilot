@@ -1,7 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabasePublicConfig } from './lib/supabase/config';
-import { isApiPath, isPublicApiPath, isPublicPagePath, isSafeStaticPath } from './lib/auth/routes';
+import {
+  isApiPath,
+  isPublicApiPath,
+  isPublicPagePath,
+  isSafeStaticPath,
+  isSignedConnectorPath,
+} from './lib/auth/routes';
 import { loginPathWithNext, safeNextPath } from './lib/auth/redirect';
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
@@ -79,6 +85,11 @@ export async function middleware(request: NextRequest) {
 
   // Public APIs perform their own session logic (health probe, session probe).
   if (isPublicApiPath(pathname)) return response;
+
+  // A WordPress site cannot hold a session cookie: these endpoints verify a
+  // site signature (or a pairing code) instead, so the gate stays shut only
+  // for the browser-facing connector routes.
+  if (isSignedConnectorPath(pathname)) return response;
 
   if (!user) {
     if (isApiPath(pathname)) {

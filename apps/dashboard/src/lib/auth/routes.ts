@@ -17,6 +17,23 @@ export const PUBLIC_PAGE_PATHS = [
 
 export const PUBLIC_API_PATHS = ['/api/health', '/api/auth/me'] as const;
 
+/**
+ * Endpoints a paired WordPress site calls machine-to-machine.
+ *
+ * They cannot carry a browser session cookie, so the middleware must not gate
+ * them — each one verifies a site HMAC signature (or, for `/pair`, a
+ * single-use pairing code under a per-IP rate limit) before doing anything.
+ * Everything else under `/api/connector` stays session-protected.
+ */
+export function isSignedConnectorPath(pathname: string): boolean {
+  if (pathname === '/api/connector/pair') return true;
+  if (pathname === '/api/connector/heartbeat') return true;
+  if (pathname === '/api/connector/unpair') return true;
+  if (pathname === '/api/connector/events') return true;
+  if (pathname === '/api/connector/jobs/claim') return true;
+  return /^\/api\/connector\/jobs\/[0-9a-f-]{36}\/result$/i.test(pathname);
+}
+
 export function isPublicPagePath(pathname: string): boolean {
   return PUBLIC_PAGE_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
@@ -34,7 +51,7 @@ export function isApiPath(pathname: string): boolean {
 }
 
 export function isPrivatePath(pathname: string): boolean {
-  return !isPublicPagePath(pathname) && !isPublicApiPath(pathname);
+  return !isPublicPagePath(pathname) && !isPublicApiPath(pathname) && !isSignedConnectorPath(pathname);
 }
 
 export function isSafeStaticPath(pathname: string): boolean {
