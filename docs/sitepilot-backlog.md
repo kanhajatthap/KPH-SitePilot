@@ -9,8 +9,8 @@
 
 ## E0 — Stabilize the base (M0)
 
-- [ ] **E0-01** — Fix fresh-clone test ordering: CI and docs use `pnpm test` (Turbo, respects `^build`), not `pnpm -r test`. · *Files:* `.github/workflows/ci.yml`, `package.json`, `tests/README.md` · *Done:* clean clone → `pnpm test` passes without manual build · *Dep:* — · *Est:* 1h
-- [ ] **E0-02** — Fix failing test `workspace-task-engine › transitions to waiting_for_approval` (assert real failure cause; fix engine or test). · *Files:* `packages/agent-core/src/task-engine.ts`, `packages/agent-core/tests/workspace-task-engine.test.ts` · *Done:* full suite green 331/331, root cause explained in progress log · *Dep:* — · *Est:* 3h
+- [x] **E0-01** — Fix fresh-clone test ordering: CI and docs use `pnpm test` (Turbo, respects `^build`), not `pnpm -r test`. · *Files:* `.github/workflows/ci.yml`, `package.json`, `tests/README.md` · *Done:* clean clone → `pnpm test` passes without manual build · *Dep:* — · *Est:* 1h
+- [x] **E0-02** — Fix failing test `workspace-task-engine › transitions to waiting_for_approval` (assert real failure cause; fix engine or test). · *Files:* `packages/agent-core/src/task-engine.ts`, `packages/agent-core/tests/workspace-task-engine.test.ts` · *Done:* full suite green 331/331, root cause explained in progress log · *Dep:* — · *Est:* 3h
 - [ ] **E0-03** — Add `pretest` safety: `test` script builds workspace packages it depends on, so plain `pnpm -r test` also works. · *Files:* `package.json`, `turbo.json` · *Done:* `pnpm -r test` from clean clone passes · *Dep:* E0-01 · *Est:* 1h
 - [ ] **E0-04** — CI: add PHP lint + plugin unit test job; add migration SQL syntax check; keep total < 6 min. · *Files:* `.github/workflows/ci.yml` · *Done:* CI shows 3 jobs green on a test PR · *Dep:* E0-01 · *Est:* 2h
 - [ ] **E0-05** — Add `docs/plan-progress.md` template + first entry (audit evidence). · *Files:* `docs/plan-progress.md` · *Done:* file committed with today's audit numbers · *Dep:* — · *Est:* 30m
@@ -22,7 +22,7 @@
 
 ## E1 — Cloud spine: Supabase + Vercel (M1)
 
-- [ ] **E1-01** — Apply existing migrations to Supabase project `zgkewnhrymswhucigtib` (schema + RLS + chat history). · *Files:* `supabase/migrations/*` · *Done:* `list_migrations` shows 2 rows, `profiles/projects/...` exist, RLS enabled · *Dep:* — · *Est:* 1h
+- [x] **E1-01** — Apply existing migrations to Supabase project `zgkewnhrymswhucigtib` (schema + RLS + chat history). · *Files:* `supabase/migrations/*` · *Done:* `list_migrations` shows 2 rows, `profiles/projects/...` exist, RLS enabled · *Dep:* — · *Est:* 1h
 - [ ] **E1-02** — Create migration `sites`, `pairing_codes`, `plans`, `approvals`, `jobs`, `job_events`, `snapshots`, `usage_events`, `user_api_keys`, `connector_nonces`, `rate_limits`, `automations`, `feature_flags` with indexes + RLS. · *Files:* `supabase/migrations/2026xxxx_sitepilot_v2.sql` · *Done:* migration applies cleanly on a fresh local DB and on the hosted project · *Dep:* E1-01 · *Est:* 6h
 - [ ] **E1-03** — SQL functions: `claim_next_job`, `consume_rate_limit` (extend), `purge_expired` (nonces/events/snapshots), `touch_site_heartbeat`. · *Files:* same migration or follow-up · *Done:* pgTAP/SQL tests cover happy + race path · *Dep:* E1-02 · *Est:* 3h
 - [ ] **E1-04** — RLS test suite for new tables (cross-tenant read/write denied, service role allowed). · *Files:* `supabase/tests/database/rls-v2.test.sql`, `packages/supabase/tests/rls-sql.test.ts` · *Done:* `supabase test db` green locally · *Dep:* E1-02 · *Est:* 4h
@@ -41,9 +41,9 @@
 
 ## E2 — Connector plugin v1 (M2)
 
-- [ ] **E2-01** — Scaffold plugin `wordpress/kph-sitepilot-connector` (bootstrap, constants, activation/deactivation, uninstall, PSR-4-ish autoloader). · *Files:* `wordpress/kph-sitepilot-connector/**` · *Done:* activates on WP 6.4+ without notices; `php -l` clean · *Dep:* — · *Est:* 2h
+- [x] **E2-01** — Scaffold plugin `wordpress/kph-sitepilot-connector` (bootstrap, constants, activation/deactivation, uninstall, PSR-4-ish autoloader). · *Files:* `wordpress/kph-sitepilot-connector/**` · *Done:* activates on WP 6.4+ without notices; `php -l` clean · *Dep:* — · *Est:* 2h
 - [ ] **E2-02** — Settings store (site id/token/secret encrypted option wrapper, scopes, poll mode) + capability guard `manage_options`. · *Files:* `includes/class-settings.php` · *Done:* unit tests with WP_Mock; no secret in debug output · *Dep:* E2-01 · *Est:* 3h
-- [ ] **E2-03** — HMAC signer/verifier (`timestamp.nonce.sha256(body)`) + PHP↔TS shared fixtures. · *Files:* `includes/class-signature.php`, `packages/connector-protocol/*` · *Done:* same fixture signatures in PHP + TS tests · *Dep:* E2-01 · *Est:* 4h
+- [x] **E2-03** — HMAC signer/verifier (`timestamp.nonce.sha256(body)`) + PHP↔TS shared fixtures. · *Files:* `includes/class-signature.php`, `packages/connector-protocol/*` · *Done:* same fixture signatures in PHP + TS tests · *Dep:* E2-01 · *Est:* 4h
 - [ ] **E2-04** — Outbound HTTPS client (wp_remote_post, timeouts, error mapping, UA header, retry/backoff). · *Files:* `includes/class-client.php` · *Done:* tests for 200/401/429/timeout paths · *Dep:* E2-03 · *Est:* 3h
 - [ ] **E2-05** — Pairing UI + handler (code + label → `/api/connector/pair` → store credentials → success state). · *Files:* `admin/*`, `includes/class-settings.php` · *Done:* real site pairs in < 2 min against local API · *Dep:* E2-04, E1-07 · *Est:* 5h
 - [ ] **E2-06** — Platform: `POST /api/connector/pair` (code hash lookup, single-use, expiry, site row, token+secret, audit). · *Files:* `apps/api-core/src/connector/pair.ts` · *Done:* tests: valid / expired / reused / wrong user codes · *Dep:* E1-02, E2-03 · *Est:* 4h
@@ -146,6 +146,9 @@
 - [ ] **E6-13** — Maintenance: cron list/run, transient flush, debug log rotate. · *Files:* plugin · *Done:* safe, bounded, audited · *Dep:* E4-03 · *Est:* 3h
 - [ ] **E6-14** — Comments moderation (list/approve/spam/trash/reply). · *Files:* plugin · *Done:* batch ≤ 50 with per-item results · *Dep:* E4-04 · *Est:* 3h
 - [ ] **E6-15** — Updates dashboard UI (available updates, risk, one-click plan). · *Files:* UI · *Done:* shows before/after versions · *Dep:* E6-04 · *Est:* 3h
+- [ ] **E6-17** — Files scope: `files.list` + `files.read` with path allowlist, secret redaction and checksum. · *Files:* plugin tools + API · *Done:* reads theme/plugin/uploads only; wp-config secrets redacted · *Dep:* E2-21 · *Est:* 4h
+- [ ] **E6-18** — Files scope: `files.write` + `files.delete` via `WP_Filesystem`, byte-exact snapshot, R3 typed confirm, fatal guard + auto-disable. · *Files:* plugin tools + policy · *Done:* write/restore round-trip byte-identical on a test theme · *Dep:* E6-17 · *Est:* 6h
+- [ ] **E6-19** — Code scope: `code.css`, `code.js` and reviewed `code.php.snippet` with R3 gating, fatal auto-disable and audit. · *Files:* plugin tools + UI · *Done:* bad snippet auto-disables, site stays up · *Dep:* E6-18 · *Est:* 6h
 - [ ] **E6-16** — M5-ops acceptance on a live site (settings, plugin install, user role, updates). · *Files:* acceptance doc · *Done:* evidence + rollback notes · *Dep:* E6-15 · *Est:* 3h
 
 ---

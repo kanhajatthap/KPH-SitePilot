@@ -193,6 +193,7 @@ Everything a user can do in `wp-admin` → what SitePilot will do, with which to
 | **Security** | “security audit”, “users audit”, “file integrity” | `security.*` | V2 |
 | **Backups** | “backup lo”, “restore karo” | `backup.*`, `snapshot.*` | V2 |
 | **Maintenance** | “cron run”, “search-replace”, “debug log rotate” | `maintenance.*` | V2/V3 |
+| **Appearance → Theme/Plugin File Editor** | “footer.php fix karo”, “CSS add karo”, “snippet lagao” | `files.*`, `code.*` (R3, snapshot + typed confirm) | V2 |
 | **Multi-site** | “network me site add karo” | `network.*` | V3 |
 
 **Coverage rule:** agar kisi WP screen ka tool V1 me nahi hai, UI us screen ko “coming in V2” ke roop me
@@ -426,6 +427,7 @@ Lease 90 s; expired jobs requeue (max 3 attempts) then `failed` with `lease_expi
 - Every handler declares: `risk`, `supports_dry_run`, `requires_snapshot`, `max_batch`.
 - Guarded options allowlist (never arbitrary option keys).
 - Guarded plugin actions: only wp.org slugs, only install/activate/deactivate/update/delete with per-item approval.
+- File tools: `WP_Filesystem` + path allowlist + byte snapshot; `wp-config.php` read-only; no `eval`, no `include` of user files, no root writes.
 - `register_shutdown_function` fatal-error guard → job result `failed` with `php_fatal` instead of silent death.
 - After write: `wp_cache_flush()` / do_action hooks as needed; return exact read-back values.
 - Auto-protection: after 5 consecutive failures → plugin pauses job processing, reports `paused_after_failures`;
@@ -849,14 +851,33 @@ Arbitrary PHP/SQL execution · theme/plugin file editor · DB search-replace on 
 network ops · marketplace/billing · Elementor deep widget editing · staging clone · Git deploys ·
 social media posting · analytics dashboards.
 
-### 13.3 Decisions to confirm (owner)
+### 13.3 Owner decisions — locked 2026-11-01
 
-1. **Production sites allowed?** Plan says yes, gated. (Default draft/private.)
-2. **Free quotas:** 1 project · 2 sites · 100 AI requests/day · 30-day history — OK?
-3. **Plugin distribution:** GitHub ZIP first, wp.org later — OK?
-4. **Names/branding:** keep `KPH SitePilot`; plugin = `KPH SitePilot Connector`?
-5. **UI language:** English UI now, Hinglish helper copy later?
-6. **Legacy LocalWP flow:** keep for dev, or remove after hosted flow ships?
+1. **Any site, any environment:** connect production, staging or local. Writes stay gated: default
+   draft/private, R2/R3 need explicit approval, destructive actions need typed confirmation.
+2. **Free quotas:** approved as proposed — 1 project · 2 sites · 1 000 jobs/month · 100 AI requests/day ·
+   30-day history.
+3. **Distribution:** GitHub Release ZIP first; wordpress.org submission after the connector stabilises.
+4. **Names:** `KPH SitePilot` (platform) and `KPH SitePilot Connector` (plugin) — confirmed.
+5. **Language:** English UI now; Hinglish helper copy as an option later.
+6. **LocalWP flow:** keep for local development; deprecate once the hosted connector flow is stable.
+7. **Full access on connect (new):** pairing as a WordPress administrator unlocks **all scopes by
+   default** — `read · content · media · site_ops · commerce · files · code`. “Full access” means the
+   platform *may ask* the site to do anything an admin can do, including theme/plugin file writes and
+   reviewed PHP snippets. It never means silent execution: every mutating job is plan-bound,
+   approval-bound, snapshot-first, verified, and undoable where the operation is reversible.
+
+**Files & code scope rules (non-negotiable):**
+
+| Rule | Detail |
+|---|---|
+| Path allowlist | `wp-content/themes/**`, `wp-content/plugins/**`, `wp-content/uploads/**`, plus `wp-config.php` **read-only**. No `ABSPATH` root writes, no `.htaccess` edits in V1. |
+| API | `WP_Filesystem` only — never `file_put_contents`/`fopen` directly, never `include` of user files, never `eval`. |
+| Backups | Byte-exact snapshot of every touched file + checksum; snapshot verified before write. |
+| Risk | File writes = **R3** (typed confirmation + “I have a backup” checkbox); reads = R1. |
+| Rollback | Restore from snapshot; if the write caused a PHP fatal, auto-disable the snippet/file change and report. |
+| Secret guard | Never read `.env`, `wp-config.php` secrets, auth keys, or `*.pem`; redact on the way out. |
+| Audit | Every read/write records path hash, size, actor, job id, before/after checksum. |
 
 ---
 
@@ -950,6 +971,14 @@ Legend: **R0** read · **R1** safe write · **R2** destructive/visibility · **R
 | `maintenance.cron.list/run` | R0–R1 | V2 | cron visibility |
 | `maintenance.db.search_replace` | R3 | V3 | dry-run required |
 | `maintenance.debug_log.rotate` | R2 | V2 | log hygiene |
+| `files.list` | R0 | V2 | tree under theme/plugin/uploads |
+| `files.read` | R1 | V2 | file content (secrets redacted) |
+| `files.write` | R3 | V2 | WP_Filesystem write + byte snapshot |
+| `files.delete` | R3 | V3 | delete with snapshot + confirm |
+| `files.upload` | R3 | V3 | upload to uploads/ with MIME guard |
+| `code.css` | R2 | V2 | scoped custom CSS |
+| `code.js` | R3 | V2 | header/footer script with confirm |
+| `code.php.snippet` | R3 | V3 | reviewed snippet, fatal-guarded + auto-disable |
 | `woo.status` | R0 | V2 | store summary |
 | `woo.products.*` | R0–R2 | V2 | list/get/create/update/delete |
 | `woo.orders.*` | R0–R2 | V2 | list/status/notes/refund |

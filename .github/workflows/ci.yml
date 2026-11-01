@@ -11,6 +11,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wordpress-plugin:
+    name: WordPress Connector Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Lint every plugin file
+        run: find wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Connector protocol parity (PHP ↔ TS fixtures)
+        run: php wordpress/kph-sitepilot-connector/tests/test-protocol.php
+
+      - name: Connector static checks
+        run: php wordpress/kph-sitepilot-connector/tests/test-plugin.php
+
+      - name: Legacy bridge static checks
+        run: php wordpress/wp-agent-bridge/tests/test-plugin.php
+
   validate:
     name: Build, Lint & Test
     runs-on: ubuntu-latest

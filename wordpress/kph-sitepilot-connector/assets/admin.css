@@ -1,0 +1,97 @@
+/* KPH SitePilot Connector — admin screen. */
+.kph-sp-wrap {
+	max-width: 1100px;
+}
+
+.kph-sp-grid {
+	display: grid;
+	gap: 16px;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	margin: 16px 0;
+}
+
+.kph-sp-card {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+	margin: 0 0 16px;
+	padding: 16px 20px;
+}
+
+.kph-sp-card h2 {
+	font-size: 15px;
+	margin-top: 0;
+}
+
+.kph-sp-table {
+	border-collapse: collapse;
+	width: 100%;
+}
+
+.kph-sp-table th,
+.kph-sp-table td {
+	border-bottom: 1px solid #f0f0f1;
+	padding: 8px 0;
+	text-align: left;
+	vertical-align: top;
+	width: 50%;
+}
+
+.kph-sp-table th {
+	color: #50575e;
+	font-weight: 600;
+}
+
+.kph-sp-badge {
+	border-radius: 999px;
+	display: inline-block;
+	font-size: 12px;
+	font-weight: 600;
+	padding: 3px 10px;
+}
+
+.kph-sp-badge.is-on {
+	background: #edfaef;
+	color: #116329;
+}
+
+.kph-sp-badge.is-off {
+	background: #fcf0f1;
+	color: #8a1f11;
+}
+
+.kph-sp-note {
+	background: #f6f7f7;
+	border-left: 3px solid #72aee6;
+	color: #50575e;
+	padding: 10px 12px;
+}
+
+.kph-sp-scope {
+	align-items: flex-start;
+	border-bottom: 1px solid #f0f0f1;
+	display: flex;
+	gap: 10px;
+	padding: 10px 0;
+}
+
+.kph-sp-scope input {
+	margin-top: 3px;
+}
+
+.kph-sp-risk {
+	background: #fcf0f1;
+	border-radius: 4px;
+	color: #8a1f11;
+	font-size: 11px;
+	font-style: normal;
+	font-weight: 600;
+	margin-left: 6px;
+	padding: 1px 6px;
+}
+
+.kph-sp-list {
+	list-style: disc;
+	margin-left: 18px;
+}
