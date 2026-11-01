@@ -1,0 +1,42 @@
+{
+  "algorithm": "HMAC-SHA256",
+  "canonicalFormat": "<timestamp>.<nonce>.<sha256hex(body)>",
+  "cases": [
+    {
+      "name": "latin-body",
+      "secret": "sitepilot-test-secret-1",
+      "timestamp": "1770000000",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "body": "{\"siteId\":\"6f1d0b3c-1a2b-4c3d-8e9f-001122334455\"}",
+      "expectedCanonical": "1770000000.0123456789abcdef0123456789abcdef.dbb4a6d75f5f3a9455a3fcbd9bb8468040ac3de8a16d62dd60925fe155b4e0e4",
+      "expectedSignature": "8fc4183832f271481fa9baa9780d443275a88e8764a9be6990a205929f910306"
+    },
+    {
+      "name": "unicode-body",
+      "secret": "sitepilot-test-secret-2",
+      "timestamp": "1770000123",
+      "nonce": "fedcba9876543210fedcba9876543210",
+      "body": "{\"title\":\"Café — 日本語 — emoji 🚀\"}",
+      "expectedCanonical": "1770000123.fedcba9876543210fedcba9876543210.98cb178e78f697fa92a82e6fddd3fbb0c78aab85f0e460eeca4c570e7f62ef6e",
+      "expectedSignature": "3b5e9083ad3686334520df457ba7a025b1c4b5883cf25a72b44373b673bc848b"
+    },
+    {
+      "name": "empty-body",
+      "secret": "sitepilot-test-secret-3",
+      "timestamp": "1770000456",
+      "nonce": "00112233445566778899aabbccddeeff",
+      "body": "",
+      "expectedCanonical": "1770000456.00112233445566778899aabbccddeeff.e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedSignature": "268b5f1f1a5da641219021d6ded2f6ea83b9cca4a8ef21c03c5f8d64964d199a"
+    },
+    {
+      "name": "newlines",
+      "secret": "sitepilot-test-secret-4",
+      "timestamp": "1770000789",
+      "nonce": "aaaabbbbccccddddeeeeffff00001111",
+      "body": "line1\nline2\r\nline3",
+      "expectedCanonical": "1770000789.aaaabbbbccccddddeeeeffff00001111.50ba38bb6d7f20c4ccbbfea952d4cad1ba80f4f65cc6dd9e2e30b0b533224c1c",
+      "expectedSignature": "8db07fd354471a2a80dbcbe12d6cd999101a05aa86b4fcd5db4149d00c2c9502"
+    }
+  ]
+}
