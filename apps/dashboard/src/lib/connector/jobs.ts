@@ -74,6 +74,7 @@ export const CONNECTOR_TOOL_ALLOWLIST = new Set([
   'media.list',
   'terms.list',
   'menus.list',
+  'settings.get',
   // mutations: snapshot → write → verify, reversible via content.restore
   'content.update',
   'content.create',
@@ -92,6 +93,7 @@ export const TOOL_RISK: Record<string, 'R0' | 'R1' | 'R2' | 'R3'> = {
   'media.list': 'R0',
   'terms.list': 'R0',
   'menus.list': 'R0',
+  'settings.get': 'R0',
   'content.update': 'R1',
   'content.create': 'R1',
   'content.restore': 'R1',

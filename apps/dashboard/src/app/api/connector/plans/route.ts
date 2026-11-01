@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
-import { planFromPrompt } from '../../../../lib/connector/planner';
+import { planFromPrompt, type PlannerResult } from '../../../../lib/connector/planner';
+import { planWithModel, toPlannerResult } from '../../../../lib/connector/model-planner';
 import { createPlan } from '../../../../lib/connector/plans';
 import {
   createSupabasePlanStore,
   getSiteContext,
+  getUserApiKey,
   siteBelongsToUser,
 } from '../../../../lib/connector/store';
 import { createSupabaseAdminClient } from '../../../../lib/supabase/admin';
@@ -55,9 +57,61 @@ export async function POST(req: Request) {
     return json({ error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked.' }, 409);
   }
 
-  const planned = planFromPrompt(parsed.data.prompt);
+  // Planner selection. `auto` (default) uses the caller's own model key when
+  // they have one and quietly falls back to the deterministic grammar; `model`
+  // refuses instead of guessing; `deterministic` never calls a provider.
+  const mode = (process.env.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
+  if (!['auto', 'model', 'deterministic'].includes(mode)) {
+    return json({ error: 'PLANNER_MISCONFIGURED', message: 'SITEPILOT_PLANNER must be auto, model or deterministic.' }, 500);
+  }
+
+  let planned: PlannerResult;
+  let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode };
+
+  const modelKey = mode === 'deterministic' ? null : await getUserApiKey(auth.context.user.id);
+
+  if (mode !== 'deterministic' && !modelKey && mode === 'model') {
+    return json(
+      {
+        error: 'PLANNER_KEY_MISSING',
+        message: 'The model planner is required on this deployment, but no model key is stored for your account.',
+      },
+      400
+    );
+  }
+
+  if (mode !== 'deterministic' && modelKey) {
+    const modelled = await planWithModel(
+      parsed.data.prompt,
+      { url: site.url, name: site.name, capabilities: site.capabilities },
+      {
+        provider: modelKey.provider,
+        apiKey: modelKey.key,
+        timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? 12000),
+      }
+    );
+
+    if (modelled.ok) {
+      planned = toPlannerResult(modelled.plan);
+      plannerMeta = {
+        kind: 'model',
+        mode,
+        provider: modelled.provider,
+        model: modelled.model,
+        droppedSteps: modelled.dropped,
+      };
+    } else if (mode === 'model') {
+      return json({ error: 'PLANNER_FAILED', message: modelled.reason }, 502);
+    } else {
+      planned = planFromPrompt(parsed.data.prompt);
+      plannerMeta = { kind: 'deterministic', mode, fallbackReason: modelled.reason };
+    }
+  } else {
+    planned = planFromPrompt(parsed.data.prompt);
+  }
+
   if (!planned.ok) {
-    return json({ error: 'PLAN_NOT_UNDERSTOOD', message: planned.reason }, 422);
+    return json({ error: 'PLAN_NOT_UNDERSTOOD', message: planned.reason, planner: plannerMeta }, 422);
   }
 
   const store = createSupabasePlanStore();
@@ -93,6 +147,7 @@ export async function POST(req: Request) {
         hash: created.plan.hash,
         steps: created.plan.steps,
       },
+      planner: plannerMeta,
       next: 'Review the steps, then approve the plan. Nothing has been written yet.',
     },
     201

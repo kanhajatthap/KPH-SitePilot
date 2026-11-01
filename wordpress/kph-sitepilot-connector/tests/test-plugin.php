@@ -150,6 +150,10 @@ kph_sp_static_assert( false !== strpos( $tools_source, "'media'      =>" ) || fa
 kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'terms.list is limited to public taxonomies' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'menus.list'" ), 'menus.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_get_nav_menu_items' ), 'menus.list reads real menu items' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'settings.get'" ), 'settings.get tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_option_not_allowed' ), 'settings.get refuses options outside its allowlist' );
+kph_sp_static_assert( false === strpos( $tools_source, "'auth_key'" ), 'settings.get never exposes salts' );
+kph_sp_static_assert( false === strpos( $tools_source, 'db_password' ), 'settings.get never exposes database credentials' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'esc_url_raw' ), 'menu item URLs are sanitised' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'is_writable_type' ), 'write tools refuse unsupported post types' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'function snapshot' ), 'write tools take a before-snapshot' );

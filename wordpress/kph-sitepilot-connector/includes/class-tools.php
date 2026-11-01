@@ -42,6 +42,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'media.list',
 				'terms.list',
 				'menus.list',
+				'settings.get',
 			);
 		}
 
@@ -66,6 +67,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'media.list'      => 'media',
 				'terms.list'      => 'read',
 				'menus.list'      => 'read',
+				'settings.get'    => 'read',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -125,6 +127,8 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::terms_list( $args );
 				case 'menus.list':
 					return self::menus_list();
+				case 'settings.get':
+					return self::settings_get( $args );
 			}
 
 			return new WP_Error( 'kph_sp_unknown_tool', 'Tool dispatch failed.' );
@@ -441,6 +445,55 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'locations'  => array_keys( (array) $locations ),
 				'items'      => $items,
 				'truncated'  => $budget <= 0,
+			);
+		}
+
+		/**
+		 * A fixed set of harmless options. Unknown keys are refused, never
+		 * forwarded to `get_option()`, so the tool cannot be used as a probe.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function settings_get( $args ) {
+			$allowed = array(
+				'blogname',
+				'blogdescription',
+				'siteurl',
+				'home',
+				'permalink_structure',
+				'timezone_string',
+				'date_format',
+				'time_format',
+				'posts_per_page',
+				'show_on_front',
+				'page_on_front',
+				'page_for_posts',
+				'default_comment_status',
+				'default_ping_status',
+			);
+
+			$requested = isset( $args['keys'] ) && is_array( $args['keys'] )
+				? array_map( 'sanitize_key', $args['keys'] )
+				: $allowed;
+
+			$unknown = array_values( array_diff( $requested, $allowed ) );
+			if ( ! empty( $unknown ) ) {
+				return new WP_Error(
+					'kph_sp_option_not_allowed',
+					sprintf( 'Option "%s" is not readable through the connector.', implode( ', ', $unknown ) )
+				);
+			}
+
+			$values = array();
+			foreach ( $requested as $key ) {
+				$values[ $key ] = get_option( $key, null );
+			}
+
+			return array(
+				'count'    => count( $values ),
+				'readable' => $allowed,
+				'values'   => $values,
 			);
 		}
 

@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.5.1
+Stable tag: 0.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,7 +20,7 @@ Connecting as an administrator enables full access by default, including files a
 scopes. A scope only makes a capability available: every write still requires a plan, a human
 approval, a snapshot and a read-back verification.
 
-**This build (0.5.1) connects, polls, writes with undo, and inventories the site.** Pairing exchanges a one-time code for site
+**This build (0.6.0) connects, polls, writes with undo, inventories the site, and reads allowlisted settings.** Pairing exchanges a one-time code for site
 credentials, the connector then signs every request, uploads a capability manifest, claims one
 job per minute and reports the result. The shipped tools are read-only (`site.info`,
 `site.health`, `content.list`, `content.get`); write tools land with the platform's
@@ -51,6 +51,9 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.6.0 =
+* `settings.get`: reads 14 harmless options (site title, tagline, URLs, permalinks, timezone, date/time formats, front page, comment defaults). Any other key is refused with `kph_sp_option_not_allowed`; salts and database credentials are never referenced.
 
 = 0.5.1 =
 * `menus.list`: navigation menus with assigned locations and items (≤20 menus, ≤100 links), URLs passed through `esc_url_raw`.

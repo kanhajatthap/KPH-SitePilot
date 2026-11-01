@@ -17,6 +17,7 @@
     "@wp-agent/api-core": "workspace:*",
     "@wp-agent/connector-protocol": "workspace:*",
     "@wp-agent/contracts": "workspace:*",
+    "@wp-agent/model-adapters": "workspace:*",
     "@wp-agent/supabase": "workspace:*",
     "next": "^15.1.7",
     "react": "^19.0.0",

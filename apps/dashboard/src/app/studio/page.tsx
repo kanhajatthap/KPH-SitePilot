@@ -28,6 +28,15 @@ interface PlanStep {
   summary: string;
 }
 
+interface PlannerInfo {
+  kind: 'model' | 'deterministic';
+  mode?: string;
+  provider?: string;
+  model?: string;
+  droppedSteps?: string[];
+  fallbackReason?: string;
+}
+
 interface Plan {
   id: string;
   summary: string;
@@ -82,6 +91,7 @@ export default function StudioPage() {
   const [siteId, setSiteId] = useState('');
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [planner, setPlanner] = useState<PlannerInfo | null>(null);
   const [jobs, setJobs] = useState<PlanJob[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [confirmation, setConfirmation] = useState('');
@@ -138,6 +148,7 @@ export default function StudioPage() {
     setError('');
     setNotice('');
     setPlan(null);
+    setPlanner(null);
     setJobs([]);
     setApproved(false);
     setRunning(false);
@@ -147,6 +158,7 @@ export default function StudioPage() {
     try {
       const payload = await post('/api/connector/plans', { siteId, prompt });
       setPlan(payload.plan as Plan);
+      setPlanner((payload.planner as PlannerInfo | undefined) ?? null);
       setNotice('Plan ready. Review the steps — nothing has been written yet.');
     } catch (err) {
       setError((err as Error).message);
@@ -339,7 +351,25 @@ export default function StudioPage() {
               {RISK_LABEL[plan.risk]?.text ?? plan.risk}
             </span>
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs text-ink/60">{plan.status}</span>
+            {planner ? (
+              <span
+                className="rounded-full border border-black/10 px-2 py-0.5 text-xs text-ink/60"
+                title={
+                  planner.kind === 'model'
+                    ? `${planner.provider} · ${planner.model}${planner.droppedSteps?.length ? ` · dropped ${planner.droppedSteps.join(', ')}` : ''}`
+                    : planner.fallbackReason ?? 'Deterministic planner'
+                }
+              >
+                {planner.kind === 'model' ? `Planned by ${planner.provider}` : 'Deterministic planner'}
+              </span>
+            ) : null}
           </div>
+
+          {planner?.fallbackReason ? (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              The model planner was unavailable, so the built-in planner produced this plan: {planner.fallbackReason}
+            </p>
+          ) : null}
 
           <ol className="mt-4 space-y-2">
             {plan.steps.map((step, index) => {
