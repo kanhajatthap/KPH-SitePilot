@@ -241,9 +241,15 @@ export default function StudioPage() {
   }
 
   const activeSites = sites.filter((site) => site.status === 'active');
-  const needsConfirmation = plan?.risk === 'R3';
+  const confirmationKind: 'none' | 'word' | 'plan-id' =
+    plan?.risk === 'R3' ? 'plan-id' : plan?.risk === 'R2' ? 'word' : 'none';
+  const needsConfirmation = confirmationKind !== 'none';
   const confirmationMatches =
-    !needsConfirmation || confirmation.trim().toLowerCase() === plan.id.slice(0, 8).toLowerCase();
+    !plan ||
+    confirmationKind === 'none' ||
+    (confirmationKind === 'word'
+      ? confirmation.trim().toUpperCase() === 'CONFIRM'
+      : confirmation.trim().toLowerCase() === plan.id.slice(0, 8).toLowerCase());
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-12">
@@ -404,7 +410,9 @@ export default function StudioPage() {
           {needsConfirmation && !approved ? (
             <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3">
               <label className="block text-xs font-medium text-rose-800" htmlFor="confirm">
-                Type {plan.id.slice(0, 8)} to confirm this higher-risk change
+                {confirmationKind === 'word'
+                  ? 'Type CONFIRM — this change is visible to visitors'
+                  : `Type ${plan.id.slice(0, 8)} to confirm this higher-risk change`}
               </label>
               <input
                 id="confirm"

@@ -107,7 +107,10 @@ export async function createPlan(
 export interface ApprovePlanInput {
   planId: string;
   approvedBy: string;
-  /** Required for R3 plans: must contain the first 8 characters of the plan id. */
+  /**
+   * Required for R2 and R3 plans. R2 must be the word `CONFIRM`; R3 must be
+   * the first 8 characters of the plan id.
+   */
   confirmation?: string;
 }
 
@@ -141,16 +144,31 @@ export async function approvePlan(
     };
   }
 
-  if (plan.risk === 'R3') {
+  // Risk gate. R2 changes something the outside world can see (publishing,
+  // activating a plugin), so the user has to say the word; R3 additionally
+  // proves they are looking at this exact plan by typing its id prefix.
+  if (plan.risk === 'R2' || plan.risk === 'R3') {
     const token = input.confirmation?.trim().toUpperCase() ?? '';
-    const required = plan.id.slice(0, 8).toUpperCase();
-    if (token !== required) {
-      return {
-        ok: false,
-        status: 400,
-        code: 'CONFIRMATION_REQUIRED',
-        message: `Type ${required} to approve this high-risk plan.`,
-      };
+
+    if (plan.risk === 'R2') {
+      if (token !== 'CONFIRM') {
+        return {
+          ok: false,
+          status: 400,
+          code: 'CONFIRMATION_REQUIRED',
+          message: 'Type CONFIRM to approve this plan: it changes something visitors can see.',
+        };
+      }
+    } else {
+      const required = plan.id.slice(0, 8).toUpperCase();
+      if (token !== required) {
+        return {
+          ok: false,
+          status: 400,
+          code: 'CONFIRMATION_REQUIRED',
+          message: `Type ${required} to approve this high-risk plan.`,
+        };
+      }
     }
   }
 

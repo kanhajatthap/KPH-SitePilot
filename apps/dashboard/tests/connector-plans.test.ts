@@ -200,6 +200,29 @@ describe('plan lifecycle', () => {
     expect(approved.ok).toBe(true);
   });
 
+  it('makes an R2 plan say CONFIRM, not the plan id', async () => {
+    const created = await createPlan(seed('R2'), { store });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const missing = await approvePlan({ planId: created.plan.id, approvedBy: USER_ID }, { store });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.code).toBe('CONFIRMATION_REQUIRED');
+
+    // The plan-id token is the stronger R3 ritual and must not satisfy R2.
+    const prefix = await approvePlan(
+      { planId: created.plan.id, approvedBy: USER_ID, confirmation: created.plan.id.slice(0, 8) },
+      { store }
+    );
+    expect(prefix.ok).toBe(false);
+
+    const approved = await approvePlan(
+      { planId: created.plan.id, approvedBy: USER_ID, confirmation: 'confirm' },
+      { store }
+    );
+    expect(approved.ok).toBe(true);
+  });
+
   it('refuses to start a plan without an approval', async () => {
     const created = await createPlan(seed(), { store });
     expect(created.ok).toBe(true);
