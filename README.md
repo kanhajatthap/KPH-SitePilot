@@ -444,6 +444,7 @@ The same gates run in CI on every push and pull request to `main`.
 | [`docs/architecture-decisions.md`](./docs/architecture-decisions.md) | Why the system is shaped this way (ADRs) |
 | [`docs/environment-setup.md`](./docs/environment-setup.md) | Verified toolchain inventory and setup record |
 | [`docs/deployment-guide.md`](./docs/deployment-guide.md) | Production deployment prerequisites |
+| [`docs/email-deliverability.md`](./docs/email-deliverability.md) | Why auth emails go missing, and the SMTP / Site URL runbook that fixes it |
 | [`docs/security-review.md`](./docs/security-review.md) | OWASP LLM Top 10 matrix and findings |
 | [`docs/release-checklist.md`](./docs/release-checklist.md) | Pre-release security & readiness gates |
 | [`docs/backup-restore-strategy.md`](./docs/backup-restore-strategy.md) | Backup, restore and disaster recovery |

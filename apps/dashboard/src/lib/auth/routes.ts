@@ -15,7 +15,17 @@ export const PUBLIC_PAGE_PATHS = [
   '/auth/callback',
 ] as const;
 
-export const PUBLIC_API_PATHS = ['/api/health', '/api/auth/me'] as const;
+/**
+ * `/api/auth/status` is a diagnostics probe: public, read-only, and free of both
+ * secrets and user data. It is what makes "the email never arrived" debuggable
+ * without a session.
+ */
+/**
+ * `/api/auth/status` is a diagnostics probe: public, read-only, and free of both
+ * secrets and user data. It is what makes "the email never arrived" debuggable
+ * without a session.
+ */
+export const PUBLIC_API_PATHS = ['/api/health', '/api/auth/me', '/api/auth/status'] as const;
 
 /**
  * Endpoints a paired WordPress site calls machine-to-machine.

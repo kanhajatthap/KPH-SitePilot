@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { signIn, signUp, requestPasswordReset, updatePassword, signOut } from '../src/app/auth/actions';
+import {
+  signIn,
+  signUp,
+  requestPasswordReset,
+  updatePassword,
+  signOut,
+  resendConfirmation,
+} from '../src/app/auth/actions';
 
 const { createSupabaseServerClient, redirect } = vi.hoisted(() => ({
   createSupabaseServerClient: vi.fn(),
@@ -25,6 +32,7 @@ describe('Supabase authentication actions', () => {
     getUser: vi.fn(),
     updateUser: vi.fn(),
     signOut: vi.fn(),
+    resend: vi.fn(),
   };
 
   beforeEach(() => {
@@ -36,6 +44,7 @@ describe('Supabase authentication actions', () => {
     auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null });
     auth.updateUser.mockResolvedValue({ error: null });
     auth.signOut.mockResolvedValue({ error: null });
+    auth.resend.mockResolvedValue({ error: null });
   });
 
   it('signs in and returns to the requested safe path', async () => {
@@ -159,6 +168,48 @@ describe('Supabase authentication actions', () => {
 
     expect(auth.updateUser).toHaveBeenCalledWith({ password: 'a sufficiently long new password' });
     expect(auth.signOut).toHaveBeenCalled();
+  });
+
+  it('re-sends a confirmation link to the public deployment origin', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://kph-sitepilot.vercel.app';
+    try {
+      await expect(resendConfirmation(form({ email: ' USER@Example.test ', next: '/projects' })))
+        .rejects.toThrow('REDIRECT:/login?next=%2Fprojects&message=confirmation-resent');
+
+      expect(auth.resend).toHaveBeenCalledWith({
+        type: 'signup',
+        email: 'user@example.test',
+        options: {
+          emailRedirectTo: 'https://kph-sitepilot.vercel.app/auth/confirm?next=%2Fprojects',
+        },
+      });
+    } finally {
+      delete process.env.NEXT_PUBLIC_SITE_URL;
+    }
+  });
+
+  it('names the hourly email limit instead of pretending a resend worked', async () => {
+    auth.resend.mockResolvedValue({
+      error: Object.assign(new Error('email rate limit exceeded'), { code: 'over_email_send_rate_limit', status: 429 }),
+    });
+
+    await expect(resendConfirmation(form({ email: 'user@example.test' })))
+      .rejects.toThrow('REDIRECT:/login?error=rate-limited');
+  });
+
+  it('keeps the resend response neutral for unknown or confirmed addresses', async () => {
+    auth.resend.mockResolvedValue({
+      error: Object.assign(new Error('User not found'), { code: 'user_not_found' }),
+    });
+
+    await expect(resendConfirmation(form({ email: 'nobody@example.test' })))
+      .rejects.toThrow('REDIRECT:/login?message=confirmation-resent');
+  });
+
+  it('validates the address before asking the provider to send anything', async () => {
+    await expect(resendConfirmation(form({ email: 'not-an-email' })))
+      .rejects.toThrow('REDIRECT:/login?error=email-invalid');
+    expect(auth.resend).not.toHaveBeenCalled();
   });
 
   it('signs out and returns to login', async () => {

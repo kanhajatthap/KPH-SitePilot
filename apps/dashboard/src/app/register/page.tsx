@@ -3,8 +3,11 @@ import { getSupabasePublicConfig } from '../../lib/supabase/config';
 import { AuthLayout } from '../../components/auth/AuthLayout';
 import { Alert } from '../../components/auth/Alert';
 import { RegisterForm } from '../../components/auth/RegisterForm';
+import { EmailHelp } from '../../components/auth/EmailHelp';
 import { authErrorFrom, authInfoFrom } from '../../lib/auth/messages';
 import { safeNextPath } from '../../lib/auth/redirect';
+import { localAuthDiagnostics } from '../../lib/auth/diagnostics';
+import { requestOrigin } from '../../lib/auth/request-site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +21,7 @@ export default async function RegisterPage({
   const safeNext = safeNextPath(next);
   const errorText = authErrorFrom(error);
   const infoText = authInfoFrom(message);
+  const diagnostics = configured ? localAuthDiagnostics(process.env, await requestOrigin()) : null;
 
   return (
     <AuthLayout
@@ -54,6 +58,10 @@ export default async function RegisterPage({
             We email a confirmation link before your account becomes active. Your password is never stored by this app —
             Supabase Auth handles it.
           </p>
+
+          {diagnostics ? (
+            <EmailHelp next={safeNext} confirmUrl={diagnostics.emailRedirects.confirm} trusted={diagnostics.siteUrl.trusted} />
+          ) : null}
         </>
       )}
     </AuthLayout>
