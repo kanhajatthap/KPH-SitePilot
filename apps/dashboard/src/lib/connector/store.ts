@@ -595,3 +595,131 @@ export async function revokeSiteForUser(siteId: string, userId: string): Promise
 
   return 'revoked';
 }
+
+/**
+ * Owner-scoped site access for the platform site APIs (E2-15).
+ *
+ * `sites` is a service-only table, so ownership cannot be delegated to RLS on the
+ * base table the way it is for `site_metadata`. Every read and write here goes
+ * through an explicit `projects.owner_id = caller` filter instead, which makes a
+ * cross-tenant id indistinguishable from a missing one (404, never 403).
+ */
+export interface OwnedSiteRow {
+  id: string;
+  project_id: string;
+  url: string;
+  name: string;
+  environment: 'local' | 'staging' | 'production';
+  status: 'active' | 'paused' | 'revoked' | 'offline';
+  scopes: string[];
+  capabilities: Record<string, unknown>;
+  plugin_version: string | null;
+  wp_version: string | null;
+  php_version: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
+const OWNED_SITE_COLUMNS =
+  'id, project_id, url, name, environment, status, scopes, capabilities, plugin_version, wp_version, php_version, last_seen_at, created_at, projects!inner(owner_id)';
+
+/** Returns the site only when `ownerId` owns its project. */
+export async function findOwnedSite(ownerId: string, siteId: string): Promise<OwnedSiteRow | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('sites')
+    .select(OWNED_SITE_COLUMNS)
+    .eq('id', siteId)
+    .eq('projects.owner_id', ownerId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const { projects: _owner, ...site } = data as unknown as OwnedSiteRow & { projects?: unknown };
+  return site as OwnedSiteRow;
+}
+
+export interface SiteUpdate {
+  name?: string;
+  environment?: OwnedSiteRow['environment'];
+  status?: OwnedSiteRow['status'];
+  scopes?: string[];
+}
+
+/** Applies an owner-checked partial update and returns the new row. */
+export async function updateOwnedSite(
+  ownerId: string,
+  siteId: string,
+  patch: SiteUpdate
+): Promise<OwnedSiteRow | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('sites')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', siteId)
+    .eq('projects.owner_id', ownerId)
+    .select(OWNED_SITE_COLUMNS)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const { projects: _owner, ...site } = data as unknown as OwnedSiteRow & { projects?: unknown };
+  return site as OwnedSiteRow;
+}
+
+export interface RotatedCredentials {
+  token: string;
+  secret: string;
+}
+
+/**
+ * Issues a new token + secret for a site and invalidates the previous pair.
+ *
+ * The secret is encrypted at rest and never stored in plaintext; the caller sees
+ * it exactly once. Rotating also clears `revoked`, because an operator rotating a
+ * credential is re-authorising the site — otherwise the new credentials would be
+ * dead on arrival.
+ */
+export async function rotateSiteCredentials(
+  ownerId: string,
+  siteId: string
+): Promise<RotatedCredentials | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { generateSiteSecret, generateSiteToken, hashToken, encryptSecret } = await import('./crypto');
+
+  let encryptionKey: Buffer;
+  try {
+    encryptionKey = getEncryptionKey();
+  } catch {
+    throw new Error('SITEPILOT_ENCRYPTION_KEY is not configured.');
+  }
+
+  const token = generateSiteToken();
+  const secret = generateSiteSecret();
+
+  const { data, error } = await supabase
+    .from('sites')
+    .update({
+      token_hash: hashToken(token),
+      secret_encrypted: encryptSecret(secret, encryptionKey),
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', siteId)
+    .eq('projects.owner_id', ownerId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  return { token, secret };
+}
