@@ -12,6 +12,9 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 delete_option( 'kph_sp_settings' );
 delete_option( 'kph_sp_version' );
 delete_transient( 'kph_sp_last_heartbeat' );
+delete_transient( 'kph_sp_poll_lock' );
+delete_option( 'kph_sp_last_contact' );
+delete_option( 'kph_sp_last_job_error' );
 
 // Multisite: clean each site's options as well.
 if ( is_multisite() ) {
@@ -21,6 +24,12 @@ if ( is_multisite() ) {
 		delete_option( 'kph_sp_settings' );
 		delete_option( 'kph_sp_version' );
 		delete_transient( 'kph_sp_last_heartbeat' );
+		delete_transient( 'kph_sp_poll_lock' );
+		delete_option( 'kph_sp_last_contact' );
+		delete_option( 'kph_sp_last_job_error' );
+delete_transient( 'kph_sp_poll_lock' );
+delete_option( 'kph_sp_last_contact' );
+delete_option( 'kph_sp_last_job_error' );
 		restore_current_blog();
 	}
 }

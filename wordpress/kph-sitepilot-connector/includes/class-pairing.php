@@ -240,6 +240,12 @@ if ( ! class_exists( 'KPH_SP_Pairing' ) ) {
 				)
 			);
 
+			// Prove the credentials immediately: the first heartbeat also uploads
+			// the capability manifest, so the platform knows the site before the
+			// first job arrives.
+			KPH_SP_Job_Runner::heartbeat( true );
+			wp_schedule_single_event( time() + 5, KPH_SP_CRON_HOOK );
+
 			return rest_ensure_response(
 				array(
 					'status'  => 'connected',
@@ -269,6 +275,10 @@ if ( ! class_exists( 'KPH_SP_Pairing' ) ) {
 					'connected_by' => 0,
 				)
 			);
+
+			wp_clear_scheduled_hook( KPH_SP_CRON_HOOK );
+			delete_transient( KPH_SP_Job_Runner::LOCK_TRANSIENT );
+			delete_transient( KPH_SP_Job_Runner::CONTACT_TRANSIENT );
 
 			return rest_ensure_response(
 				array(
