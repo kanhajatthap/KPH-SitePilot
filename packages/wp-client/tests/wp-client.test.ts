@@ -151,6 +151,24 @@ describe('WordPressClient & Target Validation', () => {
       }
     });
 
+    it('honours the deprecated `fetchFn` alias instead of silently using real fetch', async () => {
+      let calls = 0;
+      const client = new WordPressClient({
+        allowedTargets: ['http://plugin-test.local'],
+        fetchFn: async () => {
+          calls += 1;
+          return new Response(
+            JSON.stringify({ name: 'Alias Site', url: 'http://plugin-test.local' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        },
+      });
+
+      const result = await client.inspectSite('plugin-test');
+      expect(result.siteName).toBe('Alias Site');
+      expect(calls).toBeGreaterThan(0);
+    });
+
     it('handles network failure safely', async () => {
       const mockTransport: HttpTransport = async () => {
         throw new Error('Connection refused (ECONNREFUSED)');

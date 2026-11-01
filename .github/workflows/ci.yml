@@ -11,6 +11,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wordpress-plugin:
+    name: WordPress Connector Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Lint every plugin file
+        run: find wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Connector protocol parity (PHP ↔ TS fixtures)
+        run: php wordpress/kph-sitepilot-connector/tests/test-protocol.php
+
+      - name: Connector static checks
+        run: php wordpress/kph-sitepilot-connector/tests/test-plugin.php
+
+      - name: Legacy bridge static checks
+        run: php wordpress/wp-agent-bridge/tests/test-plugin.php
+
   validate:
     name: Build, Lint & Test
     runs-on: ubuntu-latest
@@ -63,7 +90,11 @@ jobs:
           pnpm audit --prod --audit-level high || echo "Audit warnings logged for review"
 
       - name: Monorepo Unit & Security Tests (Zero-Quota Mock Mode)
-        run: pnpm -r test
+        # Use the Turbo pipeline, not `pnpm -r test`: turbo's `test` task
+        # declares `dependsOn: ["^build"]`, so workspace packages are built
+        # before their tests import them. Running recursive pnpm directly
+        # fails on a clean checkout because `dist/` does not exist yet.
+        run: pnpm test
         env:
           NODE_ENV: test
           AI_PROVIDER: mock

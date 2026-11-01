@@ -166,6 +166,9 @@ importers:
 
   .:
     devDependencies:
+      php-parser:
+        specifier: ^3.7.0
+        version: 3.7.0
       turbo:
         specifier: ^2.4.4
         version: 2.11.10
@@ -302,6 +305,15 @@ importers:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.9
+        version: 22.20.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+
+  packages/connector-protocol:
     devDependencies:
       '@types/node':
         specifier: ^22.13.9
@@ -1442,6 +1454,9 @@ packages:
   pathval@2.0.1:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
+
+  php-parser@3.7.0:
+    resolution: {integrity: sha512-JRc1t78GZAEa+MuzVC5A5RJS1NDFTS4UnprUEu/NnsN9cyHbGZLUqghO9IQZUSCay62HYQiWd3PxyWAEF45zmA==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -2598,6 +2613,8 @@ snapshots:
   pathe@2.0.3: {}
 
   pathval@2.0.1: {}
+
+  php-parser@3.7.0: {}
 
   picocolors@1.1.1: {}
 

@@ -15,17 +15,24 @@ pnpm --filter @wp-agent/api test
 ```
 
 ## 2. Monorepo Task Pipeline (Level 2 & 3)
-Run orchestrated checks across all packages via Turborepo:
+Run checks through Turborepo — this is the supported path and what CI uses:
 ```powershell
 # Typecheck all packages
 pnpm typecheck
 
-# Build all packages
-pnpm build
-
-# Run all test suites
+# Run all test suites (builds workspace dependencies first)
 pnpm test
+
+# Full production build
+pnpm build
 ```
+
+> [!IMPORTANT]
+> Do not use `pnpm -r test` on a clean checkout. Recursive pnpm skips Turbo's
+> `dependsOn: ["^build"]`, so tests import `@wp-agent/*` before `dist/` exists and
+> fail with "Failed to resolve entry for package". If you must run a single
+> package recursively, run `pnpm build` first. CI (`.github/workflows/ci.yml`)
+> intentionally calls `pnpm test` for this reason.
 
 ## 3. WordPress Plugin Static Checks
 Verify the WordPress companion bridge without altering LocalWP test databases:
