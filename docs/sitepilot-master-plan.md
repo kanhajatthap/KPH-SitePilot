@@ -1,6 +1,6 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
-> **Status:** executing · 2026-11-01 · M0 ✅ · M1 ✅ · M2 in progress (pairing live)
+> **Status:** executing · 2026-11-01 · M0 ✅ · M1 ✅ · M2 in progress (pairing + job pipeline live)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
 > entire WordPress admin can be driven by prompts, safely and reversibly.
@@ -389,6 +389,22 @@ plugin honours on next heartbeat.
 | Result | plugin → cloud | `POST /api/connector/jobs/{id}/result` | signed; includes data, logs, before/after hashes, error code |
 | Events | plugin → cloud | `POST /api/connector/events` | batched log lines (max 50) |
 | Unpair | plugin → cloud | `POST /api/connector/unpair` | revokes site token, marks `revoked` |
+
+#### 5.4.1 As built (2026-11-01)
+
+| Piece | Where | Behaviour |
+|---|---|---|
+| Claim | `supabase/migrations/20261101090000_connector_functions.sql` → `claim_next_job(site, lease)`; `POST /api/connector/jobs/claim` | `FOR UPDATE SKIP LOCKED`, one job per call, lease 120 s, `attempts+1`, `claimed` event appended. Returns `{ job: null, nextPollSeconds: 60 }` when idle |
+| Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; `site.info`, `site.health`, `content.list`, `content.get` (all `read`); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
+| Report | `POST /api/connector/jobs/{id}/result` | signed; body `jobId` must match the path; duplicate report is a **no-op** (`idempotent: true`); success → `succeeded` + `job_events`, retryable failure → back to `queued` until `max_attempts` |
+| Liveness | `POST /api/connector/heartbeat` → `touch_site_heartbeat` | stores `last_seen_at`, plugin/WP/PHP versions and the capability manifest; **never revives** a revoked or paused site |
+| Schedule | `includes/class-job-runner.php` + `class-plugin.php` | WP-Cron `kph_sp_minute` (60 s), transient lock against overlapping polls, heartbeat throttled to 5 min, immediate heartbeat + 5 s poll right after pairing |
+| Guard | `lib/connector/auth.ts` | site lookup → status gate → AES-GCM decrypt → HMAC verify (±300 s) → nonce replay store → 240 req/min/site |
+| Housekeeping | `purge_expired_connector_state()` | nonces >15 min, pairing codes >1 day, job events >30 days, expired snapshots |
+
+**Verified on the live project:** one queued job → first claim 1, immediate second claim 0 (lease held), claim again after
+lease expiry 1, `attempts` 2, two `job_events`; heartbeat accepted for `active` and refused for `revoked` without
+changing its status.
 
 **Job envelope**
 

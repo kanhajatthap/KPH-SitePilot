@@ -19,6 +19,11 @@
 | 2026-11-01 | E2-05 | Connector plugin v0.2.0 can finally pair: admin card with pairing input, platform-URL form, `assets/admin.js` (REST nonce, no secret handling), and admin-only REST routes `POST /pair`, `POST /unpair`, `GET /status`. Server-side validates credential shape before saving anything. | `php-lint` → **11 files parse** · static suite extended (+11 assertions: admin-only guard, nonce usage, no `error_log`, responses carry no token/secret) and simulated locally · real `php -l` + PHP tests run in CI job `wordpress-plugin` | E2-07 |
 | 2026-11-01 | GATE | Full gate after this batch. | `pnpm typecheck` **19/19** · `pnpm lint` **11/11 + 11 PHP files** · `pnpm test` **382 pass / 0 fail** (was 349) · `pnpm build` **11/11** | next batch |
 | 2026-11-01 | CI | PR #2 green on the first run — including the real PHP 8.2 job that now parses and statically checks the new pairing code. | Run `41286698093`: **Build, Lint & Test — pass (1 m 42 s)**, **WordPress Connector Checks — pass (7 s)**, Vercel — pass, Vercel Preview Comments — pass · PR #2 | next batch |
+| 2026-11-01 | E1-03 | Connector runtime functions: `claim_next_job` (SKIP LOCKED, lease 15–900 s, attempts, claimed event), `touch_site_heartbeat` (versions + manifest, never revives revoked/paused), `purge_expired_connector_state`. EXECUTE revoked from `public`/`anon`/`authenticated`. | Applied live **`20261101080746_connector_functions`** · live test as `service_role`: first claim **1**, second while leased **0**, after lease expiry **1**, attempts **2**, job_events **2**, heartbeat active **1** / revoked **0**, revoked status preserved · temp rows deleted (projects/sites/jobs/events back to 0) | E2-08 |
+| 2026-11-01 | E2-08 | Connector auth: site lookup → paused/revoked gate → AES-256-GCM decrypt → HMAC verify (±300 s, constant-time) → nonce replay store (`connector_nonces` PK) → 240 req/min/site budget. Failures are typed: `UNKNOWN_SITE`, `SITE_REVOKED`, `SITE_PAUSED`, `INVALID_SIGNATURE`, `REPLAY_DETECTED`, `SECRET_UNAVAILABLE`, `RATE_LIMIT_EXCEEDED`. | New `tests/connector-auth.test.ts` **18 tests**: valid signature, wrong secret, tampered body, stale timestamp, replay, unknown/revoked/paused site, undecryptable secret, budget | E2-10 |
+| 2026-11-01 | E2-10 / E2-13 | Signed job endpoints: `POST /api/connector/jobs/claim` (one job, lease, allowlist guard that fails non-executable tools loudly) and `POST /api/connector/jobs/{id}/result` (state machine succeeded / retry→queued / failed, `job_events` writer, duplicate report idempotent). Pairing now enqueues the first `site.info` job automatically. | Handler tests cover claim-then-idle, disallowed tool, site.info application, failure classification, double report, body/path mismatch, other-site job → 404 · dashboard **130 tests** | E2-07 |
+| 2026-11-01 | E2-07 / E2-11 / E2-09 (plugin) | Plugin **v0.3.0**: capability manifest (`site`, theme/FSE, plugins ≤80, post types ≤40, taxonomies, builders, environment, role counts), deny-by-default tool registry (`site.info`, `site.health`, `content.list`, `content.get`), signed outbound runner (20 s timeout, no redirects, 1 MB response cap, transient poll lock, 5-min heartbeat throttle, immediate heartbeat + 5 s poll after pairing), WP-Cron `kph_sp_minute`, local unpair clears schedule + transients, admin screen shows last contact and last job error. | `php-lint` **14 files parse** · static suite extended (+23 assertions: manifest bounds, no emails/secrets, allowlist, signed headers, nonce entropy, poll lock, connected guard, no `error_log`, no payload dumps, cron wiring) and simulated locally · real `php -l` + static run in CI job `wordpress-plugin` | CI |
+| 2026-11-01 | GATE | Full gate after the job-pipeline batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **401 pass / 0 fail** (was 382) · `pnpm build` **11/11** | next batch |
 
 ## Task status
 
@@ -33,7 +38,16 @@
 | E1-06 api-core extraction | ✅ done | this batch |
 | E1-07 in-process dashboard API | ✅ done | this batch |
 | E2-02 / E2-06 pairing API | ✅ done | this batch |
-| E2-05 connector pairing UI | ✅ done | this batch |
+| E2-05 connector pairing UI | ✅ done | batch 3 |
+| E1-03 job SQL functions | ✅ done (live) | `connector_functions` |
+| E2-04 outbound client | ✅ done | batch 4 |
+| E2-07 capability manifest | ✅ done | batch 4 |
+| E2-08 connector auth | ✅ done | batch 4 |
+| E2-10 claim endpoint | ✅ done | batch 4 |
+| E2-12 tool registry + site.info | ✅ done | batch 4 |
+| E2-13 result endpoint + state machine | ✅ done | batch 4 |
+| E2-09 scheduler (live mode, backoff) | ⏳ partial | batch 4 |
+| E2-11 runner (fatal capture) | ⏳ partial | batch 4 |
 
 ## Open blockers
 
@@ -43,7 +57,9 @@
 | No job runner yet: a paired site cannot be driven by prompts until E2-08 (connector auth) + E1-03/E2-10 (claim/execute) land | us | pairing + scopes are live; the UI does not pretend otherwise |
 | `SITEPILOT_ENCRYPTION_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are not set on Vercel yet | us | pairing fails closed with `CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
-| Connector job polling/claiming not implemented (E2-08 → E2-13) | us | pairing works; jobs queue is next |
+| Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
+| No write tools yet (all shipped tools are `read`) | us (E2-18 → E5/E6) | mutations arrive with the plan/approval/snapshot engine, not before |
+| Fatal-error capture + live 5 s poll mode | us (E2-09, E2-11) | cron poll + lease retry cover the gap |
 
 ## Gate history
 
@@ -53,3 +69,4 @@
 | 2026-11-01 | 16/16 | **349 pass / 0 fail** | 10/10 | after E0-01, E0-02, E2-01, E2-03 |
 | 2026-11-01 | — | PHP 8.2 protocol + static tests pass in CI | — | CI run `41285152374` all green |
 | 2026-11-01 | 19/19 | 382 pass / 0 fail | 11/11 | after E1-02/E1-06/E1-07/E2-02/E2-05/E2-06 (lint: 11/11 + 11 PHP files) |
+| 2026-11-01 | 20/20 | 401 pass / 0 fail | 11/11 | after E1-03 + E2-04/07/08/10/12/13 (lint: 11/11 + 14 PHP files) |
