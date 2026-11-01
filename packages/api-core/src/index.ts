@@ -276,6 +276,19 @@ export class ServerRateLimiter {
 
 export const globalApiRateLimiter = new ServerRateLimiter(60000, 120);
 
+// Per-user free-tier quotas (pure policy; the counter lives in Postgres).
+export {
+  DEFAULT_QUOTAS,
+  DAY_SECONDS,
+  QUOTA_ENV_KEYS,
+  decideQuota,
+  quotaCounterKey,
+  quotaExceededBody,
+  quotaHeaders,
+  resolveQuotaLimits,
+} from './quota.js';
+export type { QuotaDecision, QuotaExceededBody, QuotaKind, QuotaLimit } from './quota.js';
+
 /**
  * Sends a structured JSON response with security headers and correlation ID.
  */

@@ -44,6 +44,15 @@ export function isSignedConnectorPath(pathname: string): boolean {
   return /^\/api\/connector\/jobs\/[0-9a-f-]{36}\/result$/i.test(pathname);
 }
 
+/**
+ * Cron endpoints are called by Vercel's scheduler, which carries no session
+ * cookie. They authenticate with `CRON_SECRET` and fail closed without it, so the
+ * session gate must not intercept them first.
+ */
+export function isCronPath(pathname: string): boolean {
+  return pathname === '/api/cron' || pathname.startsWith('/api/cron/');
+}
+
 export function isPublicPagePath(pathname: string): boolean {
   return PUBLIC_PAGE_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
@@ -61,7 +70,12 @@ export function isApiPath(pathname: string): boolean {
 }
 
 export function isPrivatePath(pathname: string): boolean {
-  return !isPublicPagePath(pathname) && !isPublicApiPath(pathname) && !isSignedConnectorPath(pathname);
+  return (
+    !isPublicPagePath(pathname) &&
+    !isPublicApiPath(pathname) &&
+    !isSignedConnectorPath(pathname) &&
+    !isCronPath(pathname)
+  );
 }
 
 export function isSafeStaticPath(pathname: string): boolean {

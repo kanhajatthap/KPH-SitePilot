@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabasePublicConfig } from './lib/supabase/config';
 import {
   isApiPath,
+  isCronPath,
   isPublicApiPath,
   isPublicPagePath,
   isSafeStaticPath,
@@ -90,6 +91,9 @@ export async function middleware(request: NextRequest) {
   // site signature (or a pairing code) instead, so the gate stays shut only
   // for the browser-facing connector routes.
   if (isSignedConnectorPath(pathname)) return response;
+
+  // Vercel Cron has no cookie; `/api/cron/*` proves itself with CRON_SECRET.
+  if (isCronPath(pathname)) return response;
 
   if (!user) {
     if (isApiPath(pathname)) {
