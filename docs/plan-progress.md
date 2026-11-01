@@ -10,6 +10,7 @@
 | 2026-11-01 | E0-01 | CI + docs run tests through Turbo (`pnpm test`) instead of `pnpm -r test`, so `test.dependsOn: ["^build"]` builds workspace packages before tests import `dist/`. Documented the trap in `tests/README.md`. | Deleted every `dist/`, then `pnpm test --force` → **15/15 tasks, 332 tests, 0 cached, 25.4 s** | E1-01 |
 | 2026-11-01 | E1-01 | Applied both repo migrations to the live Supabase project `zgkewnhrymswhucigtib` (tables, indexes, RLS, policies, view, trigger, rate-limit RPC, chat history). | `list_migrations` → `20261101072632 saas_schema`, `20261101072639 dashboard_chat_history` · schema probe: **9 public tables, 9 with RLS, 17 policies, 1 view, 3 functions** · `wordpress_connection_metadata` view present | E2-01 |
 | 2026-11-01 | E2-03 | New `@wp-agent/connector-protocol` package: canonical string `<ts>.<nonce>.<sha256(body)>`, HMAC-SHA256 signing, timing-safe verification, timestamp window, nonce/body-size rules, typed error codes. PHP `KPH_SP_Signature` mirrors it; four shared fixtures drive both suites. | `pnpm --filter @wp-agent/connector-protocol test` → **17/17 pass** · fixtures cover latin, unicode, empty and CRLF bodies · PHP files parse with `scripts/php-lint.mjs` (php-parser 7.4) · CI job runs the PHP half with real PHP 8.2 | E2-01 |
+| 2026-11-01 | CI | First green CI run on this branch (main was red): both jobs pass, including the new PHP job that executes the connector protocol + static tests with real PHP 8.2. | Run `41285152374`: **Build, Lint & Test — pass (1 m 33 s)**, **WordPress Connector Checks — pass (10 s)**, Vercel — pass | E1-02 |
 | 2026-11-01 | E2-01 | Connector plugin scaffold `wordpress/kph-sitepilot-connector`: bootstrap, settings + 7 access scopes (default full, incl. `files` and `code`), admin status screen with honest “Not connected” + disabled pairing, scope form with nonce/capability checks, uninstall cleanup, readme, static test, PHP lint script, CI PHP job. | `pnpm typecheck` → **16/16** · `pnpm lint` → **10/10 + PHP parse 10 files** · `pnpm test` → **349 tests** · `pnpm build` → **10/10** · static PHP test written; runtime execution pending CI (no PHP binary in this sandbox) | E2-02 / E2-05 |
 
 ## Task status
@@ -38,3 +39,4 @@
 |---|---|---|---|---|
 | 2026-11-01 | — | 330 pass / 1 fail | 9/9 | baseline before fixes |
 | 2026-11-01 | 16/16 | **349 pass / 0 fail** | 10/10 | after E0-01, E0-02, E2-01, E2-03 |
+| 2026-11-01 | — | PHP 8.2 protocol + static tests pass in CI | — | CI run `41285152374` all green |
