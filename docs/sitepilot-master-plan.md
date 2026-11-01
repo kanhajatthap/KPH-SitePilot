@@ -1,6 +1,7 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
-> **Status:** executing · 2026-11-01 · M0 ✅ · M1 ✅ · M2 in progress (pairing + job pipeline live)
+> **Status:** executing · 2026-11-02 · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 in progress (pairing + job pipeline live) · M3 in progress (plan → approve → execute → undo shipped)
+> **Blocked on the owner:** auth email delivery (custom SMTP + Supabase project access) — see [`docs/email-deliverability.md`](./email-deliverability.md)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
 > entire WordPress admin can be driven by prompts, safely and reversibly.
