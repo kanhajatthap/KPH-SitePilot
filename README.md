@@ -430,7 +430,7 @@ The same gates run in CI on every push and pull request to `main`.
 | **6** | Builder integrations: Gutenberg, Elementor, ACF, WooCommerce, FSE | ✅ |
 | **7** | Supabase SaaS foundation: auth, RLS, vault, rate limits | ✅ local · ☁️ hosted gated |
 | **8** | Security review, OWASP LLM matrix, release readiness | ✅ |
-| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector plugin, prompt-driven WordPress management | 🚧 **in progress** (M0 ✅ · M1 ✅ · M2: pairing live · job runner next) · [master plan](./docs/sitepilot-master-plan.md) |
+| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector plugin, prompt-driven WordPress management | 🚧 **in progress** (M0 ✅ · M1 ✅ · M2: pairing + job pipeline live · write tools next) · [master plan](./docs/sitepilot-master-plan.md) |
 
 ---
 

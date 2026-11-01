@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,10 +20,11 @@ Connecting as an administrator enables full access by default, including files a
 scopes. A scope only makes a capability available: every write still requires a plan, a human
 approval, a snapshot and a read-back verification.
 
-**This build (0.1.0) is the connector foundation.** It installs the settings model, access
-scopes, HMAC signing primitives and the admin screen. The pairing endpoint and job runner ship
-in milestone M2; until then the admin screen clearly reports “Not connected” and does not
-contact any external service.
+**This build (0.3.0) connects and polls.** Pairing exchanges a one-time code for site
+credentials, the connector then signs every request, uploads a capability manifest, claims one
+job per minute and reports the result. The shipped tools are read-only (`site.info`,
+`site.health`, `content.list`, `content.get`); write tools land with the platform's
+plan/approval/snapshot engine.
 
 == Installation ==
 
@@ -50,6 +51,16 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.3.0 =
+* Job runner: signed claim → execute → signed result, one job per poll, transient lock against
+  overlapping runs, retryable failures classified explicitly.
+* Heartbeat every five minutes (and immediately after pairing) carrying versions and a bounded
+  capability manifest: theme type, plugins, post types, taxonomies, builders, environment.
+* Read-only tool registry, deny by default: `site.info`, `site.health`, `content.list`,
+  `content.get` — every tool checks its scope first.
+* WP-Cron `kph_sp_minute` schedule on activation; disconnect clears the schedule and transients.
+* Admin screen reports last contact and the last job error instead of a silent queue.
 
 = 0.2.0 =
 * Pairing is live: the admin screen accepts a one-time code, exchanges it for site

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { POST as pairRoute } from '../src/app/api/connector/pair/route';
 import { POST as pairingCodeRoute } from '../src/app/api/connector/pairing-codes/route';
 import { GET as sitesRoute } from '../src/app/api/connector/sites/route';
+import { POST as jobsRoute } from '../src/app/api/connector/jobs/route';
 import { resetPairingRateLimit } from '../src/lib/connector/rate-limit';
 
 const savedEnv = {
@@ -90,6 +91,19 @@ describe('connector routes', () => {
     const body = await res.json();
     expect(body.error).toBe('CONNECTOR_REQUIRES_ACCOUNT');
     expect(JSON.stringify(body)).not.toMatch(/[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}/);
+  });
+
+  it('refuses to queue a job without an account', async () => {
+    const res = await jobsRoute(
+      new Request('https://app.example.com/api/connector/jobs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ siteId: '11111111-1111-4111-8111-111111111111', tool: 'site.info' }),
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('CONNECTOR_REQUIRES_ACCOUNT');
   });
 
   it('refuses to list sites without an account', async () => {

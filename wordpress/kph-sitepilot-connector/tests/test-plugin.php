@@ -118,6 +118,40 @@ kph_sp_static_assert( false !== strpos( $admin_js, "request('pair'" ), 'admin sc
 kph_sp_static_assert( false === strpos( $admin_js, 'site_secret' ), 'admin script never reads the stored secret' );
 kph_sp_static_assert( false === strpos( $admin_js, 'site_token' ), 'admin script never handles the site token' );
 
+// Capability manifest: bounded, secret-free, and honest about the host.
+$capabilities_source = file_get_contents( $plugin_dir . '/includes/class-capabilities.php' );
+kph_sp_static_assert( false !== strpos( $capabilities_source, 'public static function manifest' ), 'capabilities::manifest exists' );
+kph_sp_static_assert( false !== strpos( $capabilities_source, 'MAX_PLUGINS' ), 'plugin list is capped' );
+kph_sp_static_assert( false !== strpos( $capabilities_source, 'wp_is_block_theme' ), 'block theme detection present' );
+kph_sp_static_assert( false === strpos( $capabilities_source, 'user_email' ), 'manifest never collects emails' );
+kph_sp_static_assert( false === strpos( $capabilities_source, 'site_secret' ), 'manifest never reads credentials' );
+
+// Tool registry: deny by default, scope-gated, read-only in this build.
+$tools_source = file_get_contents( $plugin_dir . '/includes/class-tools.php' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'site.info'" ), 'site.info tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "kph_sp_unknown_tool" ), 'unknown tools are rejected' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'has_scope' ), 'tools check the site scope' );
+kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'this build ships no write tools' );
+kph_sp_static_assert( false === strpos( $tools_source, 'wp_remote_' ), 'tools never make their own HTTP calls' );
+
+// Job runner: signed, outbound-only, lease-safe.
+$runner_source = file_get_contents( $plugin_dir . '/includes/class-job-runner.php' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'KPH_SP_Signature::sign' ), 'runner signs every request' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'X-SitePilot-Signature' ), 'runner sends the signature header' );
+kph_sp_static_assert( false !== strpos( $runner_source, "random_bytes( 16 )" ), 'runner nonce has 128 bits of entropy' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'LOCK_TRANSIENT' ), 'runner prevents overlapping polls' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'is_connected' ), 'runner refuses to run while unpaired' );
+kph_sp_static_assert( false === strpos( $runner_source, 'error_log' ), 'runner never logs payloads' );
+kph_sp_static_assert( false === strpos( $runner_source, "'secret' =>" ), 'runner never puts the secret in a payload' );
+kph_sp_static_assert( false === strpos( $runner_source, 'print_r' ), 'runner never dumps request data' );
+kph_sp_static_assert( false !== strpos( $runner_source, "'retryable'" ), 'runner classifies retryable failures' );
+
+// Cron wiring: one-minute poll scheduled on activation, cleared on deactivate.
+$plugin_source_wiring = file_get_contents( $plugin_dir . '/includes/class-plugin.php' );
+kph_sp_static_assert( false !== strpos( $plugin_source_wiring, 'kph_sp_minute' ), 'one-minute cron schedule registered' );
+kph_sp_static_assert( false !== strpos( $plugin_source_wiring, "wp_schedule_event" ), 'poll scheduled on activation' );
+kph_sp_static_assert( false !== strpos( $plugin_source_wiring, 'KPH_SP_Job_Runner' ), 'cron invokes the runner' );
+
 // Pairing endpoints: admin-only, HTTPS-aware, and never return credentials.
 $pairing_source = file_get_contents( $plugin_dir . '/includes/class-pairing.php' );
 kph_sp_static_assert( false !== strpos( $pairing_source, 'register_rest_route' ), 'pairing routes registered' );

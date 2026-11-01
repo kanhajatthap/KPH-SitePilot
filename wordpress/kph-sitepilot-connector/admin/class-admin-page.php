@@ -152,6 +152,9 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 			$secret     = (string) $settings['site_secret'];
 			$masked     = '' === $secret ? '—' : str_repeat( '•', 12 ) . substr( $secret, -4 );
 			$updated    = isset( $_GET['updated'] ) ? sanitize_key( wp_unslash( $_GET['updated'] ) ) : '';
+			$contact    = get_option( 'kph_sp_last_contact', array() );
+			$contact    = is_array( $contact ) ? $contact : array();
+			$job_error  = (string) get_option( 'kph_sp_last_job_error', '' );
 			$scope_help = array(
 				'read'     => __( 'Inspect site, content, media, plugins and settings.', 'kph-sitepilot-connector' ),
 				'content'  => __( 'Create and update posts, pages, blocks, menus and taxonomies.', 'kph-sitepilot-connector' ),
@@ -202,6 +205,24 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 								<th><?php esc_html_e( 'Plugin version', 'kph-sitepilot-connector' ); ?></th>
 								<td><code><?php echo esc_html( KPH_SP_VERSION ); ?></code></td>
 							</tr>
+							<tr>
+								<th><?php esc_html_e( 'Last contact', 'kph-sitepilot-connector' ); ?></th>
+								<td>
+									<?php
+									if ( ! empty( $contact['at'] ) ) {
+										echo esc_html( (string) $contact['state'] ) . ' · ' . esc_html( (string) $contact['at'] );
+									} else {
+										echo '—';
+									}
+									?>
+								</td>
+							</tr>
+							<?php if ( '' !== $job_error ) : ?>
+								<tr>
+									<th><?php esc_html_e( 'Last job error', 'kph-sitepilot-connector' ); ?></th>
+									<td><code><?php echo esc_html( $job_error ); ?></code></td>
+								</tr>
+							<?php endif; ?>
 						</table>
 
 						<?php if ( $connected ) : ?>
