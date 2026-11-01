@@ -40,6 +40,8 @@ This guide details the deployment procedures, environment variables, security co
 | `SUPABASE_URL` | Edge Functions only | No | `https://[ref].supabase.co` | Supabase API endpoint URL |
 | `SUPABASE_ANON_KEY` | Edge Functions only | Public | `<public anon key>` | Verifies caller session with Supabase Auth |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions | Yes | `eyJhb...` | Administrative key for privileged edge operations |
+| `CRON_SECRET` | Dashboard | Yes (prod) | `openssl rand -hex 32` | Shared secret for `GET /api/cron/daily`. Vercel sends it as `Authorization: Bearer $CRON_SECRET` on every scheduled run; the route compares it in constant time and answers **503** (never 200) when the variable is absent, so a missing secret can never expose the purge endpoint. Generate it in Vercel — nobody needs to read it. **Set it before the first scheduled run, and redeploy afterwards**: an env var added without a new deployment is invisible to the functions already running. |
+| `SITEPILOT_QUOTA_AI` / `_PLAN` / `_JOB` | Dashboard | No | `200` / `100` / `500` | Per-user daily caps. Unset or junk falls back to the defaults; the value is clamped to 1–100000 so a typo cannot silently disable metering. |
 
 > [!CAUTION]
 > Never store plain credentials in git, Dockerfiles, or browser-accessible client bundles. All production secrets must be injected via secure secret managers (e.g. AWS Secrets Manager, Doppler, GCP Secret Manager, or Vercel Environment Variables).
