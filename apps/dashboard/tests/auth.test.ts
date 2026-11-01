@@ -212,6 +212,35 @@ describe('Supabase authentication actions', () => {
     expect(auth.resend).not.toHaveBeenCalled();
   });
 
+  it('names an unreachable auth server instead of "something went wrong"', async () => {
+    auth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: Object.assign(new Error('fetch failed'), { name: 'AuthRetryableFetchError', status: 0 }),
+    });
+
+    await expect(signUp(form({ email: 'user@example.test', password: 'a sufficiently long password' })))
+      .rejects.toThrow('REDIRECT:/register?error=auth-unreachable');
+  });
+
+  it('never claims a reset mail went out when the provider was unreachable', async () => {
+    auth.resetPasswordForEmail.mockResolvedValue({
+      error: Object.assign(new Error('getaddrinfo ENOTFOUND'), { name: 'AuthRetryableFetchError', status: 0 }),
+    });
+
+    await expect(requestPasswordReset(form({ email: 'user@example.test' })))
+      .rejects.toThrow('REDIRECT:/forgot-password?error=auth-unreachable');
+  });
+
+  it('keeps the neutral answer for a provider "user not found"', async () => {
+    auth.resetPasswordForEmail.mockResolvedValue({
+      error: Object.assign(new Error('User not found'), { code: 'user_not_found', status: 400 }),
+    });
+
+    // Still no enumeration signal.
+    await expect(requestPasswordReset(form({ email: 'nobody@example.test' })))
+      .rejects.toThrow('REDIRECT:/forgot-password?message=reset-sent');
+  });
+
   it('signs out and returns to login', async () => {
     await expect(signOut()).rejects.toThrow('REDIRECT:/login?message=signed-out');
     expect(auth.signOut).toHaveBeenCalled();

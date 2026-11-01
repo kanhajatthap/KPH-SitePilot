@@ -19,6 +19,8 @@ export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth-failed': 'Something went wrong. Please try again.',
   'resend-failed':
     'The confirmation email could not be requested. If this continues, the deployment is missing custom SMTP settings.',
+  'auth-unreachable':
+    'The authentication service could not be reached, so no email was sent. The Supabase project may be paused, deleted, or misconfigured for this deployment.',
 };
 
 export const AUTH_INFO_MESSAGES: Record<string, string> = {

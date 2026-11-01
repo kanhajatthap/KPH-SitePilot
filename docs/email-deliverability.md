@@ -183,6 +183,7 @@ reset, which §3 verifies.
 | `error=rate-limited` on every retry | hourly quota spent | raise the limit in §4.2, wait |
 | `error=confirmation-invalid` | link already used or older than the OTP window | resend from `/login` |
 | `provider.reachable: false` | the auth project is paused, deleted, or the URL/anon key pair is wrong | check the Supabase project + Vercel env |
+| `error=auth-unreachable` on signup / reset | the Auth server was never reached — no mail was even queued | the Supabase project is paused or deleted, or the deployment's URL/anon key are wrong |
 
 ## 7. Code map
 
