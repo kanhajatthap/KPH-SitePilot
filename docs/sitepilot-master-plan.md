@@ -1,6 +1,6 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
-> **Status:** planning baseline v1 · 2026-11-01
+> **Status:** executing · 2026-11-01 · M0 ✅ · M1 ✅ · M2 in progress (pairing live)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
 > entire WordPress admin can be driven by prompts, safely and reversibly.
@@ -350,6 +350,20 @@ wordpress/kph-sitepilot-connector/
 5. Plugin stores `site_id`, `site_token`, `site_secret` in its options; shows **Connected**.
 6. Plugin sends first `capabilities` manifest immediately (no waiting for cron).
 
+#### 5.2.1 As built (2026-11-01)
+
+| Step | Where it lives | Behaviour |
+|---|---|---|
+| Mint code | `POST /api/connector/pairing-codes` (`apps/dashboard/src/app/api/connector/pairing-codes/route.ts`) | Signed-in user only; picks the project they own; stores **SHA-256(code)**; 10-minute TTL |
+| Redeem code | `POST /api/connector/pair` (`…/api/connector/pair/route.ts` + `lib/connector/pairing.ts`) | Public, **10 attempts/min/IP**; rejects used / expired / wrong-project codes; returns token + secret **once** |
+| Secret at rest | `lib/connector/crypto.ts` | `AES-256-GCM` under `SITEPILOT_ENCRYPTION_KEY` (`v1.<iv>.<tag>.<ct>`); token stored as SHA-256 only |
+| WordPress side | `includes/class-pairing.php`, `assets/admin.js` | Admin-only REST (`pair` / `unpair` / `status`) with REST nonce; platform URL configurable; **no credential ever returned to the browser** |
+| List sites | `GET /api/connector/sites`, UI at `/connect` | Reads `site_metadata` with the user session, so RLS decides visibility |
+
+Codes reuse the Crockford-style alphabet (`A–Z`, `2–9`, no `I/L/O/0/1`); typed characters are folded to
+a valid key so a misread code still pairs. Replay/clock rules for *signed* traffic (§5.3) still apply to
+everything after pairing.
+
 ### 5.3 Auth & signing (all connector calls)
 
 Headers:
@@ -447,6 +461,8 @@ Lease 90 s; expired jobs requeue (max 3 attempts) then `failed` with `lease_expi
 ### 5.7 Admin UI (inside WP)
 
 - **Status**: Connected as `<project>`, last seen, plugin version, poll mode, jobs today.
+- **Pairing (live since v0.2.0)**: code field + Connect, platform-URL form, Disconnect, and an honest
+  “Not connected” state. The screen reports the REST error message verbatim instead of faking success.
 - **Connect**: pairing code field, site label, “Connect” button.
 - **Scopes**: read-only / content / media / site-ops / commerce toggles (cloud enforces too).
 - **Activity**: last 20 jobs (tool, status, duration, time) + “copy debug bundle”.

@@ -23,12 +23,12 @@
 ## E1 — Cloud spine: Supabase + Vercel (M1)
 
 - [x] **E1-01** — Apply existing migrations to Supabase project `zgkewnhrymswhucigtib` (schema + RLS + chat history). · *Files:* `supabase/migrations/*` · *Done:* `list_migrations` shows 2 rows, `profiles/projects/...` exist, RLS enabled · *Dep:* — · *Est:* 1h
-- [ ] **E1-02** — Create migration `sites`, `pairing_codes`, `plans`, `approvals`, `jobs`, `job_events`, `snapshots`, `usage_events`, `user_api_keys`, `connector_nonces`, `rate_limits`, `automations`, `feature_flags` with indexes + RLS. · *Files:* `supabase/migrations/2026xxxx_sitepilot_v2.sql` · *Done:* migration applies cleanly on a fresh local DB and on the hosted project · *Dep:* E1-01 · *Est:* 6h
+- [x] **E1-02** — Create migration `sites`, `pairing_codes`, `plans`, `approvals`, `jobs`, `job_events`, `snapshots`, `usage_events`, `user_api_keys`, `connector_nonces`, `rate_limits`, `automations`, `feature_flags` with indexes + RLS. · *Files:* `supabase/migrations/2026xxxx_sitepilot_v2.sql` · *Done:* migration applies cleanly on a fresh local DB and on the hosted project · *Dep:* E1-01 · *Est:* 6h · ✅ applied live as `20261101074317_sitepilot_v2` (13 tables, all RLS+FORCE, 6 policies, `site_metadata` view).
 - [ ] **E1-03** — SQL functions: `claim_next_job`, `consume_rate_limit` (extend), `purge_expired` (nonces/events/snapshots), `touch_site_heartbeat`. · *Files:* same migration or follow-up · *Done:* pgTAP/SQL tests cover happy + race path · *Dep:* E1-02 · *Est:* 3h
 - [ ] **E1-04** — RLS test suite for new tables (cross-tenant read/write denied, service role allowed). · *Files:* `supabase/tests/database/rls-v2.test.sql`, `packages/supabase/tests/rls-sql.test.ts` · *Done:* `supabase test db` green locally · *Dep:* E1-02 · *Est:* 4h
 - [ ] **E1-05** — `@wp-agent/supabase` repos: `sites`, `plans`, `jobs`, `snapshots`, `audit`, `usage` (typed, injectable client). · *Files:* `packages/supabase/src/repos/*` · *Done:* unit tests with fake client · *Dep:* E1-02 · *Est:* 5h
-- [ ] **E1-06** — Extract API business logic into `apps/api-core` (transport-agnostic handler map: method + path → handler(input, ctx)). · *Files:* `apps/api-core/src/*`, `apps/api/src/index.ts` · *Done:* Node server uses api-core; existing API tests unchanged and green · *Dep:* — · *Est:* 8h
-- [ ] **E1-07** — Next.js catch-all route `apps/dashboard/src/app/api/v1/[...path]/route.ts` delegating to api-core with Supabase auth context. · *Files:* new route + `lib/api-core-context.ts` · *Done:* `/api/v1/health` + `/api/v1/projects` work on Vercel preview · *Dep:* E1-06 · *Est:* 4h
+- [x] **E1-06** — Extract API business logic into `apps/api-core` (transport-agnostic handler map: method + path → handler(input, ctx)). · *Files:* `apps/api-core/src/*`, `apps/api/src/index.ts` · *Done:* Node server uses api-core; existing API tests unchanged and green · *Dep:* — · *Est:* 8h · ✅ delivered as `packages/api-core` (`handleRequest` over transport-neutral `CoreRequest`/`CoreResponse` + `createCoreHandler`); `apps/api` is now a Node adapter; 6 new core tests.
+- [x] **E1-07** — Next.js catch-all route `apps/dashboard/src/app/api/v1/[...path]/route.ts` delegating to api-core with Supabase auth context. · *Files:* new route + `lib/api-core-context.ts` · *Done:* `/api/v1/health` + `/api/v1/projects` work on Vercel preview · *Dep:* E1-06 · *Est:* 4h · ✅ delivered as in-process delegation: dashboard route handlers call `callApi()` → api-core, so the hosted app never dials `127.0.0.1:3001`.
 - [ ] **E1-08** — Server auth helpers: session → user, project ownership guard, service-role client (server-only). · *Files:* `apps/dashboard/src/lib/auth/*`, `packages/supabase/src/server.ts` · *Done:* unauth request → 401; other user's project → 404/403; tests · *Dep:* E1-07 · *Est:* 3h
 - [ ] **E1-09** — Set Vercel env vars (production + preview): Supabase URL/anon, service role, encryption key, pairing pepper, site URL. · *Files:* Vercel project settings · *Done:* `list_env_vars` shows keys on both targets; no secret in client bundle · *Dep:* E1-01 · *Est:* 1h
 - [ ] **E1-10** — Vercel deployment settings: root `apps/dashboard`, build uses turbo, Node 22, function timeout, enable git deploy for `main` + previews. · *Files:* `vercel.json`, project settings · *Done:* push to branch produces a working preview URL with auth · *Dep:* E1-07, E1-09 · *Est:* 2h
@@ -42,11 +42,11 @@
 ## E2 — Connector plugin v1 (M2)
 
 - [x] **E2-01** — Scaffold plugin `wordpress/kph-sitepilot-connector` (bootstrap, constants, activation/deactivation, uninstall, PSR-4-ish autoloader). · *Files:* `wordpress/kph-sitepilot-connector/**` · *Done:* activates on WP 6.4+ without notices; `php -l` clean · *Dep:* — · *Est:* 2h
-- [ ] **E2-02** — Settings store (site id/token/secret encrypted option wrapper, scopes, poll mode) + capability guard `manage_options`. · *Files:* `includes/class-settings.php` · *Done:* unit tests with WP_Mock; no secret in debug output · *Dep:* E2-01 · *Est:* 3h
+- [x] **E2-02** — Settings store (site id/token/secret encrypted option wrapper, scopes, poll mode) + capability guard `manage_options`. · *Files:* `includes/class-settings.php` · *Done:* unit tests with WP_Mock; no secret in debug output · *Dep:* E2-01 · *Est:* 3h · ✅ settings store already present; `manage_options` capability guard now enforced by the pairing REST routes.
 - [x] **E2-03** — HMAC signer/verifier (`timestamp.nonce.sha256(body)`) + PHP↔TS shared fixtures. · *Files:* `includes/class-signature.php`, `packages/connector-protocol/*` · *Done:* same fixture signatures in PHP + TS tests · *Dep:* E2-01 · *Est:* 4h
 - [ ] **E2-04** — Outbound HTTPS client (wp_remote_post, timeouts, error mapping, UA header, retry/backoff). · *Files:* `includes/class-client.php` · *Done:* tests for 200/401/429/timeout paths · *Dep:* E2-03 · *Est:* 3h
-- [ ] **E2-05** — Pairing UI + handler (code + label → `/api/connector/pair` → store credentials → success state). · *Files:* `admin/*`, `includes/class-settings.php` · *Done:* real site pairs in < 2 min against local API · *Dep:* E2-04, E1-07 · *Est:* 5h
-- [ ] **E2-06** — Platform: `POST /api/connector/pair` (code hash lookup, single-use, expiry, site row, token+secret, audit). · *Files:* `apps/api-core/src/connector/pair.ts` · *Done:* tests: valid / expired / reused / wrong user codes · *Dep:* E1-02, E2-03 · *Est:* 4h
+- [x] **E2-05** — Pairing UI + handler (code + label → `/api/connector/pair` → store credentials → success state). · *Files:* `admin/*`, `includes/class-settings.php` · *Done:* real site pairs in < 2 min against local API · *Dep:* E2-04, E1-07 · *Est:* 5h · ✅ admin card: pairing input, platform-URL form, REST-nonce JS, honest connected/disconnected states, local disconnect.
+- [x] **E2-06** — Platform: `POST /api/connector/pair` (code hash lookup, single-use, expiry, site row, token+secret, audit). · *Files:* `apps/api-core/src/connector/pair.ts` · *Done:* tests: valid / expired / reused / wrong user codes · *Dep:* E1-02, E2-03 · *Est:* 4h · ✅ live at `POST /api/connector/pair` (code hash lookup, single-use, 10-min expiry, site row, token+secret once, encrypted secret at rest).
 - [ ] **E2-07** — Capability manifest builder (WP/PHP, theme type, plugins, post types, taxonomies, menus, Woo/SEO/cache detection, multisite, locale). · *Files:* `includes/class-capabilities.php` · *Done:* manifest validates against Zod schema; stored on site row · *Dep:* E2-02 · *Est:* 4h
 - [ ] **E2-08** — Platform connector auth middleware (site lookup, timestamp window, nonce store, signature, rate limit, kill switch). · *Files:* `apps/api-core/src/connector/auth.ts` · *Done:* tests for each failure code + replay · *Dep:* E2-06 · *Est:* 4h
 - [ ] **E2-09** — Heartbeat endpoint + plugin scheduler (WP-Cron 60 s, admin-init poll, live mode 5 s, idle backoff). · *Files:* `class-scheduler.php`, `apps/api-core/src/connector/heartbeat.ts` · *Done:* site shows “live” in UI; backoff verified in logs · *Dep:* E2-08 · *Est:* 5h
@@ -262,8 +262,8 @@
 3. E0-05 · progress log
 4. E0-08 · README links
 5. E1-01 · apply migrations
-6. E1-02 · v2 schema
-7. E1-06 · api-core extraction
-8. E1-07 · Next catch-all API
+6. ~~E1-02 · v2 schema~~ ✅
+7. ~~E1-06 · api-core extraction~~ ✅
+8. ~~E1-07 · Next catch-all API~~ ✅ (in-process callApi)
 9. E2-01 · connector scaffold
 10. E2-03 · HMAC protocol
