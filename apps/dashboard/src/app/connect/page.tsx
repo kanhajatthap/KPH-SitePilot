@@ -34,6 +34,14 @@ function summarizeCapabilities(capabilities: Record<string, unknown> | null): st
   return parts.length ? parts.join(' · ') : null;
 }
 
+interface ConnectorConfig {
+  authEnabled: boolean;
+  storage: boolean;
+  encryption: boolean;
+  ready: boolean;
+  hints: string[];
+}
+
 interface PairingCode {
   code: string;
   expiresAt: string;
@@ -55,6 +63,7 @@ export default function ConnectPage() {
   const [remaining, setRemaining] = useState(0);
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
   const [jobBusy, setJobBusy] = useState<string | null>(null);
+  const [config, setConfig] = useState<ConnectorConfig | null>(null);
 
   const loadSites = useCallback(async () => {
     try {
@@ -75,6 +84,22 @@ export default function ConnectPage() {
   useEffect(() => {
     void loadSites();
   }, [loadSites]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/connector/config', { cache: 'no-store' });
+        const body = (await res.json()) as ConnectorConfig;
+        if (!cancelled) setConfig(body);
+      } catch {
+        // The banner is advisory; a failure here must not block pairing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -213,6 +238,20 @@ export default function ConnectPage() {
           <li>Paste the code and press <strong>Connect site</strong>.</li>
         </ol>
       </section>
+
+      {config && !config.ready ? (
+        <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">This deployment is not ready to pair sites yet</p>
+          <ul className="mt-2 space-y-1 text-sm text-amber-900/80">
+            {config.hints.map((hint) => (
+              <li key={hint}>• {hint}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-900/70">
+            Nothing is wrong on the WordPress side: these are deployment settings. Pairing fails closed until they are set.
+          </p>
+        </section>
+      ) : null}
 
       <section className="mt-6 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-ink">Connected sites</h2>
