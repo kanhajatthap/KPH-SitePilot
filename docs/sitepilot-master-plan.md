@@ -395,7 +395,7 @@ plugin honours on next heartbeat.
 | Piece | Where | Behaviour |
 |---|---|---|
 | Claim | `supabase/migrations/20261101090000_connector_functions.sql` → `claim_next_job(site, lease)`; `POST /api/connector/jobs/claim` | `FOR UPDATE SKIP LOCKED`, one job per call, lease 120 s, `attempts+1`, `claimed` event appended. Returns `{ job: null, nextPollSeconds: 60 }` when idle |
-| Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; reads `site.info`, `site.health`, `content.list`, `content.get`; writes `content.update`, `content.create`, `content.restore` (scope `content`, see 5.4.2); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
+| Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; reads `site.info`, `site.health`, `content.list`, `content.get`, `blocks.parse`, `settings.get`, `plugins.list`, `theme.info`, `users.list`, `media.list`, `terms.list`, `menus.list`; writes `content.update`, `content.create`, `content.publish`, `content.unpublish`, `content.restore`, `blocks.replace` (scope `content`, see 5.4.2); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
 | Report | `POST /api/connector/jobs/{id}/result` | signed; body `jobId` must match the path; duplicate report is a **no-op** (`idempotent: true`); success → `succeeded` + `job_events`, retryable failure → back to `queued` until `max_attempts` |
 | Liveness | `POST /api/connector/heartbeat` → `touch_site_heartbeat` | stores `last_seen_at`, plugin/WP/PHP versions and the capability manifest; **never revives** a revoked or paused site |
 | Schedule | `includes/class-job-runner.php` + `class-plugin.php` | WP-Cron `kph_sp_minute` (60 s floor), transient lock against overlapping polls, heartbeat throttled to 5 min, immediate heartbeat + 5 s poll right after pairing; `schedule_next()` adds a one-off `live`-arg event — 5 s after any job, 60 s while idle, 300 s after an hour without work |
@@ -415,7 +415,7 @@ changing its status.
 | Planner | `apps/dashboard/src/lib/connector/planner.ts` | deterministic v1 (no model): `#12` / “post 12” targets, straight/curly/single-quoted replacement text, title / content / create / publish intents, HTML preserved and plain text wrapped in `<p>`; returns a typed refusal when the target or the replacement text is missing |
 | Plan store | `plans.ts` + `store.ts` → `plans`, `approvals`, `jobs` | plan steps are immutable and SHA-256 hashed; `approvePlan()` stores the hash and re-verifies it (`PLAN_CHANGED`); R3 steps need the first 8 chars of the plan id (`CONFIRMATION_REQUIRED`); `startPlan()`/`advancePlan()` queue **exactly one** step ahead with idempotency key `plan:<id>:step:<n>` |
 | Routes | `api/connector/plans` (+`[id]`, `[id]/approve`, `[id]/execute`), `api/connector/snapshots/[id]/undo` | create/list, detail, approve, execute, undo; every route checks `siteBelongsToUser()` before touching a plan |
-| Write tools | plugin `class-tools.php` | `content.update` (title/content/excerpt/status, `wp_kses_post`, status allowlist draft\|pending\|publish\|private), `content.create` (title required, type default `page`, status default `draft`), `content.restore` (from `before`) |
+| Write tools | plugin `class-tools.php` | `content.update` (title/content/excerpt/status, `wp_kses_post`, status allowlist draft\|pending\|publish\|private), `content.create` (title required, type default `page`, status default `draft`), `content.publish` / `content.unpublish` (status change through the same verified path), `blocks.replace` (one block of the tree, re-serialised and re-parsed to prove the count and the block survived), `content.restore` (from `before`) |
 | Verify | plugin `verify()` | before-snapshot → `wp_update_post(wp_slash(…))` → read-back → compare: title and status exact, content whitespace-normalised (KSES may reorder attributes); mismatch → `kph_sp_verification_failed` with expected/actual/before |
 | Undo | `POST /api/connector/snapshots/{id}/undo` | enqueues a `content.restore` job (`undo:<snapshotId>`), marks `snapshots.restored_at`/`restore_job_id`, replay → `409 ALREADY_RESTORED` |
 
@@ -950,6 +950,9 @@ Legend: **R0** read · **R1** safe write · **R2** destructive/visibility · **R
 | `content.update` | R1 | V1 | title/content/excerpt/slug/status |
 | `content.trash` | R2 | V1 | move to trash |
 | `content.restore` | R1 | V1 | from trash |
+| `content.unpublish` | R1 | V1 | back to draft |
+| `content.publish` | R2 | V1 | visitors can see it; typed `CONFIRM` at approval |
+| `blocks.replace` | R1 | V1 | one block, count verified |
 | `content.delete` | R3 | V2 | permanent delete + confirmation |
 | `content.publish` | R2 | V1 | draft → published |
 | `content.schedule` | R1 | V2 | future publish |
