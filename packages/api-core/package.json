@@ -1,0 +1,36 @@
+{
+  "name": "@wp-agent/api-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Transport-agnostic KPH SitePilot API core: one handler for the Node server and Next.js route handlers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@wp-agent/agent-core": "workspace:*",
+    "@wp-agent/audit": "workspace:*",
+    "@wp-agent/config": "workspace:*",
+    "@wp-agent/contracts": "workspace:*",
+    "@wp-agent/model-adapters": "workspace:*",
+    "@wp-agent/wp-client": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

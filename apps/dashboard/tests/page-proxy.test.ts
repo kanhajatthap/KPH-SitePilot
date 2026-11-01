@@ -25,15 +25,22 @@ describe('page creation dashboard proxies', () => {
   const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const originalKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  const originalApiUrl = process.env.API_SERVER_URL;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('fetch', fetchMock);
+    // Force the HTTP transport so the upstream call can be asserted without
+    // touching a real WordPress site (production defaults to in-process core).
+    process.env.API_SERVER_URL = API_SERVER_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    if (originalApiUrl === undefined) delete process.env.API_SERVER_URL;
+    else process.env.API_SERVER_URL = originalApiUrl;
     if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
     if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

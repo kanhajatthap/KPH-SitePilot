@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../../lib/auth/site-access';
-
-const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
+import { callApi } from '../../../../lib/api-call';
 
 const ALLOWED_TARGET_PATTERNS = [
   /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
@@ -56,7 +55,7 @@ export async function POST(req: NextRequest) {
     const siteAccess = await authorizeTargetSite(auth.context, targetSite);
     if (!siteAccess.ok) return siteAccess.response;
 
-    const response = await fetch(`${API_SERVER_URL}/api/draft/revise`, {
+    const response = await callApi('/api/draft/revise', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

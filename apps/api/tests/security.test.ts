@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handleRequest, globalApiRateLimiter, ServerRateLimiter } from '../src/index.js';
+import {
+  handleRequest,
+  globalApiRateLimiter,
+  ServerRateLimiter,
+  toCoreRequest,
+  toCoreResponse,
+} from '../src/index.js';
 import { AuditLogger } from '@wp-agent/audit';
 import { MockModelAdapter } from '@wp-agent/model-adapters';
 import { WordPressClient } from '@wp-agent/wp-client';
@@ -81,7 +87,7 @@ describe('API Security, Headers & Rate Limiting (Phase 8)', () => {
     const req = createMockReq({ url: '/api/health', method: 'GET' });
     const { res, getData } = createMockRes();
 
-    await handleRequest(req, res, auditLogger, mockAdapter, mockWpClient);
+    await handleRequest(toCoreRequest(req), toCoreResponse(res), auditLogger, mockAdapter, mockWpClient);
 
     const data = getData();
     expect(data.statusCode).toBe(200);
@@ -99,7 +105,7 @@ describe('API Security, Headers & Rate Limiting (Phase 8)', () => {
     });
     const { res, getData } = createMockRes();
 
-    await handleRequest(req, res, auditLogger, mockAdapter, mockWpClient);
+    await handleRequest(toCoreRequest(req), toCoreResponse(res), auditLogger, mockAdapter, mockWpClient);
 
     const data = getData();
     expect(data.headers['X-Correlation-ID']).toBe(customCorrelationId);
@@ -109,7 +115,7 @@ describe('API Security, Headers & Rate Limiting (Phase 8)', () => {
     const req = createMockReq({ url: '/health', method: 'GET' });
     const { res, getData } = createMockRes();
 
-    await handleRequest(req, res, auditLogger, mockAdapter, mockWpClient);
+    await handleRequest(toCoreRequest(req), toCoreResponse(res), auditLogger, mockAdapter, mockWpClient);
 
     const data = getData();
     expect(data.headers['X-Correlation-ID']).toBeDefined();
@@ -141,7 +147,7 @@ describe('API Security, Headers & Rate Limiting (Phase 8)', () => {
     });
     const { res, getData } = createMockRes();
 
-    await handleRequest(req, res, auditLogger, mockAdapter, mockWpClient);
+    await handleRequest(toCoreRequest(req), toCoreResponse(res), auditLogger, mockAdapter, mockWpClient);
 
     const data = getData();
     expect(data.statusCode).toBe(429);
@@ -158,7 +164,7 @@ describe('API Security, Headers & Rate Limiting (Phase 8)', () => {
     });
     const { res, getData } = createMockRes();
 
-    await handleRequest(req, res, auditLogger, mockAdapter, mockWpClient);
+    await handleRequest(toCoreRequest(req), toCoreResponse(res), auditLogger, mockAdapter, mockWpClient);
 
     const data = getData();
     expect(data.statusCode).toBe(400);

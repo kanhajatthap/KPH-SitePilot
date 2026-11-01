@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../../../lib/auth/site-access';
 import {
-  API_SERVER_URL,
   readUpstreamJson,
   validateLocalTarget,
 } from '../../../../../lib/api-proxy';
+import { callApi, describeApiTarget } from '../../../../../lib/api-call';
 
 export async function POST(req: NextRequest) {
   const auth = await authenticateApiRequest();
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     let response: Response;
     try {
-      response = await fetch(`${API_SERVER_URL}/api/site/pages/propose`, {
+      response = await callApi('/api/site/pages/propose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: 'NETWORK_ERROR',
-          message: `Cannot connect to KPH SitePilot Backend API at ${API_SERVER_URL}. (${(err as Error).message})`,
+          message: `KPH SitePilot API request failed (${describeApiTarget()}): ${(err as Error).message}`,
         },
         { status: 504 }
       );

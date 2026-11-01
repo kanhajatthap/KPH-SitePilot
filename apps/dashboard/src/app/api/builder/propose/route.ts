@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../../lib/auth/site-access';
-
-const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
+import { callApi, describeApiTarget } from '../../../../lib/api-call';
 
 const ALLOWED_TARGET_PATTERNS = [
   /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     let response: Response;
     try {
-      response = await fetch(`${API_SERVER_URL}/api/builder/propose`, {
+      response = await callApi('/api/builder/propose', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -85,7 +84,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: 'NETWORK_ERROR',
-          message: 'Unable to reach backend API server at ' + API_SERVER_URL,
+          message: 'Unable to reach the backend API at ' + describeApiTarget(),
         },
         { status: 504 }
       );
