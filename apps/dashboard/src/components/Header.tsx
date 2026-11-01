@@ -132,6 +132,20 @@ export function Header({
         <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">SitePilot</span>
 
         <Link
+          href="/studio"
+          className="focus-ring hidden rounded-lg px-2 py-1 text-[12px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:inline-flex"
+        >
+          Studio
+        </Link>
+
+        <Link
+          href="/connect"
+          className="focus-ring hidden rounded-lg px-2 py-1 text-[12px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:inline-flex"
+        >
+          Sites
+        </Link>
+
+        <Link
           href="/about"
           className="focus-ring hidden rounded-lg px-2 py-1 text-[12px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:inline-flex"
         >
@@ -335,6 +349,13 @@ export function Header({
                 </div>
               </div>
               <div className="my-1 h-px bg-line" />
+              <Link
+                href="/studio"
+                className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink-soft transition hover:bg-paper-deep hover:text-ink"
+              >
+                <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-3.5 w-3.5" />
+                Studio
+              </Link>
               <Link
                 href="/about"
                 className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink-soft transition hover:bg-paper-deep hover:text-ink"

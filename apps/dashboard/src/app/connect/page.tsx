@@ -130,6 +130,35 @@ export default function ConnectPage() {
     }
   };
 
+  const disconnect = async (site: ConnectedSite) => {
+    const typed = window.prompt(
+      `Type the site name to disconnect ${site.url} — queued jobs are cancelled and the connector must be paired again.\n\n${site.name}`
+    );
+    if (typed === null) return;
+
+    if (typed.trim() !== site.name) {
+      setJobNotice((current) => ({ ...current, [site.id]: 'The name did not match, so nothing was changed.' }));
+      return;
+    }
+
+    setJobBusy(site.id);
+    try {
+      const res = await fetch(`/api/connector/sites/${site.id}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: res.ok ? 'Disconnected. The site can no longer claim jobs.' : body.message ?? 'Disconnect failed.',
+      }));
+      if (res.ok) {
+        await loadSites();
+      }
+    } catch (error) {
+      setJobNotice((current) => ({ ...current, [site.id]: (error as Error).message }));
+    } finally {
+      setJobBusy(null);
+    }
+  };
+
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
       <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
@@ -231,6 +260,16 @@ export default function ConnectPage() {
                 >
                   {jobBusy === site.id ? 'Queueing…' : 'Refresh capabilities'}
                 </button>
+                {site.status === 'active' ? (
+                  <button
+                    type="button"
+                    onClick={() => void disconnect(site)}
+                    disabled={jobBusy === site.id}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-60"
+                  >
+                    Disconnect
+                  </button>
+                ) : null}
                 {jobNotice[site.id] ? (
                   <span className="text-xs text-ink-muted">{jobNotice[site.id]}</span>
                 ) : null}

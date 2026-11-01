@@ -34,6 +34,9 @@
 | 2026-11-01 | E2-09 / E2-11 | **Live poll + fatal capture.** `schedule_next()` polls 5 s after any job, 60 s while idle, 300 s after an hour without work; the pending single event carries a `live` argument so clearing it never disturbs the recurring cron. New `KPH_SP_Fatal` registers a shutdown hook, stores the last fatal for the admin screen and reports `kph_sp_fatal_error` for the in-flight job (the runner now publishes `current_job()`/`report_failure()`); messages have paths stripped and are capped at 300 chars. | `php-lint` 15 files · static suite +9 assertions · real `php -l` + static run in CI | GATE |
 | 2026-11-01 | GATE | Full gate after the revoke + liveness batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | studio UI |
 
+| 2026-11-01 | E9-18 *(new)* | **The prompt surface exists.** New `/studio` page: choose a connected site, type a request (with example prompts), get a plan, approve it — typed confirmation required for R3 — run it, and watch each step's job move `queued → claimed → succeeded` by polling `GET /api/connector/plans/{id}` every 2 s. The same screen lists the last ten snapshots with an **Undo** button per write. `/connect` gained a matching **Disconnect** action (site name must be typed; calls `DELETE /api/connector/sites/{id}`). Navigation added to the header. | `next build` lists `○ /studio` (3.32 kB / 109 kB first load) · `pnpm typecheck` green · `pnpm lint` 11/11 + 15 PHP files · `pnpm test` **422 pass / 0 fail** · no new dependencies | GATE |
+| 2026-11-01 | GATE | Full gate after the studio batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** (`/studio`, `/connect`) | next: model planner |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -71,7 +74,6 @@
 | `SITEPILOT_ENCRYPTION_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are not set on Vercel yet | us | pairing fails closed with `CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
 | Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
-| No plan UI yet: plans/execution are API-only (`/api/connector/plans`) | us (E5-01) | the chat surface is next; the API is exercised by tests |
 
 ## Gate history
 
@@ -84,3 +86,4 @@
 | 2026-11-01 | 20/20 | 401 pass / 0 fail | 11/11 | after E1-03 + E2-04/07/08/10/12/13 (lint: 11/11 + 14 PHP files) |
 | 2026-11-01 | 20/20 | **418 pass / 0 fail** | 11/11 | after E3-05/06/08/12 + any-site target policy (lint: 11/11 + 14 PHP files) |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-17 + E2-09/E2-11 (lint: 11/11 + 15 PHP files) |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E9-18 studio surface + disconnect UI |
