@@ -15,6 +15,7 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.118.0",
     "@wp-agent/api-core": "workspace:*",
+    "@wp-agent/connector-protocol": "workspace:*",
     "@wp-agent/contracts": "workspace:*",
     "@wp-agent/supabase": "workspace:*",
     "next": "^15.1.7",

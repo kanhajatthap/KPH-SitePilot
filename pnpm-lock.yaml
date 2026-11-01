@@ -224,6 +224,9 @@ importers:
       '@wp-agent/api-core':
         specifier: workspace:*
         version: link:../../packages/api-core
+      '@wp-agent/connector-protocol':
+        specifier: workspace:*
+        version: link:../../packages/connector-protocol
       '@wp-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

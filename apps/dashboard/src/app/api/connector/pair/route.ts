@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getEncryptionKey, ConnectorConfigError } from '../../../../lib/connector/crypto';
 import { pairSite } from '../../../../lib/connector/pairing';
-import { createSupabasePairingStore } from '../../../../lib/connector/store';
+import {
+  createSupabasePairingStore,
+  enqueueConnectorJob,
+} from '../../../../lib/connector/store';
 import { checkPairingRateLimit, clientIpFrom } from '../../../../lib/connector/rate-limit';
 
 export const dynamic = 'force-dynamic';
@@ -91,6 +94,24 @@ export async function POST(req: Request) {
   }
 
   const { credentials } = result;
+
+  // Kick off the first job immediately so the connector can prove the pipeline
+  // (and upload its capability manifest) without waiting for a scheduled poll.
+  let firstJobId: string | null = null;
+  try {
+    firstJobId = await enqueueConnectorJob({
+      projectId: credentials.projectId,
+      siteId: credentials.siteId,
+      tool: 'site.info',
+      args: {},
+      risk: 'R0',
+      idempotencyKey: `site.info:${credentials.siteId}:bootstrap`,
+    });
+  } catch {
+    // Pairing succeeded; a missing first job is recoverable via heartbeat.
+    firstJobId = null;
+  }
+
   return json(
     {
       status: 'paired',
@@ -105,6 +126,7 @@ export async function POST(req: Request) {
         token: credentials.token,
         secret: credentials.secret,
       },
+      firstJobId,
       note: 'Store these credentials in WordPress now — they are not retrievable later.',
     },
     201

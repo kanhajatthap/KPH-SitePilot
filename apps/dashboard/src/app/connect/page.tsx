@@ -12,7 +12,26 @@ interface ConnectedSite {
   scopes: string[] | null;
   plugin_version: string | null;
   wp_version: string | null;
+  capabilities: Record<string, unknown> | null;
   last_seen_at: string | null;
+}
+
+function summarizeCapabilities(capabilities: Record<string, unknown> | null): string | null {
+  if (!capabilities) return null;
+
+  const theme = capabilities.theme as { type?: string; name?: string } | undefined;
+  const builders = capabilities.builders as Record<string, unknown> | undefined;
+  const postTypes = capabilities.postTypes as unknown[] | undefined;
+  const plugins = capabilities.plugins as unknown[] | undefined;
+
+  const parts: string[] = [];
+  if (theme?.type) parts.push(`${theme.type} theme`);
+  if (postTypes?.length) parts.push(`${postTypes.length} post types`);
+  if (plugins?.length) parts.push(`${plugins.length} plugins`);
+  if (builders?.woocommerce) parts.push('WooCommerce');
+  if (builders?.elementor) parts.push('Elementor');
+
+  return parts.length ? parts.join(' · ') : null;
 }
 
 interface PairingCode {
@@ -34,6 +53,8 @@ export default function ConnectPage() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
+  const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
+  const [jobBusy, setJobBusy] = useState<string | null>(null);
 
   const loadSites = useCallback(async () => {
     try {
@@ -83,6 +104,29 @@ export default function ConnectPage() {
       setCodeError((error as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const refreshCapabilities = async (siteId: string) => {
+    setJobBusy(siteId);
+    setJobNotice((current) => ({ ...current, [siteId]: '' }));
+    try {
+      const res = await fetch('/api/connector/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId, tool: 'site.info' }),
+      });
+      const body = await res.json();
+      setJobNotice((current) => ({
+        ...current,
+        [siteId]: res.ok
+          ? 'Queued — the connector picks it up within a minute.'
+          : body.message ?? 'The job could not be queued.',
+      }));
+    } catch (error) {
+      setJobNotice((current) => ({ ...current, [siteId]: (error as Error).message }));
+    } finally {
+      setJobBusy(null);
     }
   };
 
@@ -164,6 +208,33 @@ export default function ConnectPage() {
               <p className="mt-1 text-xs text-ink-muted">
                 Scopes: {(site.scopes ?? []).join(', ') || 'read'}
               </p>
+              {summarizeCapabilities(site.capabilities) ? (
+                <p className="mt-1 text-xs text-ink-muted">
+                  Detected: {summarizeCapabilities(site.capabilities)}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-ink-muted">
+                  No capability manifest yet — the connector uploads it on first contact.
+                </p>
+              )}
+              {site.last_seen_at ? (
+                <p className="mt-1 text-xs text-ink-muted">
+                  Last contact: {new Date(site.last_seen_at).toLocaleString()}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshCapabilities(site.id)}
+                  disabled={jobBusy === site.id}
+                  className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink disabled:opacity-60"
+                >
+                  {jobBusy === site.id ? 'Queueing…' : 'Refresh capabilities'}
+                </button>
+                {jobNotice[site.id] ? (
+                  <span className="text-xs text-ink-muted">{jobNotice[site.id]}</span>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

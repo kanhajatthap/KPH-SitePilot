@@ -35,7 +35,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('site_metadata')
-    .select('id, url, name, environment, status, scopes, plugin_version, wp_version, php_version, last_seen_at, created_at')
+    .select('id, url, name, environment, status, scopes, plugin_version, wp_version, php_version, capabilities, last_seen_at, created_at')
     .order('created_at', { ascending: false });
 
   if (error) {
