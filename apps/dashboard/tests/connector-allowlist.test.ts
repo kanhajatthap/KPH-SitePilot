@@ -18,9 +18,18 @@ const READ_TOOLS = [
   'media.list',
   'terms.list',
   'menus.list',
+  'settings.get',
+  'blocks.parse',
 ];
 
-const WRITE_TOOLS = ['content.update', 'content.create', 'content.restore'];
+const WRITE_TOOLS = [
+  'content.update',
+  'content.create',
+  'content.restore',
+  'content.publish',
+  'content.unpublish',
+  'blocks.replace',
+];
 
 describe('connector tool allowlist', () => {
   it('admits every inventory read tool at R0', () => {

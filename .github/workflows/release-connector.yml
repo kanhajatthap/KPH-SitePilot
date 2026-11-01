@@ -1,0 +1,69 @@
+name: Release connector
+
+on:
+  push:
+    tags:
+      - 'connector-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist, e.g. connector-v0.5.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the connector ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Lint every plugin file
+        run: find wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Static checks (no release without them)
+        run: php wordpress/kph-sitepilot-connector/tests/test-plugin.php
+
+      - name: Build the ZIP
+        run: bash scripts/build-connector-zip.sh
+
+      - name: Resolve version and tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          ZIP="$(ls dist/kph-sitepilot-connector-*.zip | head -n1)"
+          VERSION="${ZIP#dist/kph-sitepilot-connector-}"
+          VERSION="${VERSION%.zip}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: SitePilot Connector ${{ steps.meta.outputs.version }}
+          files: ${{ steps.meta.outputs.zip }}
+          fail_on_unmatched_files: true
+          body: |
+            Installable WordPress plugin for KPH SitePilot.
+
+            **Install:** WordPress → Plugins → Add New → Upload Plugin → choose the ZIP → Activate.
+            Then create a pairing code in SitePilot and paste it on the connector screen.
+
+            Pairing, polling and writes are signed (HMAC-SHA256); every write snapshots first,
+            verifies after, and can be undone from Studio.

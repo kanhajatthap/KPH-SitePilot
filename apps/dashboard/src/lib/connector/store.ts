@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PairingCodeRow, PairingStore } from './pairing';
 import { createSupabaseAdminClient } from '../supabase/admin';
+import { decryptSecret, getEncryptionKey } from './crypto';
 
 /**
  * Supabase (service-role) implementation of the pairing storage port.
@@ -475,22 +476,94 @@ export async function siteBelongsToUser(siteId: string, userId: string): Promise
   return owner === userId;
 }
 
-/** Loads a site row plus its project for plan creation. */
-export async function getSiteContext(
-  siteId: string
-): Promise<{ id: string; projectId: string; status: string; url: string } | null> {
+export interface SiteContextRow {
+  id: string;
+  projectId: string;
+  status: string;
+  url: string;
+  name: string;
+  capabilities: Record<string, unknown> | null;
+}
+
+/** Loads a site row plus the fields a planner needs. */
+export async function getSiteContext(siteId: string): Promise<SiteContextRow | null> {
   const supabase = createSupabaseAdminClient();
   if (!supabase) return null;
 
   const { data, error } = await supabase
     .from('sites')
-    .select('id, project_id, status, url')
+    .select('id, project_id, status, url, name, capabilities')
     .eq('id', siteId)
     .maybeSingle();
 
   if (error || !data) return null;
-  const row = data as { id: string; project_id: string; status: string; url: string };
-  return { id: row.id, projectId: row.project_id, status: row.status, url: row.url };
+  const row = data as {
+    id: string;
+    project_id: string;
+    status: string;
+    url: string;
+    name: string | null;
+    capabilities: Record<string, unknown> | null;
+  };
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    status: row.status,
+    url: row.url,
+    name: row.name ?? row.url,
+    capabilities: row.capabilities ?? null,
+  };
+}
+
+export interface UserModelKey {
+  provider: 'gemini' | 'openrouter' | 'groq';
+  key: string;
+}
+
+/**
+ * Loads and decrypts the caller's own model key (bring-your-own-key).
+ *
+ * Provider keys are never read from the deployment environment by the
+ * dashboard (see `secret-boundary.test.ts`); the only way a model gets called
+ * is a key the user stored in `user_api_keys`. Preference order favours the
+ * provider the planner prompt is tuned for. Returns null when nothing usable
+ * exists, and never throws.
+ */
+export async function getUserApiKey(userId: string): Promise<UserModelKey | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('user_api_keys')
+    .select('provider, key_encrypted')
+    .eq('owner_id', userId)
+    .eq('status', 'active');
+
+  if (error || !Array.isArray(data) || data.length === 0) return null;
+
+  const order: Array<UserModelKey['provider']> = ['gemini', 'openrouter', 'groq'];
+  const rows = data as Array<{ provider: UserModelKey['provider']; key_encrypted: string }>;
+
+  rows.sort((a, b) => order.indexOf(a.provider) - order.indexOf(b.provider));
+
+  let encryptionKey: Buffer;
+  try {
+    encryptionKey = getEncryptionKey();
+  } catch {
+    return null;
+  }
+
+  for (const row of rows) {
+    try {
+      const key = decryptSecret(row.key_encrypted, encryptionKey);
+      if (key && key.trim().length > 8) return { provider: row.provider, key: key.trim() };
+    } catch {
+      // A single unreadable row must not disable the planner for the account.
+    }
+  }
+
+  return null;
 }
 
 
