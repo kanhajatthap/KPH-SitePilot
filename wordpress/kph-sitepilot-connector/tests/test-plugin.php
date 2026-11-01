@@ -139,6 +139,15 @@ kph_sp_static_assert( false !== strpos( $tools_source, "'content.update'" ), 'co
 kph_sp_static_assert( false !== strpos( $tools_source, "'content.create'" ), 'content.create tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'content.restore'" ), 'content.restore tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'content' =>" ), 'write tools map to the content scope' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'plugins.list'" ), 'plugins.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'theme.info'" ), 'theme.info tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'users.list'" ), 'users.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.list'" ), 'media.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'terms.list'" ), 'terms.list tool registered' );
+kph_sp_static_assert( false === strpos( $tools_source, "user_email" ), 'users.list never returns email addresses' );
+kph_sp_static_assert( false === strpos( $tools_source, "user_pass" ), 'users.list never returns password hashes' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media'      =>" ) || false !== strpos( $tools_source, "'media.list'      => 'media'" ), 'media reads require the media scope' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'terms.list is limited to public taxonomies' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'is_writable_type' ), 'write tools refuse unsupported post types' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'function snapshot' ), 'write tools take a before-snapshot' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'function read_back' ), 'write tools read the post back' );

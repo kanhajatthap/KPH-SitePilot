@@ -35,6 +35,12 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'content.update',
 				'content.create',
 				'content.restore',
+				// Inventory reads (E4-04): plugins, theme, users, media, terms.
+				'plugins.list',
+				'theme.info',
+				'users.list',
+				'media.list',
+				'terms.list',
 			);
 		}
 
@@ -53,6 +59,11 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'content.update'  => 'content',
 				'content.create'  => 'content',
 				'content.restore' => 'content',
+				'plugins.list'    => 'site_ops',
+				'theme.info'      => 'read',
+				'users.list'      => 'site_ops',
+				'media.list'      => 'media',
+				'terms.list'      => 'read',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -100,6 +111,16 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::content_create( $args );
 				case 'content.restore':
 					return self::content_restore( $args );
+				case 'plugins.list':
+					return self::plugins_list();
+				case 'theme.info':
+					return self::theme_info();
+				case 'users.list':
+					return self::users_list( $args );
+				case 'media.list':
+					return self::media_list( $args );
+				case 'terms.list':
+					return self::terms_list( $args );
 			}
 
 			return new WP_Error( 'kph_sp_unknown_tool', 'Tool dispatch failed.' );
@@ -171,6 +192,199 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'postTypes' => $post_types,
 				'count'     => count( $items ),
 				'items'     => $items,
+			);
+		}
+
+		/**
+		 * Installed plugins, active state included, with no file paths.
+		 *
+		 * @return array<string,mixed>
+		 */
+		private static function plugins_list() {
+			if ( ! function_exists( 'get_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+
+			$all    = get_plugins();
+			$items  = array();
+			$budget = 100;
+
+			foreach ( $all as $file => $plugin ) {
+				if ( $budget <= 0 ) {
+					break;
+				}
+				$budget--;
+
+				$items[] = array(
+					'slug'    => sanitize_key( dirname( (string) $file ) ),
+					'name'    => isset( $plugin['Name'] ) ? (string) $plugin['Name'] : '',
+					'version' => isset( $plugin['Version'] ) ? (string) $plugin['Version'] : '',
+					'author'  => isset( $plugin['Author'] ) ? (string) wp_strip_all_tags( (string) $plugin['Author'] ) : '',
+					'active'  => (bool) is_plugin_active( (string) $file ),
+				);
+			}
+
+			return array(
+				'count'     => count( $items ),
+				'active'    => count( array_filter( $items, static function ( $item ) { return (bool) $item['active']; } ) ),
+				'truncated' => count( $all ) > 100,
+				'items'     => $items,
+			);
+		}
+
+		/**
+		 * Current theme: name, version, parent, and whether it is a block theme.
+		 *
+		 * @return array<string,mixed>
+		 */
+		private static function theme_info() {
+			$theme  = wp_get_theme();
+			$parent = $theme->parent();
+
+			return array(
+				'name'         => (string) $theme->get( 'Name' ),
+				'version'      => (string) $theme->get( 'Version' ),
+				'author'       => (string) wp_strip_all_tags( (string) $theme->get( 'Author' ) ),
+				'stylesheet'   => (string) $theme->get_stylesheet(),
+				'template'     => (string) $theme->get_template(),
+				'parent'       => $parent ? (string) $parent->get( 'Name' ) : '',
+				'isBlockTheme' => function_exists( 'wp_is_block_theme' ) ? (bool) wp_is_block_theme() : false,
+				'hasMenus'     => (bool) get_registered_nav_menus(),
+			);
+		}
+
+		/**
+		 * Users with roles only — never an email address or a password hash.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>
+		 */
+		private static function users_list( $args ) {
+			$limit = isset( $args['limit'] ) ? (int) $args['limit'] : 20;
+			$limit = max( 1, min( 50, $limit ) );
+
+			$users = get_users(
+				array(
+					'number'  => $limit,
+					'orderby' => 'registered',
+					'order'   => 'DESC',
+					'fields'  => array( 'ID', 'user_login', 'display_name', 'user_registered' ),
+				)
+			);
+
+			$items = array();
+			foreach ( $users as $user ) {
+				$data  = get_userdata( (int) $user->ID );
+				$items[] = array(
+					'id'         => (int) $user->ID,
+					'login'      => (string) $user->user_login,
+					'name'       => (string) $user->display_name,
+					'roles'      => $data ? array_values( (array) $data->roles ) : array(),
+					'registered' => (string) $user->user_registered,
+				);
+			}
+
+			return array(
+				'count' => count( $items ),
+				'items' => $items,
+			);
+		}
+
+		/**
+		 * Media library page: ids, titles, mime types and URLs only.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>
+		 */
+		private static function media_list( $args ) {
+			$limit = isset( $args['limit'] ) ? (int) $args['limit'] : 20;
+			$limit = max( 1, min( 50, $limit ) );
+			$page  = isset( $args['page'] ) ? max( 1, (int) $args['page'] ) : 1;
+			$type  = isset( $args['mimeType'] ) ? sanitize_mime_type( (string) $args['mimeType'] ) : '';
+
+			$query_args = array(
+				'post_type'      => 'attachment',
+				'post_status'    => 'inherit',
+				'posts_per_page' => $limit,
+				'paged'          => $page,
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+			);
+
+			if ( '' !== $type ) {
+				$query_args['post_mime_type'] = $type;
+			}
+
+			$query = new WP_Query( $query_args );
+			$items = array();
+
+			foreach ( $query->posts as $attachment ) {
+				$items[] = array(
+					'id'        => (int) $attachment->ID,
+					'title'     => (string) get_the_title( $attachment ),
+					'mime'      => (string) get_post_mime_type( $attachment ),
+					'url'       => (string) wp_get_attachment_url( $attachment->ID ),
+					'thumbnail' => (string) wp_get_attachment_thumb_url( $attachment->ID ),
+					'date'      => (string) $attachment->post_date_gmt,
+					'alt'       => (string) get_post_meta( $attachment->ID, '_wp_attachment_image_alt', true ),
+				);
+			}
+
+			return array(
+				'page'  => $page,
+				'count' => count( $items ),
+				'total' => (int) $query->found_posts,
+				'items' => $items,
+			);
+		}
+
+		/**
+		 * Terms for one public taxonomy (defaults to categories).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function terms_list( $args ) {
+			$taxonomy = isset( $args['taxonomy'] ) ? sanitize_key( (string) $args['taxonomy'] ) : 'category';
+			$allowed  = get_taxonomies( array( 'public' => true ), 'names' );
+
+			if ( ! in_array( $taxonomy, $allowed, true ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_taxonomy',
+					sprintf( 'Taxonomy "%s" is not public on this site.', $taxonomy )
+				);
+			}
+
+			$limit = isset( $args['limit'] ) ? (int) $args['limit'] : 50;
+			$limit = max( 1, min( 100, $limit ) );
+
+			$terms = get_terms(
+				array(
+					'taxonomy'   => $taxonomy,
+					'hide_empty' => false,
+					'number'     => $limit,
+				)
+			);
+
+			if ( is_wp_error( $terms ) ) {
+				return $terms;
+			}
+
+			$items = array();
+			foreach ( $terms as $term ) {
+				$items[] = array(
+					'id'     => (int) $term->term_id,
+					'name'   => (string) $term->name,
+					'slug'   => (string) $term->slug,
+					'count'  => (int) $term->count,
+					'parent' => (int) $term->parent,
+				);
+			}
+
+			return array(
+				'taxonomy' => $taxonomy,
+				'count'    => count( $items ),
+				'items'    => $items,
 			);
 		}
 

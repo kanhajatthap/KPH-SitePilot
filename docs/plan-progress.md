@@ -40,6 +40,9 @@
 | 2026-11-01 | E2-18 / E2-19 | **Installable plugin + install guide.** `scripts/build-connector-zip.sh` (`pnpm connector:zip`) stages only production files, refuses a header/constant version mismatch, excludes `tests/`, and smoke-checks the archive; CI now builds it and uploads the `kph-sitepilot-connector` artifact. New `/docs/connector` page: requirements, five install/pair/ship steps, honest safety list, six troubleshooting rows. | `bash scripts/build-connector-zip.sh` → **31 091 bytes, version 0.4.0**, “main file present, no tests included” · `next build` lists `○ /docs/connector` (168 B) · dev smoke: `/studio` 200, `/docs/connector` 200, `/connect` 200 | GATE |
 | 2026-11-01 | GATE | Gate after packaging + guide. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
 
+| 2026-11-01 | E4-04 | **Site inventory reads (plugin 0.5.0).** `plugins.list` (≤100, slug/name/version/active, no file paths), `theme.info` (block-theme + parent + menus), `users.list` (≤50, roles only — `user_email`/`user_pass` never referenced), `media.list` (paged, MIME-filtered, alt text), `terms.list` (public taxonomies only, `kph_sp_invalid_taxonomy` otherwise). Scopes keep reads narrow: `site_ops` for plugins/users, `media` for media, `read` for theme/terms. Platform allowlist and `TOOL_RISK` extended, and a new test fails if the two drift apart. | plugin static suite **+9 assertions** · `php-lint` 15 files · `connector-allowlist.test.ts` **5 tests** (dashboard 151 → 156) · `pnpm connector:zip` → **0.5.0, 32 753 bytes** | GATE |
+| 2026-11-01 | GATE | Full gate after inventory reads. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **427 pass / 0 fail** · `pnpm build` **11/11** | live-site acceptance |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -68,6 +71,7 @@
 | E2-09 scheduler (live mode, backoff) | ✅ done | batch 6 |
 | E2-11 runner (fatal capture) | ✅ done | batch 6 |
 | E2-17 revoke / unpair | ✅ done | batch 6 |
+| E4-04 inventory reads (5 of 6) | ✅ done | batch 8 |
 
 ## Open blockers
 
@@ -91,3 +95,4 @@
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-17 + E2-09/E2-11 (lint: 11/11 + 15 PHP files) |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E9-18 studio surface + disconnect UI |
 | 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-18 connector.zip + E2-19 install guide |
+| 2026-11-01 | 20/20 | **427 pass / 0 fail** | 11/11 | after E4-04 inventory reads (plugin 0.5.0) |
