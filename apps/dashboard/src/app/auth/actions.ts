@@ -3,6 +3,8 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { safeNextPath } from '../../lib/auth/redirect';
+import { confirmationRedirectUrl, recoveryRedirectUrl } from '../../lib/auth/site-url';
+import { siteOrigin } from '../../lib/auth/request-site-url';
 
 type AuthErrorCode =
   | 'supabase-not-configured'
@@ -17,7 +19,8 @@ type AuthErrorCode =
   | 'same-password'
   | 'reset-link-invalid'
   | 'signout-failed'
-  | 'auth-failed';
+  | 'auth-failed'
+  | 'resend-failed';
 
 function formValue(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -68,8 +71,14 @@ function confirmationMatches(formData: FormData, password: string): boolean {
   return rawFormValue(formData, 'confirmPassword') === password;
 }
 
-function siteUrl(): string {
-  return (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3002').replace(/\/$/, '');
+/**
+ * Origin used inside authentication emails.
+ *
+ * Resolved per request so a deployment without `NEXT_PUBLIC_SITE_URL` links back
+ * to its own Vercel URL instead of the developer's localhost.
+ */
+async function siteUrl(): Promise<string> {
+  return siteOrigin();
 }
 
 function mapAuthError(error: { code?: string; status?: number; message?: string } | null): AuthErrorCode {
@@ -122,12 +131,11 @@ export async function signUp(formData: FormData): Promise<void> {
   if (!isValidPassword(password)) fail('/register', 'weak-password', next);
   if (!confirmationMatches(formData, password)) fail('/register', 'password-mismatch', next);
 
+  const emailRedirectTo = confirmationRedirectUrl(await siteUrl(), next);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: {
-      emailRedirectTo: `${siteUrl()}/auth/confirm?next=${encodeURIComponent(next)}`,
-    },
+    options: { emailRedirectTo },
   });
 
   if (error) fail('/register', mapAuthError(error), next);
@@ -152,7 +160,7 @@ export async function requestPasswordReset(formData: FormData): Promise<void> {
   if (!isValidEmail(email)) fail('/forgot-password', 'email-invalid');
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${siteUrl()}/auth/confirm?next=${encodeURIComponent('/reset-password')}`,
+    redirectTo: recoveryRedirectUrl(await siteUrl()),
   });
 
   if (error) {
@@ -184,6 +192,41 @@ export async function updatePassword(formData: FormData): Promise<void> {
   // A recovery session is single-purpose; force a fresh sign-in with the new password.
   await supabase.auth.signOut();
   ok('/login', 'password-updated');
+}
+
+/**
+ * Re-sends the signup confirmation email.
+ *
+ * Confirmation emails get lost — spam folder, deleted message, a typo'd address —
+ * and the only cure used to be "sign up again", which silently does nothing for
+ * an existing unconfirmed account. This action re-sends on demand.
+ *
+ * The response is deliberately neutral: it never reveals whether the address has
+ * an account, and Supabase's per-hour email quota surfaces as `rate-limited` so
+ * the UI can be honest instead of claiming a mail went out.
+ */
+export async function resendConfirmation(formData: FormData): Promise<void> {
+  const next = nextFrom(formData);
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) fail('/login', 'supabase-not-configured', next);
+
+  const email = normaliseEmail(formValue(formData, 'email'));
+  if (!isValidEmail(email)) fail('/login', 'email-invalid', next);
+
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: confirmationRedirectUrl(await siteUrl(), next) },
+  });
+
+  if (!error) ok('/login', 'confirmation-resent', next);
+
+  // Rate limits are the one failure worth naming: they are the most common
+  // reason a second email never arrives.
+  if (mapAuthError(error) === 'rate-limited') fail('/login', 'rate-limited', next);
+
+  // Everything else stays neutral so the form cannot be used to enumerate accounts.
+  ok('/login', 'confirmation-resent', next);
 }
 
 export async function signOut(): Promise<void> {

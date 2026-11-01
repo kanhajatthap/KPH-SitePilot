@@ -4,7 +4,10 @@ import { getSupabasePublicConfig } from '../../lib/supabase/config';
 import { AuthLayout } from '../../components/auth/AuthLayout';
 import { Alert } from '../../components/auth/Alert';
 import { SubmitButton } from '../../components/auth/SubmitButton';
+import { EmailHelp } from '../../components/auth/EmailHelp';
 import { authErrorFrom, authInfoFrom } from '../../lib/auth/messages';
+import { localAuthDiagnostics } from '../../lib/auth/diagnostics';
+import { requestOrigin } from '../../lib/auth/request-site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +20,7 @@ export default async function ForgotPasswordPage({
   const configured = Boolean(getSupabasePublicConfig());
   const errorText = authErrorFrom(error);
   const infoText = authInfoFrom(message);
+  const diagnostics = configured ? localAuthDiagnostics(process.env, await requestOrigin()) : null;
 
   return (
     <AuthLayout
@@ -62,6 +66,10 @@ export default async function ForgotPasswordPage({
           <p className="mt-4 text-xs leading-relaxed text-ink-muted">
             The link expires after a short window and can only be used once. If it expires, request a new one.
           </p>
+
+          {diagnostics ? (
+            <EmailHelp confirmUrl={diagnostics.emailRedirects.confirm} trusted={diagnostics.siteUrl.trusted} />
+          ) : null}
         </>
       )}
     </AuthLayout>

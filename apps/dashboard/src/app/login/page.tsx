@@ -6,8 +6,11 @@ import { Alert } from '../../components/auth/Alert';
 import { DemoAccountCard } from '../../components/auth/DemoAccountCard';
 import { PasswordField } from '../../components/auth/PasswordField';
 import { SubmitButton } from '../../components/auth/SubmitButton';
+import { EmailHelp } from '../../components/auth/EmailHelp';
 import { authErrorFrom, authInfoFrom } from '../../lib/auth/messages';
 import { safeNextPath } from '../../lib/auth/redirect';
+import { localAuthDiagnostics } from '../../lib/auth/diagnostics';
+import { requestOrigin } from '../../lib/auth/request-site-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +26,8 @@ export default async function LoginPage({
   const infoText = authInfoFrom(message ?? (reason === 'session_expired' ? 'session-expired' : undefined));
   const demoEmail = process.env.DEMO_ACCOUNT_EMAIL?.trim();
   const demoPassword = process.env.DEMO_ACCOUNT_PASSWORD;
+  // Rendered only for signed-out visitors, so one cheap resolution per page view.
+  const diagnostics = configured ? localAuthDiagnostics(process.env, await requestOrigin()) : null;
 
   return (
     <AuthLayout
@@ -86,6 +91,14 @@ export default async function LoginPage({
 
             <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
           </form>
+
+          {diagnostics ? (
+            <EmailHelp
+              next={safeNext}
+              confirmUrl={diagnostics.emailRedirects.confirm}
+              trusted={diagnostics.siteUrl.trusted}
+            />
+          ) : null}
 
           {demoEmail && demoPassword ? (
             <DemoAccountCard email={demoEmail} password={demoPassword} />
