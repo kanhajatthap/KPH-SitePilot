@@ -35,6 +35,8 @@ This guide details the deployment procedures, environment variables, security co
 | `VAULT_MASTER_KEY` | Edge Functions only | Yes | 32-byte hex/base64 placeholder | AES-256-GCM master key for encrypted WordPress credentials |
 | `NEXT_PUBLIC_SUPABASE_URL` | Dashboard | No | `https://[ref].supabase.co` | Supabase API endpoint URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard | Public | `<public anon key>` | Supabase Auth session and RLS client |
+| `NEXT_PUBLIC_SITE_URL` | Dashboard | No | `https://kph-sitepilot.vercel.app` | Origin used inside auth emails; without it the app falls back to `VERCEL_URL`, then localhost. See [`email-deliverability.md`](./email-deliverability.md) |
+| `SITEPILOT_SITE_URL` | Dashboard | No | — | Server-only override for the above |
 | `SUPABASE_URL` | Edge Functions only | No | `https://[ref].supabase.co` | Supabase API endpoint URL |
 | `SUPABASE_ANON_KEY` | Edge Functions only | Public | `<public anon key>` | Verifies caller session with Supabase Auth |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions | Yes | `eyJhb...` | Administrative key for privileged edge operations |
@@ -221,17 +223,54 @@ server {
 
 ## 5. Health Monitoring & Alerting
 
-- **Liveness & Readiness**: Query `GET https://api.yourdomain.com/health` every 30 seconds.
-- **Expected Response**:
-  ```json
-  {
-    "status": "ok",
-    "service": "kph-sitepilot-api",
-    "version": "0.1.0",
-    "timestamp": "2026-10-22T08:35:00.000Z"
-  }
-  ```
-- **Alert Conditions**:
-  - HTTP status != 200 for 2 consecutive checks.
-  - Response time > 3000ms.
-  - Process restart count > 3 in 15 minutes.
+### 5.1 Hosted dashboard — `GET /api/health`
+
+The Vercel deployment answers with mode, version, commit and per-component
+checks. It is public, `no-store`, and contains no key material, host or prefix.
+
+```json
+{
+  "status": "ok",
+  "service": "kph-sitepilot-dashboard",
+  "version": "0.1.0",
+  "mode": "hosted",
+  "environment": "production",
+  "commit": "22c4297",
+  "checks": {
+    "dashboard": "ok",
+    "apiServer": "connected",
+    "auth": "ready",
+    "storage": "ready",
+    "encryption": "ready"
+  },
+  "timestamp": "2026-11-01T18:12:03.950Z"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `ok` (200), `degraded` (502, API reachable but erroring), `failed` (503, API unreachable) |
+| `mode` | `hosted` when Supabase auth is configured, otherwise `local` |
+| `checks.auth` | `ready` · `not-configured` · `misconfigured` (only half the URL/key pair set) |
+| `checks.storage` / `checks.encryption` | connector readiness — **not** part of the overall `status`, so a fresh deploy is not reported as broken before a site is paired |
+
+### 5.2 Auth email — `GET /api/auth/status`
+
+Answers "why is no email arriving": the origin auth links use, the three
+redirect URLs, warnings, and a live probe of Supabase's auth settings.
+`?probe=0` skips the network call. Full runbook:
+[`email-deliverability.md`](./email-deliverability.md).
+
+### 5.3 Local API — `GET http://127.0.0.1:3001/health`
+
+```json
+{ "status": "ok", "service": "kph-sitepilot-api", "version": "0.1.0", "timestamp": "2026-10-22T08:35:00.000Z" }
+```
+
+### 5.4 Alert conditions
+
+- `GET /api/health` HTTP status != 200 for 2 consecutive checks.
+- `status: "degraded"` or `"failed"` in the body even when the edge returns 200.
+- `checks.auth: "misconfigured"` — a half-configured Supabase pair.
+- Response time > 3000 ms.
+- Process restart count > 3 in 15 minutes.
