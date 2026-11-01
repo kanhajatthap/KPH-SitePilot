@@ -261,29 +261,36 @@ if ( ! class_exists( 'KPH_SP_Pairing' ) ) {
 		}
 
 		/**
-		 * POST /unpair — forgets the local credentials.
+		 * POST /unpair — revokes the connection on both sides.
+		 *
+		 * The platform is told first (best effort, signed): if the call fails we
+		 * still forget the credentials locally, because a site that keeps a secret
+		 * it can no longer use is worse than one the platform must revoke by hand.
 		 *
 		 * @return WP_REST_Response
 		 */
 		public static function handle_unpair() {
-			KPH_SP_Settings::update(
-				array(
-					'site_id'      => '',
-					'site_token'   => '',
-					'site_secret'  => '',
-					'connected_at' => '',
-					'connected_by' => 0,
-				)
-			);
+			$revoked = false;
 
-			wp_clear_scheduled_hook( KPH_SP_CRON_HOOK );
-			delete_transient( KPH_SP_Job_Runner::LOCK_TRANSIENT );
-			delete_transient( KPH_SP_Job_Runner::CONTACT_TRANSIENT );
+			if ( KPH_SP_Settings::is_connected() ) {
+				$site_id = (string) KPH_SP_Settings::get( 'site_id' );
+				$result  = KPH_SP_Job_Runner::request(
+					'/api/connector/unpair',
+					array( 'siteId' => $site_id )
+				);
+
+				$revoked = ! is_wp_error( $result );
+			}
+
+			KPH_SP_Job_Runner::disconnect();
 
 			return rest_ensure_response(
 				array(
 					'status'  => 'disconnected',
-					'message' => __( 'This site is disconnected. Revoke the connection in SitePilot as well.', 'kph-sitepilot-connector' ),
+					'revoked' => $revoked,
+					'message' => $revoked
+						? __( 'This site is disconnected on both sides.', 'kph-sitepilot-connector' )
+						: __( 'Local credentials were removed. Revoke the connection in SitePilot as well.', 'kph-sitepilot-connector' ),
 				)
 			);
 		}

@@ -57,6 +57,9 @@ stored settings.
 * Every write snapshots the post first, reads it back, and verifies the result; mismatches return `kph_sp_verification_failed` with the expected and actual values.
 * Snapshots travel back with the job result so the platform can offer one-click undo (`content.restore`).
 * Writes are sanitised with `wp_kses_post`, statuses are allowlisted, and create defaults to draft.
+* Live polling: five seconds after any job, one minute while idle, five minutes after an hour without work.
+* Fatal-error capture: if a tool dies mid-run, the failure is still reported (paths redacted) so the platform stops retrying blindly.
+* Disconnect now revokes the connection on the platform as well as locally; a revocation made in SitePilot clears the local credentials automatically.
 
 = 0.3.0 =
 * Job runner: signed claim → execute → signed result, one job per poll, transient lock against

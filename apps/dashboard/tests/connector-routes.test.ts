@@ -3,6 +3,7 @@ import { POST as pairRoute } from '../src/app/api/connector/pair/route';
 import { POST as pairingCodeRoute } from '../src/app/api/connector/pairing-codes/route';
 import { GET as sitesRoute } from '../src/app/api/connector/sites/route';
 import { POST as jobsRoute } from '../src/app/api/connector/jobs/route';
+import { DELETE as deleteSiteRoute } from '../src/app/api/connector/sites/[id]/route';
 import { resetPairingRateLimit } from '../src/lib/connector/rate-limit';
 
 const savedEnv = {
@@ -35,6 +36,14 @@ describe('connector routes', () => {
     else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedEnv.supabaseAnon;
     if (savedEnv.encryptionKey === undefined) delete process.env.SITEPILOT_ENCRYPTION_KEY;
     else process.env.SITEPILOT_ENCRYPTION_KEY = savedEnv.encryptionKey;
+  });
+
+  it('requires an account before disconnecting a site', async () => {
+    const res = await deleteSiteRoute(new Request('https://app.example.com/api/connector/sites/x', { method: 'DELETE' }), {
+      params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('CONNECTOR_REQUIRES_ACCOUNT');
   });
 
   it('rejects a non-JSON pairing body', async () => {

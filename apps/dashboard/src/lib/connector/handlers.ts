@@ -27,6 +27,11 @@ export interface SiteWriter {
     }
   ): Promise<void>;
   applySiteInfo(siteId: string, info: Record<string, unknown>): Promise<void>;
+  /**
+   * Marks the connection revoked. Heartbeats and claims stop working for it
+   * immediately, because `authenticateConnectorRequest` refuses revoked sites.
+   */
+  revokeSite(siteId: string): Promise<void>;
 }
 
 export interface SnapshotWriter {
@@ -137,6 +142,34 @@ export async function handleHeartbeat(
 }
 
 /** POST /api/connector/jobs/claim */
+/**
+ * POST /api/connector/unpair — the site asks to be disconnected.
+ *
+ * The request must be signed, so only the holder of the site secret can
+ * revoke it. Revoking is idempotent at the storage layer; a second call from a
+ * site that is already revoked fails authentication with `SITE_REVOKED`, which
+ * the plugin treats as "already disconnected".
+ */
+export async function handleUnpair(
+  headers: Headers,
+  rawBody: string,
+  deps: ConnectorHandlerDeps
+): Promise<HandlerOutput> {
+  const auth = await authOrFail(deps, headers, rawBody);
+  if (!auth.ok) return auth.output;
+
+  await deps.siteWriter.revokeSite(auth.site.id);
+
+  return {
+    status: 200,
+    body: {
+      status: 'revoked',
+      siteId: auth.site.id,
+      message: 'This site has been disconnected from SitePilot. Polling stops immediately.',
+    },
+  };
+}
+
 export async function handleClaim(
   headers: Headers,
   rawBody: string,

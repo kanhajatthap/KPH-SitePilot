@@ -30,6 +30,10 @@
 | 2026-11-01 | CONNECTIVITY | **“Any WordPress site”, enforced in code.** Removed the localhost-only target gate for hosted deployments: `lib/target.ts` now splits structural safety (http/https, no credentials, cloud-metadata endpoints blocked) from ownership, which `authorizeTargetSite` proves against the paired `sites` table. All 9 legacy routes plus the 3 `site/pages` routes pass `saasMode: auth.context.mode === 'saas'`, and local mode keeps the original localhost restriction. | `apps/dashboard/tests/target-policy.test.ts` → **4 tests** (any https host allowed in SaaS, metadata endpoints refused, localhost-only in local mode) | GATE |
 | 2026-11-01 | GATE | Full gate after the plan/write/undo batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **418 pass / 0 fail** (was 401; dashboard 130 → 147) · `pnpm build` **11/11** | E2-17 |
 
+| 2026-11-01 | E2-17 | **Revoke/unpair on both sides.** Signed `POST /api/connector/unpair` lets a site revoke itself (auth first, so only the secret holder can); owner-facing `DELETE /api/connector/sites/{id}` checks ownership via `siteBelongsToUser`, revokes the row and cancels queued jobs. The plugin tells the platform *before* it forgets its credentials, and `KPH_SP_Job_Runner::disconnect()` clears them automatically when any signed call answers `SITE_REVOKED`. | dashboard **151 tests** (+3 unpair handler tests, +1 route test: signed revoke, wrong secret refused, second call → `SITE_REVOKED`, no-account → 400) · plugin static suite +7 assertions · `php-lint` **15 files** | E2-09 |
+| 2026-11-01 | E2-09 / E2-11 | **Live poll + fatal capture.** `schedule_next()` polls 5 s after any job, 60 s while idle, 300 s after an hour without work; the pending single event carries a `live` argument so clearing it never disturbs the recurring cron. New `KPH_SP_Fatal` registers a shutdown hook, stores the last fatal for the admin screen and reports `kph_sp_fatal_error` for the in-flight job (the runner now publishes `current_job()`/`report_failure()`); messages have paths stripped and are capped at 300 chars. | `php-lint` 15 files · static suite +9 assertions · real `php -l` + static run in CI | GATE |
+| 2026-11-01 | GATE | Full gate after the revoke + liveness batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 15 PHP files** · `pnpm test` **422 pass / 0 fail** · `pnpm build` **11/11** | studio UI |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -55,8 +59,9 @@
 | E3-06 execution chaining | ✅ done | batch 5 |
 | E3-12 write tools (content.update/create/restore) | ✅ done | batch 5 |
 | E3-08 snapshot store + undo | ✅ done | batch 5 |
-| E2-09 scheduler (live mode, backoff) | ⏳ partial | batch 4 |
-| E2-11 runner (fatal capture) | ⏳ partial | batch 4 |
+| E2-09 scheduler (live mode, backoff) | ✅ done | batch 6 |
+| E2-11 runner (fatal capture) | ✅ done | batch 6 |
+| E2-17 revoke / unpair | ✅ done | batch 6 |
 
 ## Open blockers
 
@@ -67,7 +72,6 @@
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
 | Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | No plan UI yet: plans/execution are API-only (`/api/connector/plans`) | us (E5-01) | the chat surface is next; the API is exercised by tests |
-| Fatal-error capture + live 5 s poll mode | us (E2-09, E2-11) | cron poll + lease retry cover the gap |
 
 ## Gate history
 
@@ -79,3 +83,4 @@
 | 2026-11-01 | 19/19 | 382 pass / 0 fail | 11/11 | after E1-02/E1-06/E1-07/E2-02/E2-05/E2-06 (lint: 11/11 + 11 PHP files) |
 | 2026-11-01 | 20/20 | 401 pass / 0 fail | 11/11 | after E1-03 + E2-04/07/08/10/12/13 (lint: 11/11 + 14 PHP files) |
 | 2026-11-01 | 20/20 | **418 pass / 0 fail** | 11/11 | after E3-05/06/08/12 + any-site target policy (lint: 11/11 + 14 PHP files) |
+| 2026-11-01 | 20/20 | **422 pass / 0 fail** | 11/11 | after E2-17 + E2-09/E2-11 (lint: 11/11 + 15 PHP files) |

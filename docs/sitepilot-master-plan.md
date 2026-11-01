@@ -398,9 +398,11 @@ plugin honours on next heartbeat.
 | Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; reads `site.info`, `site.health`, `content.list`, `content.get`; writes `content.update`, `content.create`, `content.restore` (scope `content`, see 5.4.2); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
 | Report | `POST /api/connector/jobs/{id}/result` | signed; body `jobId` must match the path; duplicate report is a **no-op** (`idempotent: true`); success → `succeeded` + `job_events`, retryable failure → back to `queued` until `max_attempts` |
 | Liveness | `POST /api/connector/heartbeat` → `touch_site_heartbeat` | stores `last_seen_at`, plugin/WP/PHP versions and the capability manifest; **never revives** a revoked or paused site |
-| Schedule | `includes/class-job-runner.php` + `class-plugin.php` | WP-Cron `kph_sp_minute` (60 s), transient lock against overlapping polls, heartbeat throttled to 5 min, immediate heartbeat + 5 s poll right after pairing |
+| Schedule | `includes/class-job-runner.php` + `class-plugin.php` | WP-Cron `kph_sp_minute` (60 s floor), transient lock against overlapping polls, heartbeat throttled to 5 min, immediate heartbeat + 5 s poll right after pairing; `schedule_next()` adds a one-off `live`-arg event — 5 s after any job, 60 s while idle, 300 s after an hour without work |
 | Guard | `lib/connector/auth.ts` | site lookup → status gate → AES-GCM decrypt → HMAC verify (±300 s) → nonce replay store → 240 req/min/site |
 | Housekeeping | `purge_expired_connector_state()` | nonces >15 min, pairing codes >1 day, job events >30 days, expired snapshots |
+| Fatal capture | `includes/class-fatal.php` | shutdown hook → last-fatal option (paths stripped, 300 chars) + `kph_sp_fatal_error` result for the in-flight job, so a dead tool fails instead of hanging the lease |
+| Revoke | `POST /api/connector/unpair` (signed) + `DELETE /api/connector/sites/{id}` (owner) | site revokes itself, or the owner disconnects it; queued jobs → `cancelled`; plugin clears credentials on `SITE_REVOKED` |
 
 **Verified on the live project:** one queued job → first claim 1, immediate second claim 0 (lease held), claim again after
 lease expiry 1, `attempts` 2, two `job_events`; heartbeat accepted for `active` and refused for `revoked` without

@@ -256,6 +256,15 @@ export function createSupabaseSiteWriter(): SiteWriter | null {
       const { error } = await supabase.from('sites').update(patch).eq('id', siteId);
       if (error) throw new Error(error.message);
     },
+
+    async revokeSite(siteId) {
+      const { error } = await supabase
+        .from('sites')
+        .update({ status: 'revoked', updated_at: new Date().toISOString() })
+        .eq('id', siteId);
+
+      if (error) throw new Error(error.message);
+    },
   };
 }
 
@@ -482,4 +491,34 @@ export async function getSiteContext(
   if (error || !data) return null;
   const row = data as { id: string; project_id: string; status: string; url: string };
   return { id: row.id, projectId: row.project_id, status: row.status, url: row.url };
+}
+
+
+export type RevokeSiteResult = 'revoked' | 'not_found' | 'unavailable';
+
+/**
+ * User-initiated disconnect: revokes the site and cancels jobs it has not
+ * claimed yet. Ownership is checked first, so a caller can never revoke
+ * somebody else's site (and learns nothing beyond "not found").
+ */
+export async function revokeSiteForUser(siteId: string, userId: string): Promise<RevokeSiteResult> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return 'unavailable';
+
+  if (!(await siteBelongsToUser(siteId, userId))) return 'not_found';
+
+  const { error } = await supabase
+    .from('sites')
+    .update({ status: 'revoked', updated_at: new Date().toISOString() })
+    .eq('id', siteId);
+
+  if (error) return 'unavailable';
+
+  await supabase
+    .from('jobs')
+    .update({ status: 'cancelled' })
+    .eq('site_id', siteId)
+    .eq('status', 'queued');
+
+  return 'revoked';
 }

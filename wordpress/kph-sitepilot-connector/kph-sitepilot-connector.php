@@ -30,6 +30,7 @@ require_once KPH_SP_DIR . 'includes/class-settings.php';
 require_once KPH_SP_DIR . 'includes/class-capabilities.php';
 require_once KPH_SP_DIR . 'includes/class-tools.php';
 require_once KPH_SP_DIR . 'includes/class-job-runner.php';
+require_once KPH_SP_DIR . 'includes/class-fatal.php';
 require_once KPH_SP_DIR . 'includes/class-pairing.php';
 require_once KPH_SP_DIR . 'includes/class-plugin.php';
 
@@ -37,3 +38,6 @@ register_activation_hook( __FILE__, array( 'KPH_SP_Plugin', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'KPH_SP_Plugin', 'deactivate' ) );
 
 add_action( 'plugins_loaded', array( 'KPH_SP_Plugin', 'instance' ) );
+
+// Registered before any job runs so a fatal in a tool is reported, not lost.
+KPH_SP_Fatal::register();

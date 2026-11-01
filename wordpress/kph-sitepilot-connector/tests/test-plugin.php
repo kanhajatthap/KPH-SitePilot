@@ -162,6 +162,22 @@ kph_sp_static_assert( false === strpos( $runner_source, "'secret' =>" ), 'runner
 kph_sp_static_assert( false === strpos( $runner_source, 'print_r' ), 'runner never dumps request data' );
 kph_sp_static_assert( false !== strpos( $runner_source, "'retryable'" ), 'runner classifies retryable failures' );
 kph_sp_static_assert( false !== strpos( $runner_source, "'snapshot'" ), 'runner forwards the before-snapshot for undo' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'SITE_REVOKED' ), 'runner reacts to a revoked connection' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function disconnect' ), 'runner can forget dead credentials' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'wp_schedule_single_event' ), 'live polls are scheduled as single events' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'LIVE_POLL_SECONDS' ), 'live mode polls every five seconds' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'IDLE_BACKOFF_AFTER' ), 'idle sites back off after an hour' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function current_job' ), 'the fatal handler can see the running job' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'function report_failure' ), 'a failure can be reported outside the normal path' );
+
+// Fatal capture: a tool that dies must still produce a result.
+$fatal_source = file_get_contents( $plugin_dir . '/includes/class-fatal.php' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'register_shutdown_function' ), 'fatal handler runs at shutdown' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'error_get_last' ), 'fatal handler reads the real error' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'redact_paths' ), 'fatal messages are redacted before leaving the site' );
+kph_sp_static_assert( false !== strpos( $fatal_source, 'kph_sp_fatal_error' ), 'fatals are reported as a typed job failure' );
+kph_sp_static_assert( false === strpos( $fatal_source, 'error_log' ), 'fatal handler never writes to the PHP error log' );
+kph_sp_static_assert( false === strpos( $fatal_source, 'var_dump' ), 'fatal handler never dumps data' );
 
 // Cron wiring: one-minute poll scheduled on activation, cleared on deactivate.
 $plugin_source_wiring = file_get_contents( $plugin_dir . '/includes/class-plugin.php' );
@@ -175,6 +191,9 @@ kph_sp_static_assert( false !== strpos( $pairing_source, 'register_rest_route' )
 kph_sp_static_assert( false !== strpos( $pairing_source, "current_user_can( 'manage_options' )" ), 'pairing requires an administrator' );
 kph_sp_static_assert( false !== strpos( $pairing_source, 'wp_remote_post' ), 'pairing calls the platform over HTTP' );
 kph_sp_static_assert( false !== strpos( $pairing_source, "'/api/connector/pair'" ), 'pairing targets the documented endpoint' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'/api/connector/unpair'" ), 'unpair is reported to the platform' );
+kph_sp_static_assert( false !== strpos( $pairing_source, 'KPH_SP_Job_Runner::disconnect' ), 'unpair clears credentials through one code path' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'revoked' =>" ), 'the admin sees whether the platform accepted the revoke' );
 kph_sp_static_assert( false === strpos( $pairing_source, 'error_log' ), 'pairing never logs request or response bodies' );
 kph_sp_static_assert( false === strpos( $pairing_source, "'secret'" . ' =>' ), 'pairing response never returns the secret' );
 kph_sp_static_assert( false === strpos( $pairing_source, "'token'" . ' =>' ), 'pairing response never returns the token' );
