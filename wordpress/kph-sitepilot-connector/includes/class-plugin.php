@@ -38,6 +38,7 @@ if ( ! class_exists( 'KPH_SP_Plugin' ) ) {
 		 */
 		private function __construct() {
 			add_action( 'init', array( $this, 'load_textdomain' ) );
+			add_action( 'rest_api_init', array( 'KPH_SP_Pairing', 'register_routes' ) );
 			add_filter(
 				'plugin_action_links_' . plugin_basename( KPH_SP_FILE ),
 				array( $this, 'add_action_links' )

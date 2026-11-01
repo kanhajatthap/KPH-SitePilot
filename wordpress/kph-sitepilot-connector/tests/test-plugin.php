@@ -101,12 +101,33 @@ kph_sp_static_assert( class_exists( 'KPH_SP_Signature' ), 'signature class loade
 kph_sp_static_assert( method_exists( 'KPH_SP_Signature', 'sign' ), 'signature::sign exists' );
 kph_sp_static_assert( method_exists( 'KPH_SP_Signature', 'verify' ), 'signature::verify exists' );
 
-// Admin screen must not leak the stored secret and must not fake a connection.
+// Admin screen must not leak the stored secret and must show the real state.
 $admin_source = file_get_contents( $plugin_dir . '/admin/class-admin-page.php' );
 kph_sp_static_assert( false === strpos( $admin_source, 'esc_html( $secret )' ), 'admin screen never echoes the raw secret' );
 kph_sp_static_assert( false !== strpos( $admin_source, '$masked' ), 'admin screen masks the stored secret' );
-kph_sp_static_assert( false !== strpos( $admin_source, 'disabled' ), 'pairing controls disabled until M2' );
 kph_sp_static_assert( false !== strpos( $admin_source, 'Not connected' ), 'honest disconnected state' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'id="kph-sp-pair"' ), 'pairing button is present and enabled' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'id="kph-sp-unpair"' ), 'disconnect action is present when connected' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'kph_sp_save_platform' ), 'platform URL can be configured' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'wp_localize_script' ), 'admin script receives REST endpoint + nonce' );
+
+// Admin script must use the REST nonce and never hold a site secret.
+$admin_js = file_get_contents( $plugin_dir . '/assets/admin.js' );
+kph_sp_static_assert( false !== strpos( $admin_js, 'X-WP-Nonce' ), 'admin script sends the REST nonce' );
+kph_sp_static_assert( false !== strpos( $admin_js, "request('pair'" ), 'admin script calls the pair route' );
+kph_sp_static_assert( false === strpos( $admin_js, 'site_secret' ), 'admin script never reads the stored secret' );
+kph_sp_static_assert( false === strpos( $admin_js, 'site_token' ), 'admin script never handles the site token' );
+
+// Pairing endpoints: admin-only, HTTPS-aware, and never return credentials.
+$pairing_source = file_get_contents( $plugin_dir . '/includes/class-pairing.php' );
+kph_sp_static_assert( false !== strpos( $pairing_source, 'register_rest_route' ), 'pairing routes registered' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "current_user_can( 'manage_options' )" ), 'pairing requires an administrator' );
+kph_sp_static_assert( false !== strpos( $pairing_source, 'wp_remote_post' ), 'pairing calls the platform over HTTP' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'/api/connector/pair'" ), 'pairing targets the documented endpoint' );
+kph_sp_static_assert( false === strpos( $pairing_source, 'error_log' ), 'pairing never logs request or response bodies' );
+kph_sp_static_assert( false === strpos( $pairing_source, "'secret'" . ' =>' ), 'pairing response never returns the secret' );
+kph_sp_static_assert( false === strpos( $pairing_source, "'token'" . ' =>' ), 'pairing response never returns the token' );
+kph_sp_static_assert( false !== strpos( $pairing_source, "'token' :" ) || false !== strpos( $pairing_source, "credentials['token']" ), 'pairing reads credentials from the platform response' );
 
 if ( $failures > 0 ) {
 	fwrite( STDERR, "\nConnector static checks FAILED: {$failures} of {$checks} assertions.\n" );
