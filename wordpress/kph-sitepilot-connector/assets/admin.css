@@ -95,3 +95,20 @@
 	list-style: disc;
 	margin-left: 18px;
 }
+
+.kph-sp-result {
+	margin: 12px 0;
+	font-weight: 500;
+}
+
+.kph-sp-result.is-success {
+	color: #0a7d33;
+}
+
+.kph-sp-result.is-error {
+	color: #b32d2e;
+}
+
+.kph-sp-result.is-pending {
+	color: #646970;
+}

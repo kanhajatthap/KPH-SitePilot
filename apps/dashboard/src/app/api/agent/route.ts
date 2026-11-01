@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../lib/auth/site-access';
-
-const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
+import { callApi, describeApiTarget } from '../../../lib/api-call';
 
 const ALLOWED_TARGET_PATTERNS = [
   /^https?:\/\/[a-z0-9-_.]+\.local(:\d+)?$/i,
@@ -62,7 +61,7 @@ export async function POST(req: NextRequest) {
     // Forward server-to-server to KPH SitePilot Backend API
     let response: Response;
     try {
-      response = await fetch(`${API_SERVER_URL}/api/agent`, {
+      response = await callApi('/api/agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +77,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: 'NETWORK_ERROR',
-          message: `Cannot connect to KPH SitePilot Backend API at ${API_SERVER_URL}. Ensure the API server is started with "pnpm start:api" in PowerShell. (${(err as Error).message})`,
+          message: `KPH SitePilot API request failed (${describeApiTarget()}): ${(err as Error).message}`,
         },
         { status: 504 }
       );

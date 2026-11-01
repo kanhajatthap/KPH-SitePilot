@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -50,6 +50,14 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.2.0 =
+* Pairing is live: the admin screen accepts a one-time code, exchanges it for site
+  credentials through the platform, and offers a local disconnect action.
+* New REST routes: `POST /wp-json/kph-sitepilot/v1/pair`, `POST …/unpair`, `GET …/status`
+  (administrator-only, REST-nonce protected, no credentials in any response).
+* Configurable SitePilot platform URL, saved from the connection card.
+* Admin JavaScript sends the REST nonce and never handles the site token or secret.
 
 = 0.1.0 =
 * Connector foundation: settings, access scopes (including files and code), HMAC-SHA256 signing,

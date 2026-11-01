@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../../lib/auth/api';
 import { authorizeTargetSite } from '../../../../../lib/auth/site-access';
 import {
-  API_SERVER_URL,
   readUpstreamJson,
   validateLocalTarget,
 } from '../../../../../lib/api-proxy';
+import { callApi } from '../../../../../lib/api-call';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   if (!siteAccess.ok) return siteAccess.response;
 
   try {
-    const response = await fetch(`${API_SERVER_URL}/api/site/pages/list`, { method: 'GET' });
+    const response = await callApi('/api/site/pages/list', { method: 'GET' });
     const parsed = await readUpstreamJson(response);
     if (!parsed.ok) {
       return NextResponse.json(

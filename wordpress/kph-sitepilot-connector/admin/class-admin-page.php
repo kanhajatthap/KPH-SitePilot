@@ -2,8 +2,8 @@
 /**
  * Connector administration screen.
  *
- * Deliberately honest: this build can store scopes and show connection state,
- * but pairing is not wired yet. The screen says so instead of faking a connect.
+ * Honest by design: the screen shows the real connection state, enables pairing
+ * as soon as a platform URL is set, and never echoes the stored secret.
  *
  * @package KPH_SitePilot_Connector
  */
@@ -25,6 +25,7 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 			add_action( 'admin_menu', array( $this, 'register_menu' ) );
 			add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 			add_action( 'admin_post_kph_sp_save_scopes', array( $this, 'handle_save_scopes' ) );
+			add_action( 'admin_post_kph_sp_save_platform', array( $this, 'handle_save_platform' ) );
 		}
 
 		/**
@@ -58,6 +59,31 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 				array(),
 				KPH_SP_VERSION
 			);
+
+			wp_enqueue_script(
+				'kph-sp-admin',
+				KPH_SP_URL . 'assets/admin.js',
+				array(),
+				KPH_SP_VERSION,
+				true
+			);
+
+			wp_localize_script(
+				'kph-sp-admin',
+				'KPH_SP_ADMIN',
+				array(
+					'restUrl'     => esc_url_raw( rest_url( KPH_SP_Pairing::REST_NAMESPACE . '/' ) ),
+					'nonce'       => wp_create_nonce( 'wp_rest' ),
+					'connected'   => KPH_SP_Settings::is_connected(),
+					'platformUrl' => KPH_SP_Pairing::platform_base_url(),
+					'strings'     => array(
+						'connect'    => __( 'Connect site', 'kph-sitepilot-connector' ),
+						'connecting' => __( 'Connecting…', 'kph-sitepilot-connector' ),
+						'disconnect' => __( 'Disconnect', 'kph-sitepilot-connector' ),
+						'working'    => __( 'Working…', 'kph-sitepilot-connector' ),
+					),
+				)
+			);
 		}
 
 		/**
@@ -80,6 +106,31 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 					array(
 						'page'    => self::SLUG,
 						'updated' => 'scopes',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
+			exit;
+		}
+
+		/**
+		 * Stores the SitePilot platform URL used for pairing.
+		 */
+		public function handle_save_platform() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'You do not have permission to manage this connection.', 'kph-sitepilot-connector' ) );
+			}
+
+			check_admin_referer( 'kph_sp_save_platform' );
+
+			$url = isset( $_POST['kph_sp_platform_url'] ) ? esc_url_raw( wp_unslash( $_POST['kph_sp_platform_url'] ) ) : '';
+			KPH_SP_Settings::update( array( 'platform_url' => untrailingslashit( $url ) ) );
+
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page'    => self::SLUG,
+						'updated' => 'platform',
 					),
 					admin_url( 'admin.php' )
 				)
@@ -114,6 +165,12 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 			<div class="wrap kph-sp-wrap">
 				<h1><?php esc_html_e( 'KPH SitePilot Connector', 'kph-sitepilot-connector' ); ?></h1>
 
+				<?php if ( 'platform' === $updated ) : ?>
+					<div class="notice notice-success is-dismissible">
+						<p><?php esc_html_e( 'Platform URL saved.', 'kph-sitepilot-connector' ); ?></p>
+					</div>
+				<?php endif; ?>
+
 				<?php if ( 'scopes' === $updated ) : ?>
 					<div class="notice notice-success is-dismissible">
 						<p><?php esc_html_e( 'Access scopes saved.', 'kph-sitepilot-connector' ); ?></p>
@@ -147,17 +204,50 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 							</tr>
 						</table>
 
-						<p class="kph-sp-note">
-							<?php esc_html_e( 'Pairing is enabled when the hosted SitePilot connector endpoint ships (milestone M2). This build only stores connection state and scopes — it does not contact any external service yet.', 'kph-sitepilot-connector' ); ?>
-						</p>
+						<?php if ( $connected ) : ?>
+							<p class="kph-sp-note">
+								<?php esc_html_e( 'This site is connected. Manage it from SitePilot — content, settings, media, plugins, files and code all run from prompts there. Disconnecting stops new jobs immediately.', 'kph-sitepilot-connector' ); ?>
+							</p>
+							<p>
+								<button type="button" class="button" id="kph-sp-unpair">
+									<?php esc_html_e( 'Disconnect this site', 'kph-sitepilot-connector' ); ?>
+								</button>
+							</p>
+						<?php else : ?>
+							<p class="kph-sp-note">
+								<?php esc_html_e( 'In SitePilot open “Connect a site”, copy the 8-character code, then paste it here. Codes expire after ten minutes and work once.', 'kph-sitepilot-connector' ); ?>
+							</p>
+							<p>
+								<label for="kph-sp-pairing-code"><?php esc_html_e( 'Pairing code', 'kph-sitepilot-connector' ); ?></label><br />
+								<input type="text" id="kph-sp-pairing-code" class="regular-text" maxlength="9" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false" />
+								<button type="button" class="button button-primary" id="kph-sp-pair">
+									<?php esc_html_e( 'Connect site', 'kph-sitepilot-connector' ); ?>
+								</button>
+							</p>
+						<?php endif; ?>
 
-						<p>
-							<label for="kph-sp-pairing-code"><?php esc_html_e( 'Pairing code', 'kph-sitepilot-connector' ); ?></label><br />
-							<input type="text" id="kph-sp-pairing-code" class="regular-text" maxlength="8" placeholder="ABCD-EFGH" disabled />
-							<button type="button" class="button button-primary" disabled>
-								<?php esc_html_e( 'Connect site', 'kph-sitepilot-connector' ); ?>
-							</button>
-						</p>
+						<p id="kph-sp-pairing-result" class="kph-sp-result" role="status" aria-live="polite"></p>
+
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+							<input type="hidden" name="action" value="kph_sp_save_platform" />
+							<?php wp_nonce_field( 'kph_sp_save_platform' ); ?>
+							<p>
+								<label for="kph-sp-platform-url"><?php esc_html_e( 'SitePilot platform URL', 'kph-sitepilot-connector' ); ?></label><br />
+								<input
+									type="url"
+									id="kph-sp-platform-url"
+									name="kph_sp_platform_url"
+									class="regular-text"
+									value="<?php echo esc_attr( $settings['platform_url'] ); ?>"
+									placeholder="https://your-sitepilot.vercel.app"
+								/>
+							</p>
+							<p>
+								<button type="submit" class="button">
+									<?php esc_html_e( 'Save platform URL', 'kph-sitepilot-connector' ); ?>
+								</button>
+							</p>
+						</form>
 					</div>
 
 					<div class="kph-sp-card">

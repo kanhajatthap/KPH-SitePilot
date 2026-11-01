@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
+import { callApi } from '../../../../lib/api-call';
 
 export const dynamic = 'force-dynamic';
-
-const API_SERVER_URL = process.env.API_SERVER_URL || 'http://127.0.0.1:3001';
 
 export async function GET(req: NextRequest) {
   const auth = await authenticateApiRequest();
@@ -21,15 +20,17 @@ export async function GET(req: NextRequest) {
     }
 
     const lastEventId = req.headers.get('Last-Event-ID');
-    const upstreamUrl = `${API_SERVER_URL}/api/task/stream?taskId=${encodeURIComponent(taskId)}`;
 
-    const upstreamResponse = await fetch(upstreamUrl, {
-      method: 'GET',
-      headers: {
-        Accept: 'text/event-stream',
-        ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
-      },
-    });
+    const upstreamResponse = await callApi(
+      `/api/task/stream?taskId=${encodeURIComponent(taskId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+        },
+      }
+    );
 
     if (!upstreamResponse.ok || !upstreamResponse.body) {
       return NextResponse.json(

@@ -2,7 +2,7 @@
   "name": "@wp-agent/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal API server and health endpoint for KPH SitePilot",
+  "description": "Node HTTP adapter and health endpoint for the KPH SitePilot API core",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,8 @@
     "@wp-agent/model-adapters": "workspace:*",
     "@wp-agent/agent-core": "workspace:*",
     "@wp-agent/wp-client": "workspace:*",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "@wp-agent/api-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.9",

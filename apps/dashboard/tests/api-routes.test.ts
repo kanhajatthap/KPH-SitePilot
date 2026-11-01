@@ -7,6 +7,10 @@ import { POST as handleProposePost } from '../src/app/api/mutate/propose/route';
 import { POST as handleApplyPost } from '../src/app/api/mutate/apply/route';
 import { GET as handleHealthGet } from '../src/app/api/health/route';
 
+// These cases assert the HTTP transport explicitly: with API_SERVER_URL set the
+// routes call fetch() instead of running the API core in-process.
+process.env.API_SERVER_URL = 'http://127.0.0.1:3001';
+
 describe('Dashboard API Route Handlers (Server-Side Proxy & Security Guards)', () => {
   it('POST /api/agent rejects empty prompt with 400 VALIDATION_FAILED', async () => {
     const req = new NextRequest('http://localhost:3002/api/agent', {
@@ -116,7 +120,7 @@ describe('Dashboard API Route Handlers (Server-Side Proxy & Security Guards)', (
 
       const body = await res.json();
       expect(body.error).toBe('NETWORK_ERROR');
-      expect(body.message).toContain('pnpm start:api');
+      expect(body.message).toContain('127.0.0.1:3001');
     } finally {
       global.fetch = originalFetch;
     }

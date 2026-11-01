@@ -33,9 +33,11 @@ function unavailable(message: string, code: string): SiteAccessResult {
  *   1. the deployment-owned local site configured through `WP_SITE_URL`, and
  *   2. sites registered as an active WordPress connection owned by the caller.
  *
- * Ownership is resolved through `wordpress_connection_metadata`, a
- * security-barrier view filtered by `auth.uid()`, so RLS — not a client-supplied
- * id — decides visibility. Unknown/unauthorised targets fail closed.
+ * Ownership is resolved through `site_metadata`, a security-barrier view over
+ * the connector `sites` table filtered by `auth.uid()`, so RLS — not a
+ * client-supplied id — decides visibility. Unknown/unauthorised targets fail
+ * closed. The legacy `wordpress_connection_metadata` view is used only when the
+ * connector schema has not been applied yet.
  */
 export async function authorizeTargetSite(
   context: AuthContext,
@@ -63,10 +65,27 @@ export async function authorizeTargetSite(
   const supabase = await createSupabaseServerClient();
   if (!supabase) return denied('Site access cannot be verified.', 'AUTHORIZATION_UNAVAILABLE');
 
-  const { data, error } = await supabase
-    .from('wordpress_connection_metadata')
-    .select('target_site, status')
+  let { data, error } = await supabase
+    .from('site_metadata')
+    .select('url, status')
     .eq('status', 'active');
+
+  let rows: Array<{ target_site?: string | null; url?: string | null }> = data ?? [];
+
+  if (error) {
+    const missingConnectorSchema =
+      (error as { code?: string }).code === '42P01' ||
+      (error as { code?: string }).code === 'PGRST205';
+    if (missingConnectorSchema) {
+      const legacy = await supabase
+        .from('wordpress_connection_metadata')
+        .select('target_site, status')
+        .eq('status', 'active');
+      data = legacy.data as typeof data;
+      error = legacy.error;
+      rows = (legacy.data ?? []) as typeof rows;
+    }
+  }
 
   if (error) {
     const code = (error as { code?: string }).code;
@@ -79,9 +98,10 @@ export async function authorizeTargetSite(
     return unavailable('Site ownership could not be verified. Try again.', 'AUTHORIZATION_UNAVAILABLE');
   }
 
-  const owned = (data ?? []).some((row: { target_site?: string | null }) => {
-    if (!row.target_site) return false;
-    return normaliseOrigin(row.target_site) === requested;
+  const owned = rows.some((row) => {
+    const candidate = row.url ?? row.target_site;
+    if (!candidate) return false;
+    return normaliseOrigin(candidate) === requested;
   });
 
   if (!owned) {
