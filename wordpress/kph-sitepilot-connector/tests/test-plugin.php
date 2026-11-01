@@ -131,8 +131,24 @@ $tools_source = file_get_contents( $plugin_dir . '/includes/class-tools.php' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'site.info'" ), 'site.info tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "kph_sp_unknown_tool" ), 'unknown tools are rejected' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'has_scope' ), 'tools check the site scope' );
-kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'this build ships no write tools' );
+kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'tools never touch post meta' );
 kph_sp_static_assert( false === strpos( $tools_source, 'wp_remote_' ), 'tools never make their own HTTP calls' );
+
+// Write tools (0.4.0): declared, scoped, snapshotted, verified, and reversible.
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.update'" ), 'content.update tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.create'" ), 'content.create tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.restore'" ), 'content.restore tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content' =>" ), 'write tools map to the content scope' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'is_writable_type' ), 'write tools refuse unsupported post types' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function snapshot' ), 'write tools take a before-snapshot' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function read_back' ), 'write tools read the post back' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function verify' ), 'write tools verify the result' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_verification_failed' ), 'verification failures are reported by code' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_slash' ), 'content is slashed before wp_update_post' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_kses_post' ), 'write tools sanitise content' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'draft' =>" ) || false !== strpos( $tools_source, "'draft'," ), 'create defaults to draft' );
+kph_sp_static_assert( false === strpos( $tools_source, 'delete_post' ), 'write tools never delete content' );
+kph_sp_static_assert( false === strpos( $tools_source, 'unfiltered_html' ), 'write tools never grant unfiltered HTML' );
 
 // Job runner: signed, outbound-only, lease-safe.
 $runner_source = file_get_contents( $plugin_dir . '/includes/class-job-runner.php' );
@@ -145,6 +161,7 @@ kph_sp_static_assert( false === strpos( $runner_source, 'error_log' ), 'runner n
 kph_sp_static_assert( false === strpos( $runner_source, "'secret' =>" ), 'runner never puts the secret in a payload' );
 kph_sp_static_assert( false === strpos( $runner_source, 'print_r' ), 'runner never dumps request data' );
 kph_sp_static_assert( false !== strpos( $runner_source, "'retryable'" ), 'runner classifies retryable failures' );
+kph_sp_static_assert( false !== strpos( $runner_source, "'snapshot'" ), 'runner forwards the before-snapshot for undo' );
 
 // Cron wiring: one-minute poll scheduled on activation, cleared on deactivate.
 $plugin_source_wiring = file_get_contents( $plugin_dir . '/includes/class-plugin.php' );

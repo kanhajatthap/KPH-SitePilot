@@ -25,6 +25,11 @@
 | 2026-11-01 | E2-07 / E2-11 / E2-09 (plugin) | Plugin **v0.3.0**: capability manifest (`site`, theme/FSE, plugins ≤80, post types ≤40, taxonomies, builders, environment, role counts), deny-by-default tool registry (`site.info`, `site.health`, `content.list`, `content.get`), signed outbound runner (20 s timeout, no redirects, 1 MB response cap, transient poll lock, 5-min heartbeat throttle, immediate heartbeat + 5 s poll after pairing), WP-Cron `kph_sp_minute`, local unpair clears schedule + transients, admin screen shows last contact and last job error. | `php-lint` **14 files parse** · static suite extended (+23 assertions: manifest bounds, no emails/secrets, allowlist, signed headers, nonce entropy, poll lock, connected guard, no `error_log`, no payload dumps, cron wiring) and simulated locally · real `php -l` + static run in CI job `wordpress-plugin` | CI |
 | 2026-11-01 | GATE | Full gate after the job-pipeline batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **401 pass / 0 fail** (was 382) · `pnpm build` **11/11** | next batch |
 
+| 2026-11-01 | E3-05 / E3-06 | **Plan → approve → execute, API-first.** Deterministic planner (`lib/connector/planner.ts`) turns a prompt into a typed step list (`content.update` / `content.create`) — extracts `#12`/“post 12”, straight/curly/single-quoted text, and refuses with a reason when the target or replacement text is missing. Plans are immutable and SHA-256 hashed; approval pins the hash and re-checks it at approval time (`PLAN_CHANGED`), destructive steps require a typed confirmation equal to the first 8 characters of the plan id (`CONFIRMATION_REQUIRED`), and execution queues **one step at a time**, advancing only behind a `succeeded` job (idempotency key `plan:<id>:step:<n>`). | `apps/dashboard/tests/connector-plans.test.ts` → **13 tests** (extraction, refusals, hash tamper, typed confirm, approval gate, step chaining → `applied`, failure → `failed`, no duplicate step) | E3-12 |
+| 2026-11-01 | E3-12 / E3-08 | **First writes with snapshot, verify, undo** — plugin **v0.4.0**: `content.update`, `content.create`, `content.restore` (scope `content`), post-type guard, `wp_kses_post`, status allowlist, create defaulting to draft; every write snapshots the post, calls `wp_update_post(wp_slash(…))`, reads it back and compares (title/status exact, content whitespace-normalised because KSES may reorder attributes); mismatches return `kph_sp_verification_failed` with expected/actual. Job results carry the snapshot, the platform stores it (`snapshots.restored_at`, `restore_job_id` columns) and `POST /api/connector/snapshots/{id}/undo` enqueues a `content.restore` job (idempotency `undo:<snapshotId>`, 409 `ALREADY_RESTORED` on replay). | Migration applied live as **`snapshot_undo_columns`** · plugin static suite **+15 assertions** and `php-lint` **14 files** · dashboard typecheck green | E2-17 |
+| 2026-11-01 | CONNECTIVITY | **“Any WordPress site”, enforced in code.** Removed the localhost-only target gate for hosted deployments: `lib/target.ts` now splits structural safety (http/https, no credentials, cloud-metadata endpoints blocked) from ownership, which `authorizeTargetSite` proves against the paired `sites` table. All 9 legacy routes plus the 3 `site/pages` routes pass `saasMode: auth.context.mode === 'saas'`, and local mode keeps the original localhost restriction. | `apps/dashboard/tests/target-policy.test.ts` → **4 tests** (any https host allowed in SaaS, metadata endpoints refused, localhost-only in local mode) | GATE |
+| 2026-11-01 | GATE | Full gate after the plan/write/undo batch. | `pnpm typecheck` **20/20** · `pnpm lint` **11/11 + 14 PHP files** · `pnpm test` **418 pass / 0 fail** (was 401; dashboard 130 → 147) · `pnpm build` **11/11** | E2-17 |
+
 ## Task status
 
 | Task | Status | Commit |
@@ -46,6 +51,10 @@
 | E2-10 claim endpoint | ✅ done | batch 4 |
 | E2-12 tool registry + site.info | ✅ done | batch 4 |
 | E2-13 result endpoint + state machine | ✅ done | batch 4 |
+| E3-05 planner + plan APIs | ✅ done | batch 5 |
+| E3-06 execution chaining | ✅ done | batch 5 |
+| E3-12 write tools (content.update/create/restore) | ✅ done | batch 5 |
+| E3-08 snapshot store + undo | ✅ done | batch 5 |
 | E2-09 scheduler (live mode, backoff) | ⏳ partial | batch 4 |
 | E2-11 runner (fatal capture) | ⏳ partial | batch 4 |
 
@@ -54,11 +63,10 @@
 | Blocker | Owner | Workaround |
 |---|---|---|
 | CI red on `main` at the old commit | us | fixed in this branch; green run expected on the PR |
-| No job runner yet: a paired site cannot be driven by prompts until E2-08 (connector auth) + E1-03/E2-10 (claim/execute) land | us | pairing + scopes are live; the UI does not pretend otherwise |
 | `SITEPILOT_ENCRYPTION_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are not set on Vercel yet | us | pairing fails closed with `CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
 | PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
 | Vercel env: `SITEPILOT_ENCRYPTION_KEY` + `SUPABASE_SERVICE_ROLE_KEY` still unset | us | connector endpoints answer `503 CONFIG_MISSING` / `STORAGE_UNAVAILABLE` until set |
-| No write tools yet (all shipped tools are `read`) | us (E2-18 → E5/E6) | mutations arrive with the plan/approval/snapshot engine, not before |
+| No plan UI yet: plans/execution are API-only (`/api/connector/plans`) | us (E5-01) | the chat surface is next; the API is exercised by tests |
 | Fatal-error capture + live 5 s poll mode | us (E2-09, E2-11) | cron poll + lease retry cover the gap |
 
 ## Gate history
@@ -70,3 +78,4 @@
 | 2026-11-01 | — | PHP 8.2 protocol + static tests pass in CI | — | CI run `41285152374` all green |
 | 2026-11-01 | 19/19 | 382 pass / 0 fail | 11/11 | after E1-02/E1-06/E1-07/E2-02/E2-05/E2-06 (lint: 11/11 + 11 PHP files) |
 | 2026-11-01 | 20/20 | 401 pass / 0 fail | 11/11 | after E1-03 + E2-04/07/08/10/12/13 (lint: 11/11 + 14 PHP files) |
+| 2026-11-01 | 20/20 | **418 pass / 0 fail** | 11/11 | after E3-05/06/08/12 + any-site target policy (lint: 11/11 + 14 PHP files) |

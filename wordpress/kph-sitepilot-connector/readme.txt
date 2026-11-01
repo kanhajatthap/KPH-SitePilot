@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,7 +20,7 @@ Connecting as an administrator enables full access by default, including files a
 scopes. A scope only makes a capability available: every write still requires a plan, a human
 approval, a snapshot and a read-back verification.
 
-**This build (0.3.0) connects and polls.** Pairing exchanges a one-time code for site
+**This build (0.4.0) connects, polls, and writes with undo.** Pairing exchanges a one-time code for site
 credentials, the connector then signs every request, uploads a capability manifest, claims one
 job per minute and reports the result. The shipped tools are read-only (`site.info`,
 `site.health`, `content.list`, `content.get`); write tools land with the platform's
@@ -51,6 +51,12 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.4.0 =
+* Write tools: `content.update`, `content.create`, `content.restore`, all scoped to `content`.
+* Every write snapshots the post first, reads it back, and verifies the result; mismatches return `kph_sp_verification_failed` with the expected and actual values.
+* Snapshots travel back with the job result so the platform can offer one-click undo (`content.restore`).
+* Writes are sanitised with `wp_kses_post`, statuses are allowlisted, and create defaults to draft.
 
 = 0.3.0 =
 * Job runner: signed claim → execute → signed result, one job per poll, transient lock against

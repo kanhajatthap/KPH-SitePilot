@@ -8,7 +8,9 @@ import { checkConnectorRateLimit } from './rate-limit';
 import {
   createSupabaseConnectorAuthStore,
   createSupabaseJobStore,
+  createSupabasePlanStore,
   createSupabaseSiteWriter,
+  recordSnapshot,
 } from './store';
 
 export type DepsResult =
@@ -44,8 +46,9 @@ export function buildConnectorDeps(): DepsResult {
   const authStore = createSupabaseConnectorAuthStore();
   const jobStore = createSupabaseJobStore();
   const siteWriter = createSupabaseSiteWriter();
+  const planStore = createSupabasePlanStore();
 
-  if (!authStore || !jobStore || !siteWriter) {
+  if (!authStore || !jobStore || !siteWriter || !planStore) {
     return {
       ok: false,
       output: {
@@ -66,6 +69,8 @@ export function buildConnectorDeps(): DepsResult {
       siteWriter,
       encryptionKey,
       isRateLimited: (siteId: string) => !checkConnectorRateLimit(siteId).ok,
+      plans: { store: planStore },
+      snapshots: { record: recordSnapshot },
     },
   };
 }

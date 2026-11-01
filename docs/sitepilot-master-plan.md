@@ -395,7 +395,7 @@ plugin honours on next heartbeat.
 | Piece | Where | Behaviour |
 |---|---|---|
 | Claim | `supabase/migrations/20261101090000_connector_functions.sql` → `claim_next_job(site, lease)`; `POST /api/connector/jobs/claim` | `FOR UPDATE SKIP LOCKED`, one job per call, lease 120 s, `attempts+1`, `claimed` event appended. Returns `{ job: null, nextPollSeconds: 60 }` when idle |
-| Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; `site.info`, `site.health`, `content.list`, `content.get` (all `read`); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
+| Execute | `wordpress/…/includes/class-tools.php` | deny-by-default registry; reads `site.info`, `site.health`, `content.list`, `content.get`; writes `content.update`, `content.create`, `content.restore` (scope `content`, see 5.4.2); unknown tool → `kph_sp_unknown_tool`, always non-retryable |
 | Report | `POST /api/connector/jobs/{id}/result` | signed; body `jobId` must match the path; duplicate report is a **no-op** (`idempotent: true`); success → `succeeded` + `job_events`, retryable failure → back to `queued` until `max_attempts` |
 | Liveness | `POST /api/connector/heartbeat` → `touch_site_heartbeat` | stores `last_seen_at`, plugin/WP/PHP versions and the capability manifest; **never revives** a revoked or paused site |
 | Schedule | `includes/class-job-runner.php` + `class-plugin.php` | WP-Cron `kph_sp_minute` (60 s), transient lock against overlapping polls, heartbeat throttled to 5 min, immediate heartbeat + 5 s poll right after pairing |
@@ -405,6 +405,22 @@ plugin honours on next heartbeat.
 **Verified on the live project:** one queued job → first claim 1, immediate second claim 0 (lease held), claim again after
 lease expiry 1, `attempts` 2, two `job_events`; heartbeat accepted for `active` and refused for `revoked` without
 changing its status.
+
+#### 5.4.2 As built — plan → approve → execute → verify → undo (2026-11-01)
+
+| Piece | Where | Behaviour |
+|---|---|---|
+| Planner | `apps/dashboard/src/lib/connector/planner.ts` | deterministic v1 (no model): `#12` / “post 12” targets, straight/curly/single-quoted replacement text, title / content / create / publish intents, HTML preserved and plain text wrapped in `<p>`; returns a typed refusal when the target or the replacement text is missing |
+| Plan store | `plans.ts` + `store.ts` → `plans`, `approvals`, `jobs` | plan steps are immutable and SHA-256 hashed; `approvePlan()` stores the hash and re-verifies it (`PLAN_CHANGED`); R3 steps need the first 8 chars of the plan id (`CONFIRMATION_REQUIRED`); `startPlan()`/`advancePlan()` queue **exactly one** step ahead with idempotency key `plan:<id>:step:<n>` |
+| Routes | `api/connector/plans` (+`[id]`, `[id]/approve`, `[id]/execute`), `api/connector/snapshots/[id]/undo` | create/list, detail, approve, execute, undo; every route checks `siteBelongsToUser()` before touching a plan |
+| Write tools | plugin `class-tools.php` | `content.update` (title/content/excerpt/status, `wp_kses_post`, status allowlist draft\|pending\|publish\|private), `content.create` (title required, type default `page`, status default `draft`), `content.restore` (from `before`) |
+| Verify | plugin `verify()` | before-snapshot → `wp_update_post(wp_slash(…))` → read-back → compare: title and status exact, content whitespace-normalised (KSES may reorder attributes); mismatch → `kph_sp_verification_failed` with expected/actual/before |
+| Undo | `POST /api/connector/snapshots/{id}/undo` | enqueues a `content.restore` job (`undo:<snapshotId>`), marks `snapshots.restored_at`/`restore_job_id`, replay → `409 ALREADY_RESTORED` |
+
+**Target policy (any site).** Hosted SitePilot reaches any WordPress site the signed-in user paired: `lib/target.ts` keeps only
+structural checks (http/https, no embedded credentials) and blocks cloud-metadata endpoints; ownership is enforced by
+`authorizeTargetSite` against `sites`. Local mode (`NEXT_PUBLIC_SITEPILOT_MODE=local`, no Supabase) keeps the original
+localhost/LocalWP allowlist because there is no account to prove ownership against.
 
 **Job envelope**
 

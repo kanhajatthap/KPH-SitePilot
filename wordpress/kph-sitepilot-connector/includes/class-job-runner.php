@@ -208,6 +208,16 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 					'durationMs' => $elapsed,
 				);
 				$summary['ok'] = true;
+
+				// Mutation tools return the pre-write state; forward it so the
+				// platform can offer a one-click undo even if the user closes the tab.
+				if ( is_array( $result ) && isset( $result['before'] ) && is_array( $result['before'] ) && ! empty( $result['id'] ) ) {
+					$payload['snapshot'] = array(
+						'resource' => 'post:' . (int) $result['id'],
+						'before'   => $result['before'],
+						'after'    => isset( $result['after'] ) && is_array( $result['after'] ) ? $result['after'] : null,
+					);
+				}
 			}
 
 			$report = self::request( sprintf( self::PATH_RESULT, rawurlencode( $job_id ) ), $payload );

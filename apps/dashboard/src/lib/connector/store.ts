@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { PairingCodeRow, PairingStore } from './pairing';
 import { createSupabaseAdminClient } from '../supabase/admin';
 
@@ -289,4 +290,196 @@ export async function enqueueConnectorJob(input: {
 
   if (error) throw new Error(error.message);
   return (data as { id: string }).id;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Plans, approvals, snapshots                                                */
+/* -------------------------------------------------------------------------- */
+
+import type { ApprovalRow, PlanRow, PlanStatus, PlanStore } from './plans';
+
+export function createSupabasePlanStore(): PlanStore | null {
+  const client = createSupabaseAdminClient();
+  if (!client) return null;
+  const supabase = client;
+
+  return {
+    async insertPlan(row) {
+      const { data, error } = await supabase.from('plans').insert(row).select('*').single();
+      if (error) throw new Error(error.message);
+      return data as PlanRow;
+    },
+
+    async getPlan(planId: string) {
+      const { data, error } = await supabase.from('plans').select('*').eq('id', planId).maybeSingle();
+      if (error) throw new Error(error.message);
+      return (data as PlanRow | null) ?? null;
+    },
+
+    async insertApproval(input) {
+      const { data, error } = await supabase
+        .from('approvals')
+        .insert({
+          plan_id: input.planId,
+          approved_by: input.approvedBy,
+          plan_hash: input.planHash,
+        })
+        .select('*')
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as ApprovalRow;
+    },
+
+    async getApproval(planId: string) {
+      const { data, error } = await supabase
+        .from('approvals')
+        .select('*')
+        .eq('plan_id', planId)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+      return (data as ApprovalRow | null) ?? null;
+    },
+
+    async setPlanStatus(planId: string, status: PlanStatus) {
+      const { error } = await supabase
+        .from('plans')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', planId);
+
+      if (error) throw new Error(error.message);
+    },
+
+    async enqueueJob(input) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .insert({
+          project_id: input.projectId,
+          site_id: input.siteId,
+          plan_id: input.planId,
+          approval_id: input.approvalId,
+          tool: input.tool,
+          args: input.args,
+          risk: input.risk,
+          idempotency_key: input.idempotencyKey,
+        })
+        .select('id')
+        .single();
+
+      if (!error) return (data as { id: string }).id;
+
+      // A retried execute must not create a second copy of the same step.
+      if (error.code === UNIQUE_VIOLATION) {
+        const { data: existing } = await supabase
+          .from('jobs')
+          .select('id')
+          .eq('site_id', input.siteId)
+          .eq('idempotency_key', input.idempotencyKey)
+          .maybeSingle();
+
+        return (existing as { id?: string } | null)?.id ?? null;
+      }
+
+      throw new Error(error.message);
+    },
+  };
+}
+
+export interface RecordSnapshotInput {
+  projectId: string;
+  siteId: string;
+  jobId: string;
+  resource: string;
+  before: unknown;
+  after?: unknown;
+}
+
+/** Stores a pre-write snapshot so a change can be undone later. */
+export async function recordSnapshot(input: RecordSnapshotInput): Promise<string | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('snapshots')
+    .insert({
+      project_id: input.projectId,
+      site_id: input.siteId,
+      job_id: input.jobId,
+      resource: input.resource,
+      before: input.before,
+      after: input.after ?? null,
+      checksum: createHash('sha256').update(JSON.stringify(input.before ?? null)).digest('hex'),
+      size_bytes: Buffer.byteLength(JSON.stringify(input.before ?? null), 'utf8'),
+    })
+    .select('id')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return (data as { id: string }).id;
+}
+
+export interface SnapshotRow {
+  id: string;
+  project_id: string;
+  site_id: string;
+  job_id: string | null;
+  resource: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  created_at: string;
+  restored_at?: string | null;
+}
+
+export async function getSnapshot(snapshotId: string): Promise<SnapshotRow | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.from('snapshots').select('*').eq('id', snapshotId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as SnapshotRow | null) ?? null;
+}
+
+export async function markSnapshotRestored(snapshotId: string, jobId: string | null): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return;
+
+  await supabase
+    .from('snapshots')
+    .update({ restored_at: new Date().toISOString(), restore_job_id: jobId })
+    .eq('id', snapshotId);
+}
+
+/** True when the site belongs to the given user (checked in SQL, not by trust). */
+export async function siteBelongsToUser(siteId: string, userId: string): Promise<boolean> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return false;
+
+  const { data, error } = await supabase
+    .from('sites')
+    .select('id, projects!inner(owner_id)')
+    .eq('id', siteId)
+    .maybeSingle();
+
+  if (error || !data) return false;
+  const owner = (data as { projects?: { owner_id?: string } }).projects?.owner_id;
+  return owner === userId;
+}
+
+/** Loads a site row plus its project for plan creation. */
+export async function getSiteContext(
+  siteId: string
+): Promise<{ id: string; projectId: string; status: string; url: string } | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('sites')
+    .select('id, project_id, status, url')
+    .eq('id', siteId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const row = data as { id: string; project_id: string; status: string; url: string };
+  return { id: row.id, projectId: row.project_id, status: row.status, url: row.url };
 }

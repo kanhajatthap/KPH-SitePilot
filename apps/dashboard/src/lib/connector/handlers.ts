@@ -7,6 +7,7 @@ import {
   type ConnectorJobStore,
   type JobStatus,
 } from './jobs';
+import { advancePlan, type PlanStore } from './plans';
 
 /**
  * Transport-independent connector endpoint logic.
@@ -28,6 +29,17 @@ export interface SiteWriter {
   applySiteInfo(siteId: string, info: Record<string, unknown>): Promise<void>;
 }
 
+export interface SnapshotWriter {
+  record(input: {
+    projectId: string;
+    siteId: string;
+    jobId: string;
+    resource: string;
+    before: unknown;
+    after?: unknown;
+  }): Promise<string | null>;
+}
+
 export interface ConnectorHandlerDeps {
   authStore: ConnectorAuthStore;
   jobStore: ConnectorJobStore;
@@ -35,6 +47,8 @@ export interface ConnectorHandlerDeps {
   encryptionKey: Buffer;
   nowSeconds?: () => number;
   isRateLimited?: (siteId: string) => boolean;
+  snapshots?: SnapshotWriter;
+  plans?: { store: PlanStore };
 }
 
 export interface HandlerOutput {
@@ -206,6 +220,8 @@ export async function handleJobResult(
     }
   }
 
+  const snapshot = ok ? (body.snapshot as Record<string, unknown> | undefined) : undefined;
+
   const finished = await deps.jobStore.finishJob({
     jobId,
     siteId: auth.site.id,
@@ -216,8 +232,54 @@ export async function handleJobResult(
     retryable,
   });
 
+  // A pre-write snapshot must be durable even if the user closes the tab: it is
+  // what makes one-click undo possible.
+  let snapshotId: string | null = null;
+  if (
+    finished.status === 'succeeded' &&
+    snapshot &&
+    typeof snapshot.resource === 'string' &&
+    snapshot.before &&
+    deps.snapshots
+  ) {
+    try {
+      snapshotId = await deps.snapshots.record({
+        projectId: auth.site.projectId,
+        siteId: auth.site.id,
+        jobId,
+        resource: snapshot.resource,
+        before: snapshot.before,
+        after: snapshot.after,
+      });
+    } catch {
+      // The write already happened; a missing snapshot is reported, not hidden.
+      snapshotId = null;
+    }
+  }
+
+  // Plans run one verified step at a time. A retryable failure leaves the job
+  // queued, so the plan stays open instead of being marked failed.
+  let planStatus: string | null = null;
+  if (job.plan_id && deps.plans && finished.status !== 'queued') {
+    const stepIndex = Number((job.args as { stepIndex?: number } | null)?.stepIndex ?? 0);
+    try {
+      const advanced = await advancePlan(
+        { planId: job.plan_id, stepIndex, succeeded: finished.status === 'succeeded' },
+        deps.plans
+      );
+      planStatus = advanced.planStatus;
+    } catch {
+      planStatus = null;
+    }
+  }
+
   return {
     status: 200,
-    body: { status: finished.status as JobStatus, attempts: finished.attempts },
+    body: {
+      status: finished.status as JobStatus,
+      attempts: finished.attempts,
+      snapshotId,
+      planStatus,
+    },
   };
 }

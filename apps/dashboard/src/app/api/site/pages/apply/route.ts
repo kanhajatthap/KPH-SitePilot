@@ -29,7 +29,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const target = validateLocalTarget(targetSite);
+    const target = validateLocalTarget(targetSite, {
+      saasMode: auth.context.mode === 'saas',
+    });
     if (!target.ok) return target.response;
 
     const siteAccess = await authorizeTargetSite(auth.context, target.targetSite);
