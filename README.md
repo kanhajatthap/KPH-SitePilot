@@ -22,7 +22,9 @@ A local-first, provider-independent agent workspace that reads, plans, drafts an
 ---
 
 > [!IMPORTANT]
-> **KPH SitePilot never touches production WordPress.** Every connection is validated against a local-only allowlist (`*.local`, `localhost`, `127.0.0.1`). Credentials stay server-side, writes are draft-only, and every mutating action requires a human approval checkpoint.
+> **The current build is local-only.** Every connection is validated against a local-only allowlist (`*.local`, `localhost`, `127.0.0.1`); credentials stay server-side, writes are draft-only, and every mutating action requires a human approval checkpoint.
+>
+> **Next (planned):** a hosted **SitePilot Connector** plugin so any WordPress site can connect with a pairing code and be managed from prompts — plan, approve, apply, verify, undo. See [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md).
 
 ## Why this exists
 
@@ -428,6 +430,7 @@ The same gates run in CI on every push and pull request to `main`.
 | **6** | Builder integrations: Gutenberg, Elementor, ACF, WooCommerce, FSE | ✅ |
 | **7** | Supabase SaaS foundation: auth, RLS, vault, rate limits | ✅ local · ☁️ hosted gated |
 | **8** | Security review, OWASP LLM matrix, release readiness | ✅ |
+| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector plugin, prompt-driven WordPress management | 🚧 planned · [master plan](./docs/sitepilot-master-plan.md) |
 
 ---
 
@@ -435,6 +438,9 @@ The same gates run in CI on every push and pull request to `main`.
 
 | Document | What it answers |
 |---|---|
+| [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md) | A–Z plan: audit, architecture, connector spec, tool catalog, free-tier constraints, roadmap |
+| [`docs/sitepilot-backlog.md`](./docs/sitepilot-backlog.md) | Micro-task execution backlog (`E0-01` … `E11-12`) |
+| [`docs/plan-progress.md`](./docs/plan-progress.md) | Evidence log for every executed task |
 | [`docs/architecture-decisions.md`](./docs/architecture-decisions.md) | Why the system is shaped this way (ADRs) |
 | [`docs/environment-setup.md`](./docs/environment-setup.md) | Verified toolchain inventory and setup record |
 | [`docs/deployment-guide.md`](./docs/deployment-guide.md) | Production deployment prerequisites |
