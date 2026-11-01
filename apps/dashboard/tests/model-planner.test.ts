@@ -100,6 +100,29 @@ describe('parseModelPlan', () => {
     expect(step?.args).toMatchObject({ title: 'Careers', type: 'page', status: 'draft' });
   });
 
+  it('accepts a publish step and keeps it at R2', () => {
+    const outcome = parseModelPlan(
+      JSON.stringify({ summary: 'Publish post 12', steps: [{ tool: 'content.publish', args: { id: 12 } }] })
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.plan.risk).toBe('R2');
+    expect(outcome.plan.steps[0].args).toEqual({ id: 12 });
+  });
+
+  it('accepts a block replacement only with a real id, index and html', () => {
+    const step = sanitizeStep({
+      tool: 'blocks.replace',
+      args: { id: 12, index: 2, html: '<!-- wp:heading --><h2>Hi</h2><!-- /wp:heading -->' },
+    });
+
+    expect(step?.args).toMatchObject({ id: 12, index: 2 });
+    expect(sanitizeStep({ tool: 'blocks.replace', args: { id: 12, index: 2 } })).toBeNull();
+    expect(sanitizeStep({ tool: 'blocks.replace', args: { id: 12, html: 'x' } })).toBeNull();
+    expect(sanitizeStep({ tool: 'blocks.replace', args: { id: 12, index: -3, html: 'x' } })).toBeNull();
+  });
+
   it('refuses invalid JSON and malformed plans', () => {
     expect(parseModelPlan('not json').ok).toBe(false);
     expect(parseModelPlan('{"steps":[]}').ok).toBe(false);

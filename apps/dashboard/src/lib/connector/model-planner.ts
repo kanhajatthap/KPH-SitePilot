@@ -31,6 +31,11 @@ const PLANNABLE_TOOLS = [
   'media.list',
   'terms.list',
   'menus.list',
+  'settings.get',
+  'blocks.parse',
+  'blocks.replace',
+  'content.publish',
+  'content.unpublish',
 ] as const;
 
 const WRITABLE_STATUSES = ['draft', 'pending', 'publish', 'private'] as const;
@@ -68,7 +73,10 @@ Allowed tools and argument rules:
 - content.create: {"title": string, "content"?: string, "type"?: "post"|"page", "status"?: "draft"|"pending"|"publish"|"private"}
 - content.get: {"id": <post id>}
 - content.list: {"postTypes"?: string[], "limit"?: number}
-- site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list: {} or their documented filters.
+- content.publish / content.unpublish: {"id": <post id>} — publishing makes content public.
+- blocks.parse: {"id": <post id>} — read the block tree of one post.
+- blocks.replace: {"id": <post id>, "index": <block index from blocks.parse>, "html": "<exactly one block of HTML>"}
+- site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
 
 Rules:
 - Never invent ids. If the request does not name a post or page id, you may only use content.create or a list/read tool.
@@ -170,10 +178,29 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       break;
     }
 
-    case 'content.get': {
+    case 'content.get':
+    case 'blocks.parse':
+    case 'content.publish':
+    case 'content.unpublish': {
       const id = asPositiveInt(args.id);
       if (!id) return null;
       cleaned.id = id;
+      break;
+    }
+
+    case 'blocks.replace': {
+      const id = asPositiveInt(args.id);
+      if (!id) return null;
+
+      const index = Number(args.index);
+      if (!Number.isInteger(index) || index < 0 || index > 500) return null;
+
+      const html = asText(args.html, 100_000);
+      if (!html) return null;
+
+      cleaned.id = id;
+      cleaned.index = index;
+      cleaned.html = html;
       break;
     }
 
@@ -220,6 +247,12 @@ function describeStep(tool: string, args: Record<string, unknown>): string {
       return `Read item ${String(args.id ?? '')}`;
     case 'content.list':
       return 'List content';
+    case 'content.publish':
+      return `Publish item ${String(args.id ?? '')}`;
+    case 'content.unpublish':
+      return `Move item ${String(args.id ?? '')} back to draft`;
+    case 'blocks.replace':
+      return `Replace block ${String(args.index ?? '')} of item ${String(args.id ?? '')}`;
     default:
       return `Run ${tool}`;
   }

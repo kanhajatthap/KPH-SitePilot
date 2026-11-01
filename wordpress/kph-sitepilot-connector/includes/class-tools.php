@@ -43,6 +43,12 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'terms.list',
 				'menus.list',
 				'settings.get',
+				'blocks.parse',
+				// Publishing is a distinct, auditable action even though it is a
+				// status change underneath.
+				'content.publish',
+				'content.unpublish',
+				'blocks.replace',
 			);
 		}
 
@@ -68,6 +74,10 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'terms.list'      => 'read',
 				'menus.list'      => 'read',
 				'settings.get'    => 'read',
+				'blocks.parse'    => 'read',
+				'content.publish' => 'content',
+				'content.unpublish' => 'content',
+				'blocks.replace'  => 'content',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -129,6 +139,14 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::menus_list();
 				case 'settings.get':
 					return self::settings_get( $args );
+				case 'blocks.parse':
+					return self::blocks_parse( $args );
+				case 'content.publish':
+					return self::content_publish( $args, 'publish' );
+				case 'content.unpublish':
+					return self::content_publish( $args, 'draft' );
+				case 'blocks.replace':
+					return self::blocks_replace( $args );
 			}
 
 			return new WP_Error( 'kph_sp_unknown_tool', 'Tool dispatch failed.' );
@@ -495,6 +513,224 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'readable' => $allowed,
 				'values'   => $values,
 			);
+		}
+
+		/**
+		 * Flattens the block tree of one post into a bounded, inspectable list.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function blocks_parse( $args ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$blocks = parse_blocks( (string) $post->post_content );
+			$flat   = self::flatten_blocks( $blocks );
+			$budget = 100;
+			$items  = array();
+
+			foreach ( $flat as $position => $block ) {
+				if ( $budget <= 0 ) {
+					break;
+				}
+				$budget--;
+
+				$items[] = array(
+					'index'     => $position,
+					'name'      => isset( $block['blockName'] ) && $block['blockName'] ? (string) $block['blockName'] : '',
+					'attributes' => isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
+					'html'      => isset( $block['innerHTML'] ) ? (string) $block['innerHTML'] : '',
+				);
+			}
+
+			return array(
+				'id'         => (int) $post->ID,
+				'count'      => count( $flat ),
+				'truncated'  => count( $flat ) > 100,
+				'blocks'     => $items,
+			);
+		}
+
+		/**
+		 * Replaces exactly one top-level block, then proves the rest survived.
+		 *
+		 * The whole document is re-serialised, so the verification compares the
+		 * block count and the replaced block's own HTML rather than the bytes.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function blocks_replace( $args ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$index = isset( $args['index'] ) ? (int) $args['index'] : -1;
+			if ( $index < 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'Field "index" must be a block index from blocks.parse.' );
+			}
+
+			$html = isset( $args['html'] ) ? (string) $args['html'] : '';
+			if ( '' === trim( $html ) ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'Field "html" is required for blocks.replace.' );
+			}
+
+			$blocks = parse_blocks( (string) $post->post_content );
+			if ( ! isset( $blocks[ $index ] ) ) {
+				return new WP_Error(
+					'kph_sp_block_not_found',
+					sprintf( 'This post has no block at index %d (it has %d).', $index, count( $blocks ) )
+				);
+			}
+
+			$replacement = parse_blocks( wp_kses_post( $html ) );
+			if ( count( $replacement ) !== 1 ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					sprintf( 'The replacement must be exactly one block, got %d.', count( $replacement ) )
+				);
+			}
+
+			$before         = self::snapshot( $post );
+			$blocks[ $index ] = $replacement[0];
+
+			$result = wp_update_post(
+				wp_slash(
+					array(
+						'ID'           => (int) $post->ID,
+						'post_content' => serialize_blocks( $blocks ),
+					)
+				),
+				true
+			);
+
+			if ( is_wp_error( $result ) ) {
+				return new WP_Error( 'kph_sp_write_failed', (string) $result->get_error_message() );
+			}
+			if ( 0 === (int) $result ) {
+				return new WP_Error( 'kph_sp_write_failed', 'WordPress refused the update.' );
+			}
+
+			$fresh = get_post( (int) $post->ID );
+			if ( ! $fresh ) {
+				return new WP_Error( 'kph_sp_read_failed', 'The post could not be read back after writing.' );
+			}
+
+			$after_blocks = parse_blocks( (string) $fresh->post_content );
+			$expected     = $replacement[0];
+
+			$same_count = count( $after_blocks ) === count( $blocks );
+			$same_block = isset( $after_blocks[ $index ] )
+				&& self::normalize_html( (string) ( $after_blocks[ $index ]['innerHTML'] ?? '' ) )
+					=== self::normalize_html( (string) ( $expected['innerHTML'] ?? '' ) );
+
+			if ( ! $same_count || ! $same_block ) {
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'WordPress stored a different block structure than requested; the change was not confirmed.',
+					array(
+						'before'           => $before,
+						'expectedBlocks'   => count( $blocks ),
+						'actualBlocks'     => count( $after_blocks ),
+						'expectedHtml'     => (string) ( $expected['innerHTML'] ?? '' ),
+						'actualHtml'       => isset( $after_blocks[ $index ] ) ? (string) ( $after_blocks[ $index ]['innerHTML'] ?? '' ) : '',
+					)
+				);
+			}
+
+			return array(
+				'verified' => true,
+				'id'       => (int) $post->ID,
+				'index'    => $index,
+				'name'     => isset( $expected['blockName'] ) ? (string) $expected['blockName'] : '',
+				'before'   => $before,
+				'after'    => self::read_back( (int) $post->ID ),
+			);
+		}
+
+		/**
+		 * Publishes or unpublishes through the verified update path, so a status
+		 * change keeps its snapshot and its undo like any other write.
+		 *
+		 * @param array<string,mixed> $args   Arguments.
+		 * @param string              $status Target status.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function content_publish( $args, $status ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			return self::apply_update( $post, array( 'status' => $status ) );
+		}
+
+		/**
+		 * Flattens nested blocks into document order, one entry per block.
+		 *
+		 * @param array<int,array<string,mixed>> $blocks Parsed blocks.
+		 * @return array<int,array<string,mixed>>
+		 */
+		private static function flatten_blocks( $blocks ) {
+			$flat = array();
+
+			foreach ( (array) $blocks as $block ) {
+				if ( ! is_array( $block ) ) {
+					continue;
+				}
+
+				if ( ! empty( $block['blockName'] ) || '' !== trim( (string) ( $block['innerHTML'] ?? '' ) ) ) {
+					$flat[] = $block;
+				}
+
+				if ( ! empty( $block['innerBlocks'] ) ) {
+					$flat = array_merge( $flat, self::flatten_blocks( $block['innerBlocks'] ) );
+				}
+			}
+
+			return $flat;
+		}
+
+		/**
+		 * Loads the post named by `args['id']`, refusing anything the connector
+		 * must not write (missing id, unknown post, non-public post type).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return WP_Post|WP_Error
+		 */
+		private static function load_writable_post( $args ) {
+			$id = isset( $args['id'] ) ? (int) $args['id'] : 0;
+			if ( $id <= 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'Field "id" must be a positive post or page id.' );
+			}
+
+			$post = get_post( $id );
+			if ( ! $post ) {
+				return new WP_Error( 'kph_sp_not_found', sprintf( 'Post %d does not exist on this site.', $id ) );
+			}
+
+			if ( ! self::is_writable_type( (string) $post->post_type ) ) {
+				return new WP_Error(
+					'kph_sp_unsupported_type',
+					sprintf( 'Post type "%s" is not writable through the connector.', (string) $post->post_type )
+				);
+			}
+
+			return $post;
+		}
+
+		/**
+		 * Whitespace-insensitive HTML comparison (WordPress re-serialises blocks).
+		 *
+		 * @param string $html HTML fragment.
+		 * @return string
+		 */
+		private static function normalize_html( $html ) {
+			return trim( (string) preg_replace( '/\s+/', ' ', (string) $html ) );
 		}
 
 		/**

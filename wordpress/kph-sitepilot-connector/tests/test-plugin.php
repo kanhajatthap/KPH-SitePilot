@@ -151,7 +151,14 @@ kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'term
 kph_sp_static_assert( false !== strpos( $tools_source, "'menus.list'" ), 'menus.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_get_nav_menu_items' ), 'menus.list reads real menu items' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'settings.get'" ), 'settings.get tool registered' );
-kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_option_not_allowed' ), 'settings.get refuses options outside its allowlist' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.parse'" ), 'blocks.parse tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.replace'" ), 'blocks.replace tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'serialize_blocks' ), 'blocks.replace re-serialises the whole document' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_block_not_found' ), 'blocks.replace refuses a missing index' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_verification_failed' ) && false !== strpos( $tools_source, 'actualBlocks' ), 'blocks.replace verifies the block structure' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.publish'" ), 'content.publish tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'content.unpublish'" ), 'content.unpublish tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function load_writable_post' ), 'content reads share one post guard' );kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_option_not_allowed' ), 'settings.get refuses options outside its allowlist' );
 kph_sp_static_assert( false === strpos( $tools_source, "'auth_key'" ), 'settings.get never exposes salts' );
 kph_sp_static_assert( false === strpos( $tools_source, 'db_password' ), 'settings.get never exposes database credentials' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'esc_url_raw' ), 'menu item URLs are sanitised' );
