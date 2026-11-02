@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "pretest": "node -e \"if (!require('node:fs').existsSync('./dist/index.js')) require('node:child_process').execSync('pnpm run build', { stdio: 'inherit' })\"",
     "test": "vitest run"
   },
   "dependencies": {

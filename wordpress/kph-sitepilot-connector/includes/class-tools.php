@@ -28,6 +28,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				// Read-only.
 				'site.info',
 				'site.health',
+				'site.logs',
 				'site.search',
 				'content.list',
 				'content.get',
@@ -41,12 +42,21 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'theme.info',
 				'users.list',
 				'media.list',
+				'media.update',
+				'media.restore',
+				'media.set_featured',
+				'media.restore_featured',
 				'terms.list',
 				'terms.create',
 				'terms.assign',
 				'terms.restore',
 				'menus.list',
+				'menus.save',
+				'menus.restore',
 				'settings.get',
+				'seo.meta.get',
+				'seo.meta.update',
+				'seo.meta.restore',
 				'blocks.parse',
 				// Publishing is a distinct, auditable action even though it is a
 				// status change underneath.
@@ -67,30 +77,40 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 		 */
 		public static function scope_for( $tool ) {
 			$map = array(
-				'site.info'       => 'read',
-				'site.health'     => 'read',
-				'site.search'     => 'read',
-				'content.list'    => 'read',
-				'content.get'     => 'read',
-				'content.update'  => 'content',
-				'content.create'  => 'content',
-				'content.restore' => 'content',
-				'plugins.list'    => 'site_ops',
-				'theme.info'      => 'read',
-				'users.list'      => 'site_ops',
-				'media.list'      => 'media',
-				'terms.list'      => 'read',
-				'terms.create'    => 'content',
-				'terms.assign'    => 'content',
-				'terms.restore'   => 'content',
-				'menus.list'      => 'read',
-				'settings.get'    => 'read',
-				'blocks.parse'    => 'read',
-				'content.publish' => 'content',
-				'content.unpublish' => 'content',
-				'blocks.replace'  => 'content',
-				'settings.update' => 'site_ops',
-				'settings.restore' => 'site_ops',
+				'site.info'              => 'read',
+				'site.health'            => 'read',
+				'site.logs'              => 'site_ops',
+				'site.search'            => 'read',
+				'content.list'           => 'read',
+				'content.get'            => 'read',
+				'content.update'         => 'content',
+				'content.create'         => 'content',
+				'content.restore'        => 'content',
+				'plugins.list'           => 'site_ops',
+				'theme.info'             => 'read',
+				'users.list'             => 'site_ops',
+				'media.list'             => 'media',
+				'media.update'           => 'media',
+				'media.restore'          => 'media',
+				'media.set_featured'     => 'content',
+				'media.restore_featured' => 'content',
+				'terms.list'             => 'read',
+				'terms.create'           => 'content',
+				'terms.assign'           => 'content',
+				'terms.restore'          => 'content',
+				'menus.list'             => 'read',
+				'menus.save'             => 'content',
+				'menus.restore'          => 'content',
+				'settings.get'           => 'read',
+				'seo.meta.get'           => 'read',
+				'seo.meta.update'        => 'content',
+				'seo.meta.restore'       => 'content',
+				'blocks.parse'           => 'read',
+				'content.publish'        => 'content',
+				'content.unpublish'      => 'content',
+				'blocks.replace'         => 'content',
+				'settings.update'        => 'site_ops',
+				'settings.restore'       => 'site_ops',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -128,6 +148,8 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return KPH_SP_Capabilities::manifest();
 				case 'site.health':
 					return self::site_health();
+				case 'site.logs':
+					return self::site_logs( $args );
 				case 'site.search':
 					return self::site_search( $args );
 				case 'content.list':
@@ -148,6 +170,14 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::users_list( $args );
 				case 'media.list':
 					return self::media_list( $args );
+				case 'media.update':
+					return self::media_update( $args );
+				case 'media.restore':
+					return self::media_restore( $args );
+				case 'media.set_featured':
+					return self::media_set_featured( $args, false );
+				case 'media.restore_featured':
+					return self::media_set_featured( $args, true );
 				case 'terms.list':
 					return self::terms_list( $args );
 				case 'terms.create':
@@ -158,8 +188,18 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::terms_restore( $args );
 				case 'menus.list':
 					return self::menus_list();
+				case 'menus.save':
+					return self::menus_save( $args );
+				case 'menus.restore':
+					return self::menus_restore( $args );
 				case 'settings.get':
 					return self::settings_get( $args );
+				case 'seo.meta.get':
+					return self::seo_meta_get( $args );
+				case 'seo.meta.update':
+					return self::seo_meta_update( $args );
+				case 'seo.meta.restore':
+					return self::seo_meta_restore( $args );
 				case 'blocks.parse':
 					return self::blocks_parse( $args );
 				case 'content.publish':
@@ -178,22 +218,37 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 		}
 
 		/**
-		 * Cheap health probe: no writes, no heavy queries.
+		 * Cheap health probe: no writes, no heavy queries (E4-03).
 		 *
 		 * @return array<string,mixed>
 		 */
 		private static function site_health() {
-			$uploads = wp_get_upload_dir();
+			$uploads   = wp_get_upload_dir();
+			$basedir   = isset( $uploads['basedir'] ) ? (string) $uploads['basedir'] : '';
+			$free_disk = null;
+
+			if ( '' !== $basedir && is_dir( $basedir ) && function_exists( 'disk_free_space' ) ) {
+				$raw_free = @disk_free_space( $basedir );
+				if ( false !== $raw_free && is_numeric( $raw_free ) ) {
+					$free_disk = (float) $raw_free;
+				}
+			}
 
 			return array(
-				'ok'              => true,
-				'wpVersion'       => get_bloginfo( 'version' ),
-				'phpVersion'      => PHP_VERSION,
-				'pluginVersion'   => KPH_SP_VERSION,
-				'filesystem'      => defined( 'FS_METHOD' ) ? (string) FS_METHOD : 'direct',
-				'uploadsWritable' => isset( $uploads['basedir'] ) ? (bool) wp_is_writable( $uploads['basedir'] ) : false,
-				'permalink'       => (string) get_option( 'permalink_structure', '' ),
-				'checkedAt'       => gmdate( 'c' ),
+				'ok'               => true,
+				'wpVersion'        => get_bloginfo( 'version' ),
+				'phpVersion'       => PHP_VERSION,
+				'pluginVersion'    => KPH_SP_VERSION,
+				'filesystem'       => defined( 'FS_METHOD' ) ? (string) FS_METHOD : 'direct',
+				'uploadsWritable'  => '' !== $basedir ? (bool) wp_is_writable( $basedir ) : false,
+				'uploadsFreeBytes' => $free_disk,
+				'maxUploadBytes'   => (int) wp_max_upload_size(),
+				'memoryLimit'      => (string) ini_get( 'memory_limit' ),
+				'debugMode'        => defined( 'WP_DEBUG' ) && WP_DEBUG,
+				'cronDisabled'     => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+				'https'            => (bool) is_ssl(),
+				'permalink'        => (string) get_option( 'permalink_structure', '' ),
+				'checkedAt'        => gmdate( 'c' ),
 			);
 		}
 
@@ -1173,12 +1228,36 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				return new WP_Error( 'kph_sp_invalid_argument', 'Unsupported post status for a new post.' );
 			}
 
-			$content = isset( $args['content'] ) ? wp_kses_post( (string) $args['content'] ) : '';
-			$slug    = isset( $args['slug'] ) ? sanitize_title( (string) $args['slug'] ) : '';
+			$content      = isset( $args['content'] ) ? wp_kses_post( (string) $args['content'] ) : '';
+			$excerpt      = isset( $args['excerpt'] ) ? wp_kses_post( (string) $args['excerpt'] ) : '';
+			$slug         = isset( $args['slug'] ) ? sanitize_title( (string) $args['slug'] ) : '';
+			$featured_id  = isset( $args['featuredMediaId'] ) ? (int) $args['featuredMediaId'] : 0;
+			$no_duplicate = ! empty( $args['preventDuplicateSlug'] );
+
+			if ( $no_duplicate ) {
+				$candidate_slug = '' !== $slug ? $slug : sanitize_title( $title );
+				if ( '' !== $candidate_slug ) {
+					$existing_post = get_page_by_path( $candidate_slug, OBJECT, $type );
+					if ( $existing_post ) {
+						return new WP_Error(
+							'kph_sp_duplicate_slug',
+							sprintf( 'A %s with slug "%s" already exists (#%d).', $type, $candidate_slug, (int) $existing_post->ID )
+						);
+					}
+				}
+			}
+
+			if ( $featured_id > 0 && 'attachment' !== get_post_type( $featured_id ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					sprintf( 'featuredMediaId %d is not a valid media attachment.', $featured_id )
+				);
+			}
 
 			$insert = array(
 				'post_title'   => $title,
 				'post_content' => $content,
+				'post_excerpt' => $excerpt,
 				'post_status'  => $status,
 				'post_type'    => $type,
 			);
@@ -1191,9 +1270,16 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				return new WP_Error( 'kph_sp_write_failed', (string) $id->get_error_message() );
 			}
 
+			if ( $featured_id > 0 ) {
+				set_post_thumbnail( (int) $id, $featured_id );
+			}
+
 			$after = self::read_back( (int) $id );
 			if ( is_wp_error( $after ) ) {
 				return $after;
+			}
+			if ( $featured_id > 0 ) {
+				$after['featuredMediaId'] = (int) get_post_thumbnail_id( (int) $id );
 			}
 
 			$verified = self::verify(
@@ -1549,6 +1635,909 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					'id'       => (int) $post->ID,
 					'taxonomy' => $taxonomy,
 					'termIds'  => $after_ids,
+				),
+			);
+		}
+
+		/**
+		 * Bounded, path- and secret-redacted tail of wp-content/debug.log (E4-05).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>
+		 */
+		private static function site_logs( $args ) {
+			$max_lines = isset( $args['lines'] ) ? (int) $args['lines'] : 50;
+			$max_lines = max( 1, min( 80, $max_lines ) );
+
+			$content_dir = defined( 'WP_CONTENT_DIR' ) ? (string) WP_CONTENT_DIR : ABSPATH . 'wp-content';
+			$candidate   = rtrim( $content_dir, '/\\' ) . '/debug.log';
+			$real_base   = realpath( $content_dir );
+			$real_log    = file_exists( $candidate ) ? realpath( $candidate ) : false;
+
+			if ( false === $real_base || false === $real_log || 0 !== strpos( $real_log, $real_base ) || ! is_readable( $real_log ) ) {
+				return array(
+					'exists'    => false,
+					'count'     => 0,
+					'truncated' => false,
+					'lines'     => array(),
+				);
+			}
+
+			$size      = (int) filesize( $real_log );
+			$max_bytes = 65536;
+			$truncated = $size > $max_bytes;
+			$raw       = '';
+
+			$fh = @fopen( $real_log, 'rb' );
+			if ( is_resource( $fh ) ) {
+				if ( $truncated ) {
+					@fseek( $fh, -$max_bytes, SEEK_END );
+				}
+				$chunk = @fread( $fh, $max_bytes );
+				if ( is_string( $chunk ) ) {
+					$raw = $chunk;
+				}
+				@fclose( $fh );
+			}
+
+			$raw_lines = preg_split( '/\r\n|\r|\n/', trim( $raw ) );
+			if ( ! is_array( $raw_lines ) ) {
+				$raw_lines = array();
+			}
+			if ( $truncated && count( $raw_lines ) > 1 ) {
+				// First line after mid-file seek may be partial; drop it cleanly.
+				array_shift( $raw_lines );
+			}
+
+			$tail    = array_slice( array_values( array_filter( $raw_lines, 'strlen' ) ), -$max_lines );
+			$cleaned = array();
+			foreach ( $tail as $line ) {
+				$sanitized = self::redact_log_line( (string) $line );
+				if ( '' !== $sanitized ) {
+					$cleaned[] = $sanitized;
+				}
+			}
+
+			return array(
+				'exists'    => true,
+				'count'     => count( $cleaned ),
+				'truncated' => $truncated || count( $raw_lines ) > $max_lines,
+				'lines'     => $cleaned,
+			);
+		}
+
+		/**
+		 * Redacts server paths, email addresses, and credential-like query tokens.
+		 *
+		 * @param string $line Raw debug.log line.
+		 * @return string
+		 */
+		private static function redact_log_line( $line ) {
+			$out = substr( $line, 0, 500 );
+			if ( class_exists( 'KPH_SP_Fatal' ) && method_exists( 'KPH_SP_Fatal', 'redact_paths' ) ) {
+				$out = KPH_SP_Fatal::redact_paths( $out );
+			}
+			if ( defined( 'ABSPATH' ) && '' !== ABSPATH ) {
+				$out = str_replace( ABSPATH, '[wp-root]/', $out );
+			}
+			$out = (string) preg_replace( '/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[redacted-email]', $out );
+			$out = (string) preg_replace( '/((?:api[_-]?key|token|secret|password|passwd|authorization)\s*[=:]\s*)[^\s&"\']+/i', '$1[redacted]', $out );
+			return trim( $out );
+		}
+
+		/**
+		 * Explicit allowlist of SEO post-meta keys (Yoast, Rank Math, SEOPress, SitePilot).
+		 *
+		 * @return string[]
+		 */
+		private static function allowed_seo_meta_keys() {
+			return array(
+				'_yoast_wpseo_title',
+				'_yoast_wpseo_metadesc',
+				'_yoast_wpseo_canonical',
+				'_yoast_wpseo_opengraph-title',
+				'_yoast_wpseo_opengraph-description',
+				'_yoast_wpseo_meta-robots-noindex',
+				'rank_math_title',
+				'rank_math_description',
+				'rank_math_canonical_url',
+				'rank_math_facebook_title',
+				'rank_math_facebook_description',
+				'rank_math_robots',
+				'_seopress_titles_title',
+				'_seopress_titles_desc',
+				'_seopress_robots_canonical',
+				'_seopress_social_fb_title',
+				'_seopress_social_fb_desc',
+				'_seopress_robots_index',
+				'_sitepilot_seo_title',
+				'_sitepilot_seo_description',
+				'_sitepilot_seo_canonical',
+				'_sitepilot_seo_og_title',
+				'_sitepilot_seo_og_description',
+				'_sitepilot_seo_noindex',
+			);
+		}
+
+		/**
+		 * Complete allowlist of post-meta keys writable by any Connector v1.0.0 tool.
+		 * Arbitrary post-meta keys are strictly refused.
+		 *
+		 * @return string[]
+		 */
+		private static function allowed_post_meta_keys() {
+			return array_merge(
+				array(
+					'_wp_attachment_image_alt',
+					'_thumbnail_id',
+				),
+				self::allowed_seo_meta_keys()
+			);
+		}
+
+		/**
+		 * Writes a single allowlisted post-meta key, refusing everything else.
+		 *
+		 * @param int    $object_id Post or attachment ID.
+		 * @param string $meta_key  Allowlisted meta key.
+		 * @param string $value     Sanitized string value.
+		 * @return true|WP_Error
+		 */
+		private static function update_allowlisted_post_meta( $object_id, $meta_key, $value ) {
+			if ( ! in_array( $meta_key, self::allowed_post_meta_keys(), true ) ) {
+				return new WP_Error(
+					'kph_sp_meta_not_allowed',
+					sprintf( 'Post meta key "%s" is not writable through the connector.', $meta_key )
+				);
+			}
+
+			update_post_meta( (int) $object_id, $meta_key, wp_slash( (string) $value ) );
+			return true;
+		}
+
+		/**
+		 * Detects the active SEO provider, defaulting to universal SitePilot meta keys.
+		 *
+		 * @return string
+		 */
+		private static function detect_seo_provider() {
+			if ( defined( 'WPSEO_VERSION' ) ) {
+				return 'yoast';
+			}
+			if ( class_exists( 'RankMath' ) || defined( 'RANK_MATH_VERSION' ) ) {
+				return 'rankmath';
+			}
+			if ( defined( 'SEOPRESS_VERSION' ) ) {
+				return 'seopress';
+			}
+			return 'sitepilot';
+		}
+
+		/**
+		 * Maps logical SEO fields to concrete allowlisted post-meta keys for a provider.
+		 *
+		 * @param string $provider Provider slug.
+		 * @return array<string,string>
+		 */
+		private static function seo_provider_keymap( $provider ) {
+			switch ( $provider ) {
+				case 'yoast':
+					return array(
+						'title'         => '_yoast_wpseo_title',
+						'description'   => '_yoast_wpseo_metadesc',
+						'canonical'     => '_yoast_wpseo_canonical',
+						'ogTitle'       => '_yoast_wpseo_opengraph-title',
+						'ogDescription' => '_yoast_wpseo_opengraph-description',
+						'noindex'       => '_yoast_wpseo_meta-robots-noindex',
+					);
+				case 'rankmath':
+					return array(
+						'title'         => 'rank_math_title',
+						'description'   => 'rank_math_description',
+						'canonical'     => 'rank_math_canonical_url',
+						'ogTitle'       => 'rank_math_facebook_title',
+						'ogDescription' => 'rank_math_facebook_description',
+						'noindex'       => 'rank_math_robots',
+					);
+				case 'seopress':
+					return array(
+						'title'         => '_seopress_titles_title',
+						'description'   => '_seopress_titles_desc',
+						'canonical'     => '_seopress_robots_canonical',
+						'ogTitle'       => '_seopress_social_fb_title',
+						'ogDescription' => '_seopress_social_fb_desc',
+						'noindex'       => '_seopress_robots_index',
+					);
+				default:
+					return array(
+						'title'         => '_sitepilot_seo_title',
+						'description'   => '_sitepilot_seo_description',
+						'canonical'     => '_sitepilot_seo_canonical',
+						'ogTitle'       => '_sitepilot_seo_og_title',
+						'ogDescription' => '_sitepilot_seo_og_description',
+						'noindex'       => '_sitepilot_seo_noindex',
+					);
+			}
+		}
+
+		/**
+		 * Encodes boolean noindex into the provider's native meta representation.
+		 *
+		 * @param string $provider Provider slug.
+		 * @param bool   $noindex  Desired noindex flag.
+		 * @return string
+		 */
+		private static function encode_seo_noindex( $provider, $noindex ) {
+			if ( ! $noindex ) {
+				return 'rankmath' === $provider ? 'index' : '';
+			}
+			if ( 'rankmath' === $provider ) {
+				return 'noindex';
+			}
+			if ( 'seopress' === $provider ) {
+				return 'yes';
+			}
+			return '1';
+		}
+
+		/**
+		 * Decodes a provider's stored noindex value into a boolean.
+		 *
+		 * @param string $provider Provider slug.
+		 * @param string $raw      Stored meta string.
+		 * @return bool
+		 */
+		private static function decode_seo_noindex( $provider, $raw ) {
+			$val = strtolower( trim( (string) $raw ) );
+			if ( 'rankmath' === $provider ) {
+				return false !== strpos( $val, 'noindex' );
+			}
+			if ( 'seopress' === $provider ) {
+				return 'yes' === $val || '1' === $val;
+			}
+			return '1' === $val || 'true' === $val || 'noindex' === $val;
+		}
+
+		/**
+		 * Reads SEO metadata for a public post (E7-01).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function seo_meta_get( $args ) {
+			$id = isset( $args['id'] ) ? (int) $args['id'] : 0;
+			if ( $id <= 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'seo.meta.get requires a positive integer id.' );
+			}
+
+			$post = get_post( $id );
+			if ( ! $post ) {
+				return new WP_Error( 'kph_sp_not_found', sprintf( 'Post %d does not exist.', $id ) );
+			}
+
+			$allowed_types = array_keys( get_post_types( array( 'public' => true ) ) );
+			if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+				return new WP_Error( 'kph_sp_not_allowed', 'That post type is not publicly addressable.' );
+			}
+
+			$provider = self::detect_seo_provider();
+			$keymap   = self::seo_provider_keymap( $provider );
+			$raw_meta = array();
+			foreach ( $keymap as $field => $meta_key ) {
+				$stored = get_post_meta( (int) $post->ID, $meta_key, true );
+				$raw_meta[ $meta_key ] = is_scalar( $stored ) ? (string) $stored : '';
+			}
+
+			return array(
+				'id'            => (int) $post->ID,
+				'provider'      => $provider,
+				'title'         => $raw_meta[ $keymap['title'] ],
+				'description'   => $raw_meta[ $keymap['description'] ],
+				'canonical'     => $raw_meta[ $keymap['canonical'] ],
+				'ogTitle'       => $raw_meta[ $keymap['ogTitle'] ],
+				'ogDescription' => $raw_meta[ $keymap['ogDescription'] ],
+				'noindex'       => self::decode_seo_noindex( $provider, $raw_meta[ $keymap['noindex'] ] ),
+				'meta'          => $raw_meta,
+			);
+		}
+
+		/**
+		 * Updates allowlisted SEO post-meta with snapshot, verification, and rollback (E7-02).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function seo_meta_update( $args ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$provider = self::detect_seo_provider();
+			$keymap   = self::seo_provider_keymap( $provider );
+			$writes   = array();
+
+			if ( array_key_exists( 'title', $args ) && null !== $args['title'] ) {
+				$writes[ $keymap['title'] ] = substr( sanitize_text_field( (string) $args['title'] ), 0, 300 );
+			}
+			if ( array_key_exists( 'description', $args ) && null !== $args['description'] ) {
+				$writes[ $keymap['description'] ] = substr( sanitize_textarea_field( (string) $args['description'] ), 0, 500 );
+			}
+			if ( array_key_exists( 'canonical', $args ) && null !== $args['canonical'] ) {
+				$raw_url = trim( (string) $args['canonical'] );
+				if ( '' !== $raw_url ) {
+					$clean_url = esc_url_raw( $raw_url );
+					if ( '' === $clean_url || ! preg_match( '/^https?:\/\//i', $clean_url ) ) {
+						return new WP_Error( 'kph_sp_invalid_argument', 'canonical must be a valid http(s) URL or empty string.' );
+					}
+					$writes[ $keymap['canonical'] ] = substr( $clean_url, 0, 500 );
+				} else {
+					$writes[ $keymap['canonical'] ] = '';
+				}
+			}
+			if ( array_key_exists( 'ogTitle', $args ) && null !== $args['ogTitle'] ) {
+				$writes[ $keymap['ogTitle'] ] = substr( sanitize_text_field( (string) $args['ogTitle'] ), 0, 300 );
+			}
+			if ( array_key_exists( 'ogDescription', $args ) && null !== $args['ogDescription'] ) {
+				$writes[ $keymap['ogDescription'] ] = substr( sanitize_textarea_field( (string) $args['ogDescription'] ), 0, 500 );
+			}
+			if ( array_key_exists( 'noindex', $args ) && is_bool( $args['noindex'] ) ) {
+				$writes[ $keymap['noindex'] ] = self::encode_seo_noindex( $provider, (bool) $args['noindex'] );
+			}
+
+			if ( empty( $writes ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'seo.meta.update requires at least one of title, description, canonical, ogTitle, ogDescription, or noindex.'
+				);
+			}
+
+			return self::apply_seo_meta_writes( (int) $post->ID, $provider, $writes, false );
+		}
+
+		/**
+		 * Restores allowlisted SEO post-meta from a snapshot (E7-02 undo).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function seo_meta_restore( $args ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$raw_meta = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args['meta'] : array();
+			if ( empty( $raw_meta ) ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'seo.meta.restore requires a non-empty "meta" map.' );
+			}
+
+			$allowed = self::allowed_seo_meta_keys();
+			$writes  = array();
+			foreach ( $raw_meta as $key => $value ) {
+				$clean_key = (string) $key;
+				if ( ! in_array( $clean_key, $allowed, true ) || ! is_string( $value ) ) {
+					return new WP_Error(
+						'kph_sp_meta_not_allowed',
+						sprintf( 'SEO meta key "%s" is not restorable.', $clean_key )
+					);
+				}
+				$writes[ $clean_key ] = substr( sanitize_textarea_field( $value ), 0, 1000 );
+			}
+
+			$provider = isset( $args['provider'] ) && is_string( $args['provider'] )
+				? sanitize_key( $args['provider'] )
+				: self::detect_seo_provider();
+
+			return self::apply_seo_meta_writes( (int) $post->ID, $provider, $writes, true );
+		}
+
+		/**
+		 * Shared snapshot → write → read-back → verify helper for SEO meta writes.
+		 *
+		 * @param int                  $post_id    Post ID.
+		 * @param string               $provider   SEO provider slug.
+		 * @param array<string,string> $writes     Map of allowlisted meta key => target string.
+		 * @param bool                 $is_restore True when invoked from `seo.meta.restore`.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function apply_seo_meta_writes( $post_id, $provider, $writes, $is_restore ) {
+			$before_meta = array();
+			foreach ( $writes as $meta_key => $expected_value ) {
+				$existing                 = get_post_meta( $post_id, $meta_key, true );
+				$before_meta[ $meta_key ] = is_scalar( $existing ) ? (string) $existing : '';
+			}
+
+			foreach ( $writes as $meta_key => $expected_value ) {
+				$res = self::update_allowlisted_post_meta( $post_id, $meta_key, $expected_value );
+				if ( is_wp_error( $res ) ) {
+					return $res;
+				}
+			}
+
+			$after_meta = array();
+			foreach ( $writes as $meta_key => $expected_value ) {
+				$actual                  = get_post_meta( $post_id, $meta_key, true );
+				$after_meta[ $meta_key ] = is_scalar( $actual ) ? (string) $actual : '';
+				if ( $after_meta[ $meta_key ] !== (string) $expected_value ) {
+					foreach ( $before_meta as $rollback_key => $rollback_val ) {
+						self::update_allowlisted_post_meta( $post_id, $rollback_key, $rollback_val );
+					}
+					return new WP_Error(
+						'kph_sp_verification_failed',
+						sprintf( 'SEO meta key "%s" did not match after write; rolled back.', $meta_key )
+					);
+				}
+			}
+
+			return array(
+				'verified'         => true,
+				'restored'         => (bool) $is_restore,
+				'id'               => $post_id,
+				'provider'         => $provider,
+				'snapshotResource' => sprintf( 'seo:%d', $post_id ),
+				'before'           => array(
+					'id'       => $post_id,
+					'provider' => $provider,
+					'meta'     => $before_meta,
+				),
+				'after'            => array(
+					'id'       => $post_id,
+					'provider' => $provider,
+					'meta'     => $after_meta,
+				),
+			);
+		}
+
+		/**
+		 * Updates media attachment alt text, title, caption, or description (E5-10).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function media_update( $args ) {
+			return self::mutate_media_attachment( $args, false );
+		}
+
+		/**
+		 * Restores media attachment metadata from a snapshot (E5-10 undo).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function media_restore( $args ) {
+			return self::mutate_media_attachment( $args, true );
+		}
+
+		/**
+		 * Shared snapshot → write → read-back → verify helper for media metadata.
+		 *
+		 * @param array<string,mixed> $args       Arguments.
+		 * @param bool                $is_restore True when restoring from snapshot.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function mutate_media_attachment( $args, $is_restore ) {
+			$id = isset( $args['id'] ) ? (int) $args['id'] : 0;
+			if ( $id <= 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'media.update requires a positive attachment id.' );
+			}
+
+			$attachment = get_post( $id );
+			if ( ! $attachment || 'attachment' !== $attachment->post_type ) {
+				return new WP_Error( 'kph_sp_not_found', sprintf( 'Attachment %d does not exist.', $id ) );
+			}
+
+			$has_alt   = array_key_exists( 'alt', $args ) && null !== $args['alt'];
+			$has_title = array_key_exists( 'title', $args ) && null !== $args['title'];
+			$has_cap   = array_key_exists( 'caption', $args ) && null !== $args['caption'];
+			$has_desc  = array_key_exists( 'description', $args ) && null !== $args['description'];
+
+			if ( ! $has_alt && ! $has_title && ! $has_cap && ! $has_desc ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'media.update requires at least one of alt, title, caption, or description.'
+				);
+			}
+
+			$before_alt = get_post_meta( $id, '_wp_attachment_image_alt', true );
+			$before     = array(
+				'id'          => $id,
+				'alt'         => is_scalar( $before_alt ) ? (string) $before_alt : '',
+				'title'       => (string) $attachment->post_title,
+				'caption'     => (string) $attachment->post_excerpt,
+				'description' => (string) $attachment->post_content,
+			);
+
+			$post_update = array( 'ID' => $id );
+			$expected    = $before;
+
+			if ( $has_title ) {
+				$clean_title               = substr( sanitize_text_field( (string) $args['title'] ), 0, 300 );
+				$post_update['post_title'] = $clean_title;
+				$expected['title']         = $clean_title;
+			}
+			if ( $has_cap ) {
+				$clean_cap                   = substr( wp_kses_post( (string) $args['caption'] ), 0, 1000 );
+				$post_update['post_excerpt'] = $clean_cap;
+				$expected['caption']         = $clean_cap;
+			}
+			if ( $has_desc ) {
+				$clean_desc                  = substr( wp_kses_post( (string) $args['description'] ), 0, 4000 );
+				$post_update['post_content'] = $clean_desc;
+				$expected['description']     = $clean_desc;
+			}
+
+			if ( count( $post_update ) > 1 ) {
+				$updated = wp_update_post( wp_slash( $post_update ), true );
+				if ( is_wp_error( $updated ) ) {
+					return new WP_Error( 'kph_sp_write_failed', (string) $updated->get_error_message() );
+				}
+			}
+
+			if ( $has_alt ) {
+				$clean_alt       = substr( sanitize_text_field( (string) $args['alt'] ), 0, 300 );
+				$expected['alt'] = $clean_alt;
+				$meta_res        = self::update_allowlisted_post_meta( $id, '_wp_attachment_image_alt', $clean_alt );
+				if ( is_wp_error( $meta_res ) ) {
+					return $meta_res;
+				}
+			}
+
+			$fresh     = get_post( $id );
+			$fresh_alt = get_post_meta( $id, '_wp_attachment_image_alt', true );
+			$after     = array(
+				'id'          => $id,
+				'alt'         => is_scalar( $fresh_alt ) ? (string) $fresh_alt : '',
+				'title'       => $fresh ? (string) $fresh->post_title : '',
+				'caption'     => $fresh ? (string) $fresh->post_excerpt : '',
+				'description' => $fresh ? (string) $fresh->post_content : '',
+			);
+
+			if ( $after['alt'] !== $expected['alt'] || $after['title'] !== $expected['title'] ) {
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'Media attachment metadata did not match on read-back.',
+					array(
+						'before' => $before,
+						'after'  => $after,
+					)
+				);
+			}
+
+			return array(
+				'verified'         => true,
+				'restored'         => (bool) $is_restore,
+				'id'               => $id,
+				'snapshotResource' => sprintf( 'media:%d', $id ),
+				'before'           => $before,
+				'after'            => $after,
+			);
+		}
+
+		/**
+		 * Sets or clears a writable post's featured image with snapshot & undo (E5-10).
+		 *
+		 * @param array<string,mixed> $args       Arguments.
+		 * @param bool                $is_restore True when restoring from snapshot.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function media_set_featured( $args, $is_restore ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			if ( ! isset( $args['mediaId'] ) || ! is_numeric( $args['mediaId'] ) ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'media.set_featured requires integer mediaId (0 to clear).' );
+			}
+
+			$media_id = (int) $args['mediaId'];
+			if ( $media_id < 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'mediaId cannot be negative.' );
+			}
+			if ( $media_id > 0 && 'attachment' !== get_post_type( $media_id ) ) {
+				return new WP_Error(
+					'kph_sp_not_found',
+					sprintf( 'Attachment %d does not exist.', $media_id )
+				);
+			}
+
+			$before_media_id = (int) get_post_thumbnail_id( (int) $post->ID );
+			if ( $media_id > 0 ) {
+				set_post_thumbnail( (int) $post->ID, $media_id );
+			} else {
+				$meta_res = self::update_allowlisted_post_meta( (int) $post->ID, '_thumbnail_id', '' );
+				if ( is_wp_error( $meta_res ) ) {
+					return $meta_res;
+				}
+			}
+
+			$after_media_id = (int) get_post_thumbnail_id( (int) $post->ID );
+			if ( $after_media_id !== $media_id ) {
+				if ( $before_media_id > 0 ) {
+					set_post_thumbnail( (int) $post->ID, $before_media_id );
+				} else {
+					self::update_allowlisted_post_meta( (int) $post->ID, '_thumbnail_id', '' );
+				}
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'Featured image ID did not match on read-back; rolled back.'
+				);
+			}
+
+			return array(
+				'verified'         => true,
+				'restored'         => (bool) $is_restore,
+				'id'               => (int) $post->ID,
+				'snapshotResource' => sprintf( 'featured:%d', (int) $post->ID ),
+				'before'           => array(
+					'id'      => (int) $post->ID,
+					'mediaId' => $before_media_id,
+				),
+				'after'            => array(
+					'id'      => (int) $post->ID,
+					'mediaId' => $after_media_id,
+				),
+			);
+		}
+
+		/**
+		 * Creates or updates a navigation menu, its items, and theme locations (E5-13).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function menus_save( $args ) {
+			$raw_items = isset( $args['items'] ) && is_array( $args['items'] ) ? $args['items'] : array();
+			if ( empty( $raw_items ) || count( $raw_items ) > 50 ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'menus.save requires between 1 and 50 items.'
+				);
+			}
+
+			$clean_items = self::sanitize_menu_items( $raw_items );
+			if ( is_wp_error( $clean_items ) ) {
+				return $clean_items;
+			}
+
+			$menu_id = isset( $args['menuId'] ) ? (int) $args['menuId'] : 0;
+			$name    = isset( $args['name'] ) && is_string( $args['name'] )
+				? sanitize_text_field( $args['name'] )
+				: '';
+
+			$menu_obj = null;
+			if ( $menu_id > 0 ) {
+				$menu_obj = wp_get_nav_menu_object( $menu_id );
+				if ( ! $menu_obj ) {
+					return new WP_Error( 'kph_sp_not_found', sprintf( 'Navigation menu %d does not exist.', $menu_id ) );
+				}
+			} elseif ( '' !== $name ) {
+				$existing = wp_get_nav_menu_object( $name );
+				if ( $existing ) {
+					$menu_obj = $existing;
+					$menu_id  = (int) $existing->term_id;
+				} else {
+					$created_id = wp_create_nav_menu( $name );
+					if ( is_wp_error( $created_id ) ) {
+						return $created_id;
+					}
+					$menu_id  = (int) $created_id;
+					$menu_obj = wp_get_nav_menu_object( $menu_id );
+				}
+			} else {
+				return new WP_Error( 'kph_sp_invalid_argument', 'menus.save requires either menuId or name.' );
+			}
+
+			$before_items     = self::read_menu_simple_items( $menu_id );
+			$before_locations = (array) get_nav_menu_locations();
+
+			$target_locations = $before_locations;
+			$requested_locs   = array();
+			if ( isset( $args['location'] ) && is_string( $args['location'] ) && '' !== $args['location'] ) {
+				$requested_locs[] = sanitize_key( $args['location'] );
+			}
+			if ( isset( $args['locations'] ) && is_array( $args['locations'] ) ) {
+				foreach ( $args['locations'] as $loc ) {
+					if ( is_string( $loc ) && '' !== $loc ) {
+						$requested_locs[] = sanitize_key( $loc );
+					}
+				}
+			}
+
+			if ( ! empty( $requested_locs ) ) {
+				$registered = array_keys( (array) get_registered_nav_menus() );
+				foreach ( array_unique( $requested_locs ) as $loc_slug ) {
+					if ( empty( $registered ) || in_array( $loc_slug, $registered, true ) ) {
+						$target_locations[ $loc_slug ] = $menu_id;
+					}
+				}
+			}
+
+			return self::apply_menu_state(
+				$menu_id,
+				$before_items,
+				$before_locations,
+				$clean_items,
+				$target_locations,
+				false
+			);
+		}
+
+		/**
+		 * Restores a navigation menu's items and locations from a snapshot (E5-13 undo).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function menus_restore( $args ) {
+			$menu_id = isset( $args['menuId'] ) ? (int) $args['menuId'] : 0;
+			if ( $menu_id <= 0 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'menus.restore requires a positive integer menuId.' );
+			}
+
+			$menu_obj = wp_get_nav_menu_object( $menu_id );
+			if ( ! $menu_obj ) {
+				return new WP_Error( 'kph_sp_not_found', sprintf( 'Navigation menu %d does not exist.', $menu_id ) );
+			}
+
+			$raw_items = isset( $args['items'] ) && is_array( $args['items'] ) ? $args['items'] : null;
+			if ( null === $raw_items || count( $raw_items ) > 100 ) {
+				return new WP_Error( 'kph_sp_invalid_argument', 'menus.restore requires an items array (0–100 items).' );
+			}
+
+			$clean_items = empty( $raw_items ) ? array() : self::sanitize_menu_items( $raw_items );
+			if ( is_wp_error( $clean_items ) ) {
+				return $clean_items;
+			}
+
+			$before_items     = self::read_menu_simple_items( $menu_id );
+			$before_locations = (array) get_nav_menu_locations();
+			$target_locations = $before_locations;
+
+			if ( isset( $args['locations'] ) && is_array( $args['locations'] ) ) {
+				$target_locations = array();
+				foreach ( $args['locations'] as $loc => $assigned_id ) {
+					$clean_loc = sanitize_key( (string) $loc );
+					if ( '' !== $clean_loc && is_numeric( $assigned_id ) && (int) $assigned_id >= 0 ) {
+						$target_locations[ $clean_loc ] = (int) $assigned_id;
+					}
+				}
+			}
+
+			return self::apply_menu_state(
+				$menu_id,
+				$before_items,
+				$before_locations,
+				$clean_items,
+				$target_locations,
+				true
+			);
+		}
+
+		/**
+		 * Sanitizes `{ title, url }` menu item entries.
+		 *
+		 * @param array<int,mixed> $raw_items Raw items list.
+		 * @return array<int,array<string,string>>|WP_Error
+		 */
+		private static function sanitize_menu_items( $raw_items ) {
+			$cleaned = array();
+			foreach ( $raw_items as $entry ) {
+				if ( ! is_array( $entry ) ) {
+					return new WP_Error( 'kph_sp_invalid_argument', 'Each menu item must be an object with title and url.' );
+				}
+				$title   = isset( $entry['title'] ) ? substr( sanitize_text_field( (string) $entry['title'] ), 0, 120 ) : '';
+				$raw_url = isset( $entry['url'] ) ? trim( (string) $entry['url'] ) : '';
+				$url     = '' !== $raw_url ? esc_url_raw( $raw_url ) : '';
+				if ( '' === $title || '' === $url ) {
+					return new WP_Error( 'kph_sp_invalid_argument', 'Each menu item requires a valid non-empty title and url.' );
+				}
+				$cleaned[] = array(
+					'title' => $title,
+					'url'   => $url,
+				);
+			}
+			return $cleaned;
+		}
+
+		/**
+		 * Reads simplified `{ title, url }` items for a nav menu.
+		 *
+		 * @param int $menu_id Term ID of nav menu.
+		 * @return array<int,array<string,string>>
+		 */
+		private static function read_menu_simple_items( $menu_id ) {
+			$existing = wp_get_nav_menu_items( $menu_id );
+			if ( ! is_array( $existing ) ) {
+				return array();
+			}
+			$items = array();
+			foreach ( $existing as $item ) {
+				$items[] = array(
+					'title' => (string) $item->title,
+					'url'   => (string) esc_url_raw( (string) $item->url ),
+				);
+			}
+			return $items;
+		}
+
+		/**
+		 * Replaces nav-menu items & theme locations with read-back verification.
+		 *
+		 * @param int                             $menu_id          Nav menu ID.
+		 * @param array<int,array<string,string>> $before_items     Snapshot items.
+		 * @param array<string,int>               $before_locations Snapshot locations.
+		 * @param array<int,array<string,string>> $target_items     Desired items.
+		 * @param array<string,int>               $target_locations Desired locations.
+		 * @param bool                            $is_restore       Whether called from restore.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function apply_menu_state(
+			$menu_id,
+			$before_items,
+			$before_locations,
+			$target_items,
+			$target_locations,
+			$is_restore
+		) {
+			$existing_items = wp_get_nav_menu_items( $menu_id );
+			if ( is_array( $existing_items ) ) {
+				foreach ( $existing_items as $existing_item ) {
+					$item_id = (int) $existing_item->ID;
+					if ( $item_id > 0 && 'nav_menu_item' === get_post_type( $item_id ) ) {
+						wp_delete_post( $item_id, true );
+					}
+				}
+			}
+
+			$position = 1;
+			foreach ( $target_items as $entry ) {
+				$added = wp_update_nav_menu_item(
+					$menu_id,
+					0,
+					array(
+						'menu-item-title'    => $entry['title'],
+						'menu-item-url'      => $entry['url'],
+						'menu-item-status'   => 'publish',
+						'menu-item-type'     => 'custom',
+						'menu-item-position' => $position,
+					)
+				);
+				if ( is_wp_error( $added ) ) {
+					return $added;
+				}
+				$position++;
+			}
+
+			if ( $target_locations !== $before_locations ) {
+				set_theme_mod( 'nav_menu_locations', $target_locations );
+			}
+
+			$after_items     = self::read_menu_simple_items( $menu_id );
+			$after_locations = (array) get_nav_menu_locations();
+
+			if ( count( $after_items ) !== count( $target_items ) ) {
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'Menu item count did not match after write.'
+				);
+			}
+
+			return array(
+				'verified'         => true,
+				'restored'         => (bool) $is_restore,
+				'menuId'           => $menu_id,
+				'snapshotResource' => sprintf( 'menu:%d', $menu_id ),
+				'before'           => array(
+					'menuId'    => $menu_id,
+					'items'     => $before_items,
+					'locations' => $before_locations,
+				),
+				'after'            => array(
+					'menuId'    => $menu_id,
+					'items'     => $after_items,
+					'locations' => $after_locations,
 				),
 			);
 		}

@@ -3,7 +3,7 @@
  * Plugin Name:       KPH SitePilot Connector
  * Plugin URI:        https://github.com/kanhajatthap/KPH-SitePilot
  * Description:       Connects this WordPress site to KPH SitePilot so an administrator can manage content, media, menus, settings, plugins, themes, WooCommerce, files and code from prompts — with plans, approval, snapshots and undo.
- * Version:           0.9.0
+ * Version:           1.0.0
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            KPH SitePilot
@@ -18,7 +18,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'KPH_SP_VERSION', '0.9.0' );
+define( 'KPH_SP_VERSION', '1.0.0' );
 define( 'KPH_SP_FILE', __FILE__ );
 define( 'KPH_SP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'KPH_SP_URL', plugin_dir_url( __FILE__ ) );

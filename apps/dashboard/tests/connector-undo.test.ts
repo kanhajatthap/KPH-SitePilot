@@ -107,6 +107,79 @@ describe('resolveUndoJob & sanitizeSettingsValues (E3-09 / E6-01)', () => {
       message: 'This operation cannot be undone automatically.',
     });
   });
+
+  it('resolves seo:<id>, media:<id>, featured:<id>, and menu:<id> snapshots cleanly and blocks arbitrary meta keys', () => {
+    expect(
+      resolveUndoJob({
+        resource: 'seo:12',
+        before: {
+          id: 12,
+          provider: 'yoast',
+          meta: { _yoast_wpseo_title: 'Before SEO Title', _yoast_wpseo_metadesc: 'Before Desc' },
+        },
+      })
+    ).toEqual({
+      ok: true,
+      tool: 'seo.meta.restore',
+      args: {
+        id: 12,
+        provider: 'yoast',
+        meta: { _yoast_wpseo_title: 'Before SEO Title', _yoast_wpseo_metadesc: 'Before Desc' },
+      },
+      risk: 'R1',
+    });
+
+    // Reject non-allowlisted meta key injection
+    const poisonedSeo = resolveUndoJob({
+      resource: 'seo:12',
+      before: { id: 12, meta: { wp_capabilities: 'a:1:{s:13:"administrator";b:1;}' } },
+    });
+    expect(poisonedSeo.ok).toBe(false);
+
+    expect(
+      resolveUndoJob({
+        resource: 'media:5',
+        before: { id: 5, alt: 'Old alt', title: 'Hero', caption: '', description: '' },
+      })
+    ).toEqual({
+      ok: true,
+      tool: 'media.restore',
+      args: { id: 5, alt: 'Old alt', title: 'Hero', caption: '', description: '' },
+      risk: 'R1',
+    });
+
+    expect(
+      resolveUndoJob({
+        resource: 'featured:12',
+        before: { id: 12, mediaId: 0 },
+      })
+    ).toEqual({
+      ok: true,
+      tool: 'media.restore_featured',
+      args: { id: 12, mediaId: 0 },
+      risk: 'R1',
+    });
+
+    expect(
+      resolveUndoJob({
+        resource: 'menu:3',
+        before: {
+          menuId: 3,
+          items: [{ title: 'Home', url: 'https://example.com/' }],
+          locations: { primary: 3 },
+        },
+      })
+    ).toEqual({
+      ok: true,
+      tool: 'menus.restore',
+      args: {
+        menuId: 3,
+        items: [{ title: 'Home', url: 'https://example.com/' }],
+        locations: { primary: 3 },
+      },
+      risk: 'R1',
+    });
+  });
 });
 
 describe('POST /api/connector/snapshots/[id]/undo route (E3-09 / E6-01)', () => {

@@ -21,6 +21,7 @@
     "@wp-agent/contracts": "workspace:*",
     "@wp-agent/model-adapters": "workspace:*",
     "@wp-agent/supabase": "workspace:*",
+    "@wp-agent/wp-tools": "workspace:*",
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

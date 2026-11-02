@@ -368,6 +368,9 @@ export default function ConnectPage() {
           <Link href="/studio" className="text-pink-700 underline">
             Studio
           </Link>
+          <Link href="/activity" className="text-pink-700 underline">
+            Activity log
+          </Link>
           <Link href="/settings/site" className="text-pink-700 underline">
             Site settings
           </Link>
@@ -446,10 +449,10 @@ export default function ConnectPage() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <a
             href="/downloads/kph-sitepilot-connector.zip"
-            download="kph-sitepilot-connector-0.9.0.zip"
+            download="kph-sitepilot-connector-1.0.0.zip"
             className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
           >
-            <span>⬇ Download WordPress Plugin (v0.9.0 .zip)</span>
+            <span>⬇ Download WordPress Plugin (v1.0.0 .zip)</span>
           </a>
           <a
             href="https://github.com/kanhajatthap/KPH-SitePilot/releases/latest"

@@ -159,6 +159,69 @@ describe('parseModelPlan', () => {
     expect(sanitizeStep({ tool: 'settings.restore', args: { values: { blogname: 'Old' } } })).toBeNull();
   });
 
+  it('sanitizes Connector v1.0.0 tools (seo.meta, media, menus, site.logs) and rejects restore tools', () => {
+    expect(
+      sanitizeStep({
+        tool: 'seo.meta.update',
+        args: { id: 12, title: '2026 Guide', description: 'Practical notes', noindex: false },
+      })
+    ).toMatchObject({
+      tool: 'seo.meta.update',
+      args: { id: 12, title: '2026 Guide', description: 'Practical notes', noindex: false },
+      risk: 'R1',
+    });
+    expect(
+      sanitizeStep({
+        tool: 'seo.meta.update',
+        args: { id: 12, canonical: 'javascript:alert(1)' },
+      })
+    ).toBeNull();
+    expect(sanitizeStep({ tool: 'seo.meta.restore', args: { id: 12, meta: {} } })).toBeNull();
+
+    expect(
+      sanitizeStep({
+        tool: 'media.update',
+        args: { id: 5, alt: 'Dashboard overview' },
+      })
+    ).toMatchObject({
+      tool: 'media.update',
+      args: { id: 5, alt: 'Dashboard overview' },
+      risk: 'R1',
+    });
+
+    expect(
+      sanitizeStep({
+        tool: 'media.set_featured',
+        args: { id: 12, mediaId: 0 },
+      })
+    ).toMatchObject({
+      tool: 'media.set_featured',
+      args: { id: 12, mediaId: 0 },
+      risk: 'R1',
+    });
+
+    expect(
+      sanitizeStep({
+        tool: 'menus.save',
+        args: {
+          name: 'Primary',
+          location: 'primary',
+          items: [{ title: 'Home', url: '/' }],
+        },
+      })
+    ).toMatchObject({
+      tool: 'menus.save',
+      args: { name: 'Primary', location: 'primary', items: [{ title: 'Home', url: '/' }] },
+      risk: 'R1',
+    });
+
+    expect(sanitizeStep({ tool: 'site.logs', args: { lines: 500 } })).toMatchObject({
+      tool: 'site.logs',
+      args: { lines: 200 },
+      risk: 'R0',
+    });
+  });
+
   it('refuses invalid JSON and malformed plans', () => {
     expect(parseModelPlan('not json').ok).toBe(false);
     expect(parseModelPlan('{"steps":[]}').ok).toBe(false);
