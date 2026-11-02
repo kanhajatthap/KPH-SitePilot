@@ -18,6 +18,7 @@
  */
 
 import { getSupabasePublicConfig } from '../supabase/config';
+import { mailerStatus } from './mailer';
 import {
   emailRedirectTargets,
   resolveSiteUrl,
@@ -46,6 +47,11 @@ export interface AuthDiagnostics {
   emailRedirects: EmailRedirectTargets;
   /** Supabase settings cannot be read with the anon key — always `unverified` here. */
   emailDelivery: 'unverified' | 'not-configured';
+  /**
+   * Whether the app sends its own mail. `false` means delivery depends entirely
+   * on the project's SMTP, which is the usual reason nothing arrives.
+   */
+  mailer: { configured: boolean; provider: 'resend'; from: string | null };
   warnings: string[];
   nextSteps: string[];
   provider?: ProviderCheck;
@@ -89,8 +95,16 @@ export function localAuthDiagnostics(
     warnings.push('Supabase is not configured on this deployment, so no auth email can be sent.');
   }
 
+  const mailer = mailerStatus(env);
+  if (authEnabled && !mailer.configured) {
+    warnings.push(
+      'No app-side mailer is configured (RESEND_API_KEY + SITEPILOT_MAIL_FROM), so authentication email depends on the Supabase project SMTP.'
+    );
+  }
+
   return {
     authEnabled,
+    mailer,
     siteUrl: {
       url: resolved.url,
       source: resolved.source,

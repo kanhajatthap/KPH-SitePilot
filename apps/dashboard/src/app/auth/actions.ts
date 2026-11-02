@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { safeNextPath } from '../../lib/auth/redirect';
 import { confirmationRedirectUrl, recoveryRedirectUrl } from '../../lib/auth/site-url';
+import { createAuthEmailLink } from '../../lib/auth/email-links';
+import { mailerConfig, sendAuthMail, type AuthMailKind } from '../../lib/auth/mailer';
 import { siteOrigin } from '../../lib/auth/request-site-url';
 
 type AuthErrorCode =
@@ -80,6 +82,32 @@ function confirmationMatches(formData: FormData, password: string): boolean {
  */
 async function siteUrl(): Promise<string> {
   return siteOrigin();
+}
+
+type OwnMailOutcome = 'sent' | 'skipped' | 'unreachable' | 'rejected';
+
+/**
+ * Sends an authentication link from our own mailer, when one is configured.
+ *
+ * `skipped` is not an error: it means the caller should use the Supabase path
+ * instead. That is what keeps this additive — an unset `RESEND_API_KEY` leaves
+ * behaviour exactly as it was before this module existed.
+ */
+async function deliverOwnAuthMail(
+  kind: AuthMailKind,
+  email: string,
+  next: string
+): Promise<OwnMailOutcome> {
+  if (!mailerConfig()) return 'skipped';
+
+  const link = await createAuthEmailLink({ kind, email, siteOrigin: await siteUrl(), next });
+  if (!link.ok) return 'skipped';
+
+  const result = await sendAuthMail({ to: email, kind, url: link.url });
+  if (result.ok) return 'sent';
+  if (result.reason === 'unreachable') return 'unreachable';
+  if (result.reason === 'rejected') return 'rejected';
+  return 'skipped';
 }
 
 function mapAuthError(
@@ -169,6 +197,12 @@ export async function signUp(formData: FormData): Promise<void> {
   // Email confirmation disabled: a session is returned and the user is signed in.
   if (data.session) redirect(next);
 
+  // Supabase's built-in mailer only reaches project members, so a freshly
+  // created account can sit unconfirmed forever. When our own mailer is
+  // configured, send the link ourselves. A failure here must not turn a created
+  // account into an error screen — the login page has a resend panel for this.
+  await deliverOwnAuthMail('confirmation', email, next);
+
   ok('/login', 'check-email', next);
 }
 
@@ -178,6 +212,12 @@ export async function requestPasswordReset(formData: FormData): Promise<void> {
 
   const email = normaliseEmail(formValue(formData, 'email'));
   if (!isValidEmail(email)) fail('/forgot-password', 'email-invalid');
+
+  // Recovery is the one email a user cannot work around, so the configured
+  // mailer gets first refusal; Supabase stays the fallback.
+  const own = await deliverOwnAuthMail('recovery', email, '/reset-password');
+  if (own === 'sent') ok('/forgot-password', 'reset-sent');
+  if (own === 'unreachable') fail('/forgot-password', 'auth-unreachable');
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: recoveryRedirectUrl(await siteUrl()),
@@ -235,6 +275,11 @@ export async function resendConfirmation(formData: FormData): Promise<void> {
 
   const email = normaliseEmail(formValue(formData, 'email'));
   if (!isValidEmail(email)) fail('/login', 'email-invalid', next);
+
+  const own = await deliverOwnAuthMail('confirmation', email, next);
+  if (own === 'sent') ok('/login', 'confirmation-resent', next);
+  if (own === 'unreachable') fail('/login', 'auth-unreachable', next);
+  if (own === 'rejected') fail('/login', 'resend-failed', next);
 
   const { error } = await supabase.auth.resend({
     type: 'signup',

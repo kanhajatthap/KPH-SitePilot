@@ -105,6 +105,45 @@ Expected: `siteUrl.source` is `configured` or `vercel-*`, `trusted` is `true`,
 `warnings` is `[]`, and the clicked link lands on
 `https://kph-sitepilot.vercel.app/auth/confirm?…`.
 
+## 3.5 The escape hatch: mail without the Supabase dashboard
+
+Sometimes the person who can deploy the app is not the person who owns the
+Supabase project — and custom SMTP only exists inside that project's dashboard.
+Blocking authentication email on somebody else's login is a bad trade, so the
+app can send the two emails it actually needs by itself.
+
+Set **both** of these in the deployment environment:
+
+| Variable | Value |
+|---|---|
+| `RESEND_API_KEY` | `re_…` from Resend |
+| `SITEPILOT_MAIL_FROM` | `no-reply@<domain verified in Resend>` (or `KPH SitePilot <no-reply@…>`) |
+
+Then, per auth flow:
+
+- **confirmation** — `auth.admin.generateLink({ type: 'magiclink' })` mints a
+  single-use token, the app builds
+  `{origin}/auth/confirm?token_hash=…&type=magiclink&next=/` itself (so a wrong
+  `Site URL` in the dashboard cannot break it) and mails it. Clicking it
+  confirms the address and signs the user in — the outcome the confirmation mail
+  asked for anyway.
+- **recovery** — same, with `type=recovery` and `next=/reset-password`.
+
+Why `magiclink` and not `signup`: a `signup` link requires the account's
+password, and the only moment we hold it is inside the request that created the
+account. Retaining passwords to re-mint links later is not a trade worth making.
+
+Behaviour, honestly stated:
+
+- **No variables set** → nothing changes; every flow uses Supabase's mailer.
+- **Variables set** → our mailer goes first; a provider rejection or a missing
+  token falls back to Supabase, so the worst case is the current behaviour.
+- `GET /api/auth/status` now reports `mailer: {configured, provider, from}` and
+  warns when no app-side mailer is configured. It never leaks the key.
+- Deliverability still depends on the sender domain being verified in Resend
+  (SPF + DKIM). A rejected send surfaces as `rejected` in the logs and as
+  `resend-failed` on `/login`, not as a silent success.
+
 ## 4. Supabase project settings (owner action)
 
 Project: `zgkewnhrymswhucigtib` (the one the production env points at).
