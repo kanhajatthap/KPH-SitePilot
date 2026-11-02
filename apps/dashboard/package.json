@@ -4,7 +4,9 @@
   "private": true,
   "description": "Lovable-style conversational AI WordPress dashboard for KPH SitePilot",
   "scripts": {
+    "predev": "node ../../scripts/build-connector-zip.mjs",
     "dev": "next dev -p 3002",
+    "prebuild": "node ../../scripts/build-connector-zip.mjs",
     "build": "next build",
     "start": "next start -p 3002",
     "typecheck": "tsc --noEmit",

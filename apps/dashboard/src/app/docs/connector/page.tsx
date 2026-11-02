@@ -16,13 +16,26 @@ const REQUIREMENTS = [
 
 const STEPS: Array<{ title: string; body: React.ReactNode }> = [
   {
-    title: '1 — Get the connector ZIP',
+    title: '1 — Download the connector ZIP',
     body: (
       <>
-        The plugin is versioned with the repository. Build the archive locally with{' '}
-        <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px]">pnpm connector:zip</code> (writes{' '}
-        <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px]">dist/kph-sitepilot-connector-&lt;version&gt;.zip</code>),
-        or download the artifact named <strong>kph-sitepilot-connector</strong> from the latest green CI run.
+        <a
+          href="/downloads/kph-sitepilot-connector.zip"
+          download="kph-sitepilot-connector-0.9.0.zip"
+          className="mr-2 inline-block rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800"
+        >
+          ⬇ Download KPH SitePilot Connector (v0.9.0 .zip)
+        </a>
+        or grab the archive from{' '}
+        <a
+          href="https://github.com/kanhajatthap/KPH-SitePilot/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+          className="text-pink-700 underline"
+        >
+          GitHub Releases
+        </a>
+        .
       </>
     ),
   },

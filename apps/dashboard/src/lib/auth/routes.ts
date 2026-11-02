@@ -82,6 +82,7 @@ export function isSafeStaticPath(pathname: string): boolean {
   return (
     pathname.startsWith('/_next/static') ||
     pathname.startsWith('/_next/image') ||
+    pathname.startsWith('/downloads/') ||
     pathname === '/favicon.ico' ||
     pathname === '/robots.txt' ||
     pathname === '/manifest.webmanifest'
