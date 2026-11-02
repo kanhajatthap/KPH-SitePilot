@@ -158,7 +158,7 @@ kph_sp_static_assert( false !== strpos( $tools_source, "'terms.restore'" ), 'ter
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_set_object_terms' ), 'terms.assign uses wp_set_object_terms' );
 kph_sp_static_assert( false === strpos( $tools_source, "user_email" ), 'users.list never returns email addresses' );
 kph_sp_static_assert( false === strpos( $tools_source, "user_pass" ), 'users.list never returns password hashes' );
-kph_sp_static_assert( false !== strpos( $tools_source, "'media'      =>" ) || false !== strpos( $tools_source, "'media.list'      => 'media'" ), 'media reads require the media scope' );
+kph_sp_static_assert( 1 === preg_match( "/'media\\.list'\\s*=>\\s*'media'/", $tools_source ), 'media reads require the media scope' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'terms.list is limited to public taxonomies' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'menus.list'" ), 'menus.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_get_nav_menu_items' ), 'menus.list reads real menu items' );
@@ -166,7 +166,7 @@ kph_sp_static_assert( false !== strpos( $tools_source, "'settings.get'" ), 'sett
 kph_sp_static_assert( false !== strpos( $tools_source, "'settings.update'" ), 'settings.update tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'settings.restore'" ), 'settings.restore tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'function writable_settings_keys' ), 'settings.update enforces a dedicated write allowlist' );
-kph_sp_static_assert( false !== strpos( $tools_source, "'settings.update' => 'site_ops'" ), 'settings.update requires site_ops scope' );
+kph_sp_static_assert( 1 === preg_match( "/'settings\\.update'\\s*=>\\s*'site_ops'/", $tools_source ), 'settings.update requires site_ops scope' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.parse'" ), 'blocks.parse tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.replace'" ), 'blocks.replace tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'serialize_blocks' ), 'blocks.replace re-serialises the whole document' );
