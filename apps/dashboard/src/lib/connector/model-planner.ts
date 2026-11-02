@@ -44,6 +44,7 @@ const PLANNABLE_TOOLS = [
 ] as const;
 
 const WRITABLE_STATUSES = ['draft', 'pending', 'publish', 'private'] as const;
+const CREATABLE_STATUSES = ['draft', 'pending', 'publish'] as const;
 const RISK_ORDER: Risk[] = ['R0', 'R1', 'R2', 'R3'];
 
 const StepSchema = z.object({
@@ -74,8 +75,8 @@ Reply with ONE JSON object and nothing else:
 {"summary": "<one sentence describing the outcome>", "steps": [{"tool": "<tool name>", "args": {<arguments>}, "summary": "<one sentence>"}]}
 
 Allowed tools and argument rules:
-- content.update: {"id": <post or page id>, "title"?: string, "content"?: string (HTML allowed), "excerpt"?: string, "status"?: "draft"|"pending"|"publish"|"private"} — at least one of title/content/excerpt/status.
-- content.create: {"title": string, "content"?: string, "type"?: "post"|"page", "status"?: "draft"|"pending"|"publish"|"private"}
+- content.update: {"id": <post or page id>, "title"?: string, "content"?: string (Gutenberg block HTML allowed), "excerpt"?: string, "status"?: "draft"|"pending"|"publish"|"private"} — at least one of title/content/excerpt/status.
+- content.create: {"title": string, "content"?: string (Gutenberg block HTML), "type"?: "post"|"page", "status"?: "draft"|"pending"|"publish", "slug"?: string}
 - content.get: {"id": <post id>}
 - content.list: {"postTypes"?: string[], "limit"?: number}
 - content.publish / content.unpublish: {"id": <post id>} — publishing makes content public.
@@ -88,7 +89,8 @@ Allowed tools and argument rules:
 - site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
 
 Rules:
-- Never invent ids. If the request does not name a post or page id, you may only use content.create or a list/read tool.
+- Never invent ids. If the request does not name a post or page id, you may only use content.create, settings.update, terms.create, or a list/read/search tool.
+- When asked to design, build, or create a homepage, landing page, Elementor layout, or multi-section page without an existing id, use content.create with "type": "page", "status": "draft" (unless explicitly asked to publish), and rich WordPress Gutenberg block HTML ("<!-- wp:group -->", "<!-- wp:heading -->", "<!-- wp:paragraph -->", "<!-- wp:columns -->", "<!-- wp:buttons -->") containing tailored copy, headings, feature cards, and call-to-action buttons that work seamlessly in Hello Elementor and Gutenberg.
 - Copy any quoted replacement text exactly as written; do not translate or embellish it.
 - Use the fewest steps that satisfy the request. One change per step.
 - Do not add steps the user did not ask for.`;
@@ -175,8 +177,12 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       const type = typeof args.type === 'string' ? args.type.trim().toLowerCase() : 'page';
       if (!['post', 'page'].includes(type)) return null;
 
-      const status = typeof args.status === 'string' ? args.status.trim().toLowerCase() : 'draft';
-      if (!(WRITABLE_STATUSES as readonly string[]).includes(status)) return null;
+      const rawStatus = typeof args.status === 'string' ? args.status.trim().toLowerCase() : 'draft';
+      if (!(WRITABLE_STATUSES as readonly string[]).includes(rawStatus)) return null;
+      // PHP `content.create` accepts draft | pending | publish; coerce private -> draft.
+      const status = (CREATABLE_STATUSES as readonly string[]).includes(rawStatus)
+        ? rawStatus
+        : 'draft';
 
       cleaned.title = title;
       cleaned.type = type;
@@ -184,6 +190,17 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
 
       const content = asText(args.content, 100_000);
       if (content) cleaned.content = content;
+
+      const slug =
+        typeof args.slug === 'string'
+          ? args.slug
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9-]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .slice(0, 200)
+          : '';
+      if (slug) cleaned.slug = slug;
       break;
     }
 
@@ -441,9 +458,13 @@ export async function planWithModel(
     baseUrlOverride: gateway.baseUrlOverride,
   });
 
+  // Note: in production (`!gateway.fetchImpl`), `requestJsonCompletion` already
+  // queries `/v1beta/models` and cascades across up to 3 live Flash models.
+  // When a custom `fetchImpl` is injected (unit tests), fall back explicitly.
   if (
     !completion.ok &&
     gateway.provider === 'gemini' &&
+    Boolean(gateway.fetchImpl) &&
     !gateway.model &&
     primaryModel !== GEMINI_FALLBACK_PLANNER_MODEL &&
     shouldRetryOnGeminiFallback(completion.reason)

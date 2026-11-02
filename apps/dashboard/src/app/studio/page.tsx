@@ -24,6 +24,14 @@ interface ConnectedSite {
   last_seen_at: string | null;
 }
 
+interface MaskedProviderKey {
+  provider: string;
+  label: string;
+  configured: boolean;
+  last4: string | null;
+  status: string;
+}
+
 interface PlanStep {
   tool: string;
   args: Record<string, unknown>;
@@ -95,16 +103,40 @@ function formatStepArgs(args: Record<string, unknown>): string | null {
           .join(', ');
         return `${key}: { ${nested} }`;
       }
-      const rendered = typeof value === 'string' && value.length > 90
-        ? `${JSON.stringify(value.slice(0, 87))}…`
-        : JSON.stringify(value);
+      const rendered =
+        typeof value === 'string' && value.length > 90
+          ? `${JSON.stringify(value.slice(0, 87))}…`
+          : JSON.stringify(value);
       return `${key}: ${rendered}`;
     })
     .join(' · ');
 }
 
+function extractPostOutcome(
+  result: Record<string, unknown> | null,
+  siteBaseUrl?: string
+): { id: number; title?: string; status?: string; link?: string; editUrl?: string } | null {
+  if (!result || typeof result !== 'object') return null;
+  const candidate =
+    result.after && typeof result.after === 'object'
+      ? (result.after as Record<string, unknown>)
+      : result;
+  const rawId = candidate.id ?? result.createdId;
+  const id = typeof rawId === 'number' ? rawId : Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+
+  const title = typeof candidate.title === 'string' ? candidate.title : undefined;
+  const status = typeof candidate.status === 'string' ? candidate.status : undefined;
+  const link = typeof candidate.link === 'string' ? candidate.link : undefined;
+  const cleanBase = siteBaseUrl?.replace(/\/+$/, '');
+  const editUrl = cleanBase ? `${cleanBase}/wp-admin/post.php?post=${id}&action=edit` : undefined;
+  return { id, title, status, link, editUrl };
+}
+
 export default function StudioPage() {
   const [sites, setSites] = useState<ConnectedSite[]>([]);
+  const [activeKeys, setActiveKeys] = useState<MaskedProviderKey[]>([]);
+  const [keysLoaded, setKeysLoaded] = useState(false);
   const [siteId, setSiteId] = useState('');
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -114,6 +146,7 @@ export default function StudioPage() {
   const [confirmation, setConfirmation] = useState('');
   const [approved, setApproved] = useState(false);
   const [running, setRunning] = useState(false);
+  const [pollCount, setPollCount] = useState(0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -128,25 +161,56 @@ export default function StudioPage() {
 
   useEffect(() => stopPolling, [stopPolling]);
 
-  const refreshSites = useCallback(async () => {
+  const refreshSitesAndKeys = useCallback(async () => {
     try {
-      const res = await fetch('/api/connector/sites', { cache: 'no-store' });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.message ?? 'Connected sites could not be loaded.');
-        return;
+      const [sitesRes, keysRes] = await Promise.all([
+        fetch('/api/connector/sites', { cache: 'no-store' }),
+        fetch('/api/connector/keys', { cache: 'no-store' }).catch(() => null),
+      ]);
+
+      const sitesBody = await sitesRes.json().catch(() => ({}));
+      if (!sitesRes.ok) {
+        setError(sitesBody.message ?? 'Connected sites could not be loaded.');
+      } else {
+        const list: ConnectedSite[] = sitesBody.sites ?? [];
+        setSites(list);
+        setSiteId((current) => current || list.find((site) => site.status === 'active')?.id || '');
       }
-      const list: ConnectedSite[] = body.sites ?? [];
-      setSites(list);
-      setSiteId((current) => current || list.find((site) => site.status === 'active')?.id || '');
+
+      if (keysRes && keysRes.ok) {
+        const keysBody = await keysRes.json().catch(() => ({}));
+        const configured = Array.isArray(keysBody.keys)
+          ? (keysBody.keys as MaskedProviderKey[]).filter(
+              (entry) => entry.configured && entry.status === 'active'
+            )
+          : [];
+        setActiveKeys(configured);
+      }
+      setKeysLoaded(true);
     } catch (err) {
       setError((err as Error).message);
+      setKeysLoaded(true);
     }
   }, []);
 
   useEffect(() => {
-    void refreshSites();
-  }, [refreshSites]);
+    void refreshSitesAndKeys();
+  }, [refreshSitesAndKeys]);
+
+  const activeSites = sites.filter((site) => site.status === 'active');
+  const selectedSite = useMemo(
+    () => activeSites.find((site) => site.id === siteId) ?? activeSites[0] ?? null,
+    [activeSites, siteId]
+  );
+
+  /** Best-effort wake ping for HTTPS WordPress sites using WP-Cron. */
+  const pingWordPressCron = useCallback((siteUrl?: string) => {
+    if (!siteUrl || !siteUrl.toLowerCase().startsWith('https://')) return;
+    const target = `${siteUrl.replace(/\/+$/, '')}/wp-cron.php?doing_wp_cron=${Date.now()}`;
+    void fetch(target, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {
+      // Cross-origin no-cors wake ping is strictly best-effort.
+    });
+  }, []);
 
   async function post(url: string, body?: unknown) {
     const res = await fetch(url, {
@@ -169,6 +233,7 @@ export default function StudioPage() {
     setJobs([]);
     setApproved(false);
     setRunning(false);
+    setPollCount(0);
     setConfirmation('');
     setBusy('plan');
 
@@ -189,9 +254,12 @@ export default function StudioPage() {
     setError('');
     setBusy('approve');
     try {
-      await post(`/api/connector/plans/${plan.id}/approve`, { confirmation });
+      const payload = await post(`/api/connector/plans/${plan.id}/approve`, { confirmation });
+      if (payload?.plan) {
+        setPlan(payload.plan as Plan);
+      }
       setApproved(true);
-      setNotice('Approved. Each step will run as a separate signed job.');
+      setNotice('Approved. Click Run plan to send signed jobs to WordPress.');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -202,21 +270,26 @@ export default function StudioPage() {
   const watchPlan = useCallback(
     async (planId: string, attempt = 0) => {
       try {
+        setPollCount(attempt);
         const res = await fetch(`/api/connector/plans/${planId}`, { cache: 'no-store' });
         const body = await res.json();
         if (!res.ok) throw new Error(body.message ?? 'Plan could not be reloaded.');
 
-        setPlan(body.plan as Plan);
+        const nextPlan = body.plan as Plan;
+        setPlan(nextPlan);
         setJobs((body.jobs ?? []) as PlanJob[]);
         setSnapshots((body.snapshots ?? []) as Snapshot[]);
 
-        const done = ['applied', 'failed', 'rejected'].includes((body.plan as Plan).status);
+        const done = ['applied', 'failed', 'rejected'].includes(nextPlan.status);
         if (!done && attempt < 90) {
           pollTimer.current = setTimeout(() => {
             void watchPlan(planId, attempt + 1);
           }, 2000);
         } else {
           setRunning(false);
+          if (nextPlan.status === 'applied') {
+            setNotice('All steps completed and verified on your WordPress site.');
+          }
         }
       } catch (err) {
         setError((err as Error).message);
@@ -233,7 +306,9 @@ export default function StudioPage() {
     try {
       await post(`/api/connector/plans/${plan.id}/execute`);
       setRunning(true);
+      setPollCount(0);
       setNotice('Running. Steps are verified on your site one at a time.');
+      pingWordPressCron(selectedSite?.url);
       stopPolling();
       void watchPlan(plan.id);
     } catch (err) {
@@ -249,6 +324,7 @@ export default function StudioPage() {
     try {
       await post(`/api/connector/snapshots/${snapshotId}/undo`);
       setNotice('Undo queued. The previous version is being restored.');
+      pingWordPressCron(selectedSite?.url);
       if (plan) void watchPlan(plan.id);
     } catch (err) {
       setError((err as Error).message);
@@ -257,11 +333,6 @@ export default function StudioPage() {
     }
   }
 
-  const activeSites = sites.filter((site) => site.status === 'active');
-  const selectedSite = useMemo(
-    () => activeSites.find((site) => site.id === siteId) ?? activeSites[0] ?? null,
-    [activeSites, siteId]
-  );
   const capabilityGraph = useMemo(
     () => (selectedSite ? evaluateSiteCapabilities(selectedSite) : null),
     [selectedSite]
@@ -281,6 +352,12 @@ export default function StudioPage() {
       ? confirmation.trim().toUpperCase() === 'CONFIRM'
       : confirmation.trim().toLowerCase() === plan.id.slice(0, 8).toLowerCase());
 
+  const hasQueuedJobs = jobs.some((job) => job.status === 'queued');
+  const isLocalHttpSite = Boolean(selectedSite?.url && selectedSite.url.toLowerCase().startsWith('http://'));
+  const wpConnectorAdminUrl = selectedSite
+    ? `${selectedSite.url.replace(/\/+$/, '')}/wp-admin/admin.php?page=kph-sitepilot`
+    : null;
+
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-12">
       <header className="flex flex-wrap items-baseline justify-between gap-4">
@@ -291,6 +368,9 @@ export default function StudioPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
+          <Link className="text-pink-700 underline" href="/">
+            Workspace
+          </Link>
           <Link className="text-pink-700 underline" href="/connect">
             Connected sites
           </Link>
@@ -345,7 +425,11 @@ export default function StudioPage() {
               </span>
               {capabilityGraph.hasManifest ? (
                 <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-ink/70">
-                  {capabilityGraph.isBlockTheme ? 'Block theme' : 'Classic theme'}
+                  {capabilityGraph.themeName
+                    ? `${capabilityGraph.themeName} (${capabilityGraph.isBlockTheme ? 'Block' : 'Classic'})`
+                    : capabilityGraph.isBlockTheme
+                      ? 'Block theme'
+                      : 'Classic theme'}
                 </span>
               ) : (
                 <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-amber-800">
@@ -375,7 +459,7 @@ export default function StudioPage() {
           <textarea
             id="prompt"
             className="mt-2 h-28 w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
-            placeholder="Change the title of post #12 to “Built for teams that ship”"
+            placeholder="Design a modern homepage with hero, 3 feature cards, and CTA — or change the title of post #12 to “Built for teams that ship”"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
           />
@@ -393,22 +477,40 @@ export default function StudioPage() {
             ))}
           </div>
 
-          <button
-            type="button"
-            className="mt-4 rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            onClick={createPlan}
-            disabled={!siteId || prompt.trim().length < 4 || busy === 'plan'}
-          >
-            {busy === 'plan' ? 'Planning…' : 'Create plan'}
-          </button>
-          <p className="mt-2 text-xs text-ink/50">
-            Add a free{' '}
-            <Link href="/settings/keys" className="text-pink-700 underline">
-              Gemini, OpenRouter or Groq key
-            </Link>{' '}
-            for natural-language planning, or use exact targets (<code>#12</code>, <code>site title</code>) with the
-            built-in deterministic planner.
-          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              onClick={createPlan}
+              disabled={!siteId || prompt.trim().length < 4 || busy === 'plan'}
+            >
+              {busy === 'plan' ? 'Planning…' : 'Create plan'}
+            </button>
+
+            {keysLoaded && activeKeys.length > 0 ? (
+              <span className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                <span>
+                  ✓ AI Planner active:{' '}
+                  {activeKeys
+                    .map((k) => `${k.label}${k.last4 ? ` (••••${k.last4})` : ''}`)
+                    .join(', ')}
+                </span>
+                <span>·</span>
+                <Link href="/settings/keys" className="underline">
+                  Manage keys
+                </Link>
+              </span>
+            ) : keysLoaded ? (
+              <p className="text-xs text-ink/50">
+                Add a free{' '}
+                <Link href="/settings/keys" className="text-pink-700 underline">
+                  Gemini, OpenRouter or Groq key
+                </Link>{' '}
+                for natural-language planning, or use exact targets (<code>#12</code>, <code>site title</code>) with
+                the built-in deterministic planner.
+              </p>
+            ) : null}
+          </div>
         </section>
       )}
 
@@ -438,7 +540,9 @@ export default function StudioPage() {
                     : planner.fallbackReason ?? 'Deterministic planner'
                 }
               >
-                {planner.kind === 'model' ? `Planned by ${planner.provider}` : 'Deterministic planner'}
+                {planner.kind === 'model'
+                  ? `Planned by ${planner.provider}${planner.model ? ` (${planner.model})` : ''}`
+                  : 'Deterministic planner'}
               </span>
             ) : null}
           </div>
@@ -456,6 +560,7 @@ export default function StudioPage() {
             {plan.steps.map((step, index) => {
               const job = jobs[index];
               const argPreview = formatStepArgs(step.args);
+              const postOutcome = job?.status === 'succeeded' ? extractPostOutcome(job.result, selectedSite?.url) : null;
               return (
                 <li key={`${step.tool}-${index}`} className="rounded-xl border border-black/5 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -479,10 +584,69 @@ export default function StudioPage() {
                     )}
                     {job?.error?.message ? <span className="text-rose-700">{job.error.message}</span> : null}
                   </div>
+
+                  {postOutcome ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50/70 px-3 py-2 text-xs text-emerald-900">
+                      <span className="font-medium">
+                        #{postOutcome.id}
+                        {postOutcome.title ? ` — ${postOutcome.title}` : ''}
+                        {postOutcome.status ? ` (${postOutcome.status})` : ''}
+                      </span>
+                      {postOutcome.link ? (
+                        <a
+                          href={postOutcome.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-pink-700 underline"
+                        >
+                          View in WordPress ↗
+                        </a>
+                      ) : null}
+                      {postOutcome.editUrl ? (
+                        <a
+                          href={postOutcome.editUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-pink-700 underline"
+                        >
+                          Edit in WP Admin ↗
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {job?.status === 'succeeded' && job.result && !postOutcome ? (
+                    <details className="mt-2 text-xs text-ink/70">
+                      <summary className="cursor-pointer font-medium text-ink/60 hover:text-ink">
+                        View step output
+                      </summary>
+                      <pre className="mt-1.5 max-h-56 overflow-auto rounded-lg bg-black/[0.03] p-2.5 font-mono text-[11px]">
+                        {JSON.stringify(job.result, null, 2)}
+                      </pre>
+                    </details>
+                  ) : null}
                 </li>
               );
             })}
           </ol>
+
+          {running && hasQueuedJobs && pollCount >= 2 && wpConnectorAdminUrl ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+              <span>
+                {isLocalHttpSite
+                  ? `Waiting for your local WordPress site (${selectedSite?.url}) to claim this job. Local WP-Cron runs when WordPress receives a page visit.`
+                  : 'Waiting for WordPress WP-Cron to claim the queued job.'}
+              </span>
+              <a
+                href={wpConnectorAdminUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 rounded-lg bg-amber-900 px-3 py-1.5 font-medium text-white hover:bg-amber-800"
+              >
+                Wake WordPress worker ↗
+              </a>
+            </div>
+          ) : null}
 
           <p className="mt-4 break-all text-xs text-ink/40">
             Plan {plan.id} · SHA-256 {plan.hash.slice(0, 16)}…
@@ -517,9 +681,9 @@ export default function StudioPage() {
               type="button"
               className="rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               onClick={run}
-              disabled={!approved || running || busy === 'run'}
+              disabled={!approved || running || busy === 'run' || plan.status === 'applied'}
             >
-              {running ? 'Running…' : 'Run plan'}
+              {running ? 'Running…' : plan.status === 'applied' ? 'Applied ✓' : 'Run plan'}
             </button>
           </div>
         </section>
@@ -531,7 +695,10 @@ export default function StudioPage() {
           <p className="mt-1 text-xs text-ink/50">Every write keeps the version it replaced.</p>
           <ul className="mt-3 space-y-2">
             {snapshots.map((snapshot) => (
-              <li key={snapshot.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/5 p-3">
+              <li
+                key={snapshot.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/5 p-3"
+              >
                 <div>
                   <p className="text-sm">{snapshot.resource}</p>
                   <p className="text-xs text-ink/50">

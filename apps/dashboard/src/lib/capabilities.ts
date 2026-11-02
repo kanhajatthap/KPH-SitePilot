@@ -235,8 +235,13 @@ export function suggestPromptsForSite(site: {
   const scopeSet = new Set(graph.enabledScopes);
   const prompts: string[] = [];
 
+  const cleanName = (site.name ?? '').trim();
+
   if (scopeSet.has('content')) {
     prompts.push('Change the title of post #12 to "Built for teams that ship"');
+    prompts.push(
+      `Design a modern homepage for ${cleanName && cleanName.length <= 40 ? cleanName : 'our site'} with hero, 3 feature cards, and CTA`
+    );
     prompts.push('Create a draft page called "Pricing" with our starter and growth tiers');
     if (graph.isBlockTheme) {
       prompts.push('Replace the content of page #8 with "<!-- wp:heading --><h2>Our story</h2><!-- /wp:heading -->"');
@@ -246,7 +251,6 @@ export function suggestPromptsForSite(site: {
   }
 
   if (scopeSet.has('site_ops')) {
-    const cleanName = (site.name ?? '').trim();
     const exampleTitle = cleanName && cleanName.length <= 40 ? `${cleanName} — Official Site` : 'KPH Studio';
     prompts.push(`Change site tagline to "Fast, reliable WordPress operations"`);
     prompts.push(`Change site title to "${exampleTitle}"`);
@@ -259,5 +263,5 @@ export function suggestPromptsForSite(site: {
     prompts.push('Read the current site settings and active theme details');
   }
 
-  return prompts.slice(0, 5);
+  return prompts.slice(0, 6);
 }

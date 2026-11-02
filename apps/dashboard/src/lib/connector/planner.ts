@@ -61,6 +61,56 @@ function looksLikeHtml(value: string): boolean {
   return /<!--\s*wp:|<[a-z][\s\S]*>/i.test(value);
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildRichLandingGutenbergHtml(title: string, promptHint: string): string {
+  const safeTitle = escapeHtml(title);
+  const cleanedHint = promptHint.replace(/\s+/g, ' ').trim().slice(0, 180);
+  const safeSubtitle = escapeHtml(
+    cleanedHint.length > 20
+      ? `Crafted for ${safeTitle} — modern layout with structured sections ready to customize in WordPress or Elementor.`
+      : `Modern insights, curated resources, and practical guides from ${safeTitle}.`
+  );
+  return [
+    '<!-- wp:group {"align":"full","layout":{"type":"constrained"}} -->',
+    '<div class="wp-block-group alignfull">',
+    '<!-- wp:heading {"textAlign":"center","level":1} -->',
+    `<h1 class="wp-block-heading has-text-align-center">${safeTitle}</h1>`,
+    '<!-- /wp:heading -->',
+    '<!-- wp:paragraph {"align":"center"} -->',
+    `<p class="has-text-align-center">${safeSubtitle}</p>`,
+    '<!-- /wp:paragraph -->',
+    '<!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->',
+    '<div class="wp-block-buttons"><!-- wp:button -->',
+    '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#features">Explore Features</a></div>',
+    '<!-- /wp:button --><!-- wp:button {"className":"is-style-outline"} -->',
+    '<div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="#contact">Get Started</a></div>',
+    '<!-- /wp:button --></div>',
+    '<!-- /wp:buttons -->',
+    '</div>',
+    '<!-- /wp:group -->',
+    '<!-- wp:columns {"align":"wide"} -->',
+    '<div class="wp-block-columns alignwide" id="features">',
+    '<!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Modern Architecture</h3><!-- /wp:heading --><!-- wp:paragraph --><p>Fast, responsive sections built with clean WordPress blocks that adapt to your active theme.</p><!-- /wp:paragraph --></div><!-- /wp:column -->',
+    '<!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Curated Highlights</h3><!-- /wp:heading --><!-- wp:paragraph --><p>Showcase flagship articles, products, or services in a scannable three-column layout.</p><!-- /wp:paragraph --></div><!-- /wp:column -->',
+    '<!-- wp:column --><div class="wp-block-column"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Built to Convert</h3><!-- /wp:heading --><!-- wp:paragraph --><p>Clear calls to action and structured headings ready for publishing or visual editing.</p><!-- /wp:paragraph --></div><!-- /wp:column -->',
+    '</div>',
+    '<!-- /wp:columns -->',
+    '<!-- wp:group {"align":"wide","layout":{"type":"constrained"}} -->',
+    '<div class="wp-block-group alignwide" id="contact">',
+    '<!-- wp:heading {"textAlign":"center","level":2} --><h2 class="wp-block-heading has-text-align-center">Ready to launch?</h2><!-- /wp:heading -->',
+    '<!-- wp:paragraph {"align":"center"} --><p class="has-text-align-center">Review this draft in WordPress and customize headlines, colors, or Elementor sections anytime.</p><!-- /wp:paragraph -->',
+    '</div>',
+    '<!-- /wp:group -->',
+  ].join('\n');
+}
+
 function fail(reason: string): PlannerResult {
   return { ok: false, reason };
 }
@@ -79,6 +129,10 @@ export function planFromPrompt(prompt: string): PlannerResult {
   const quoted = extractQuotedText(text);
 
   const wantsCreate = /\b(create|add|new)\b/.test(lower) && /\b(page|post|article)\b/.test(lower);
+  const wantsDesignPage =
+    !postId &&
+    /\b(design|build|create|generate|make)\b/.test(lower) &&
+    /\b(home\s*page|landing\s*page|elementor|hero\s+section|front\s*page)\b/.test(lower);
   const wantsTitle = /\btitle\b/.test(lower);
   const wantsContent = /\b(content|body|text|copy|rewrite|replace|paragraph|section)\b/.test(lower);
   const wantsPublish = /\b(publish|go live|live karo)\b/.test(lower);
@@ -157,7 +211,7 @@ export function planFromPrompt(prompt: string): PlannerResult {
       ok: true,
       summary: 'List recent posts and pages',
       risk: 'R0',
-      steps: [{ tool: 'content.list', args: { perPage: 10 }, risk: 'R0', summary: 'List up to 10 recent items' }],
+      steps: [{ tool: 'content.list', args: { limit: 10 }, risk: 'R0', summary: 'List up to 10 recent items' }],
     };
   }
 
@@ -254,6 +308,30 @@ export function planFromPrompt(prompt: string): PlannerResult {
           summary: `Change ${label} (${key}) to “${trimmed}”`,
         },
       ],
+    };
+  }
+
+  if (wantsDesignPage) {
+    const title = quoted?.trim() || (/\blanding\s*page\b/i.test(text) ? 'Landing Page' : 'Home');
+    const status = wantsPublish ? 'publish' : 'draft';
+    const steps: PlanStep[] = [
+      {
+        tool: 'content.create',
+        args: {
+          title,
+          type: 'page',
+          status,
+          content: buildRichLandingGutenbergHtml(title, text),
+        },
+        risk: wantsPublish ? 'R2' : 'R1',
+        summary: `Create multi-section layout page “${title}”${wantsPublish ? ' and publish it' : ' as a draft'}`,
+      },
+    ];
+    return {
+      ok: true,
+      summary: `Create page layout “${title}”`,
+      risk: highestRisk(steps),
+      steps,
     };
   }
 
