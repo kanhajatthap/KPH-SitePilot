@@ -155,6 +155,16 @@ describe('BYOK user key service (E3-11)', () => {
     const groqView = listed.find((item) => item.provider === 'groq');
     expect(groqView?.configured).toBe(true);
     expect(groqView?.last4).toBe('9876');
+    expect(groqView?.keyConsoleUrl).toBe('https://console.groq.com/keys');
+    expect(groqView?.setupSteps.length).toBeGreaterThanOrEqual(3);
+
+    const geminiView = listed.find((item) => item.provider === 'gemini');
+    expect(geminiView?.keyConsoleUrl).toBe('https://aistudio.google.com/apikey');
+    expect(geminiView?.setupSteps.length).toBeGreaterThanOrEqual(3);
+
+    const openrouterView = listed.find((item) => item.provider === 'openrouter');
+    expect(openrouterView?.keyConsoleUrl).toBe('https://openrouter.ai/keys');
+    expect(openrouterView?.setupSteps.length).toBeGreaterThanOrEqual(3);
   });
 
   it('rejects saving when live provider probe fails', async () => {
