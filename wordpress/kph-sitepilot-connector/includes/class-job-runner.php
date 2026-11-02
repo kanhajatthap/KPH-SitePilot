@@ -220,7 +220,13 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 
 			if ( is_wp_error( $result ) ) {
 				$error_code = (string) $result->get_error_code();
-				$non_retry  = array( 'kph_sp_unknown_tool', 'kph_sp_scope_missing', 'kph_sp_option_not_allowed' );
+				$non_retry  = array(
+					'kph_sp_unknown_tool',
+					'kph_sp_scope_missing',
+					'kph_sp_option_not_allowed',
+					'kph_sp_invalid_taxonomy',
+					'kph_sp_invalid_argument',
+				);
 				$payload    = array(
 					'jobId'     => $job_id,
 					'ok'        => false,

@@ -6,6 +6,7 @@ import { ALL_SITE_SCOPES, evaluateSiteCapabilities, type SiteScope } from '../..
 
 interface ConnectedSite {
   id: string;
+  project_id?: string;
   url: string;
   name: string;
   environment: 'local' | 'staging' | 'production' | string;
@@ -15,6 +16,12 @@ interface ConnectedSite {
   wp_version: string | null;
   capabilities: Record<string, unknown> | null;
   last_seen_at: string | null;
+}
+
+interface OwnedProject {
+  id: string;
+  name: string;
+  description: string | null;
 }
 
 function summarizeCapabilities(capabilities: Record<string, unknown> | null): string | null {
@@ -85,6 +92,26 @@ export default function ConnectPage() {
   const [draftEnv, setDraftEnv] = useState<'local' | 'staging' | 'production'>('production');
   const [draftScopes, setDraftScopes] = useState<SiteScope[]>(['read']);
   const [rotated, setRotated] = useState<RotatedSecretState | null>(null);
+  const [projects, setProjects] = useState<OwnedProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/connector/projects', { cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(body.projects)) {
+        const list = body.projects as OwnedProject[];
+        setProjects(list);
+        if (list.length > 0) {
+          setSelectedProjectId((current) => current || list[0].id);
+        }
+      }
+    } catch {
+      // non-fatal
+    }
+  }, []);
 
   const loadSites = useCallback(async () => {
     try {
@@ -103,8 +130,9 @@ export default function ConnectPage() {
   }, []);
 
   useEffect(() => {
+    void loadProjects();
     void loadSites();
-  }, [loadSites]);
+  }, [loadProjects, loadSites]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,11 +163,42 @@ export default function ConnectPage() {
     return () => clearInterval(timer);
   }, [code]);
 
+  const handleCreateProject = async () => {
+    const trimmed = newProjectName.trim();
+    if (!trimmed) return;
+    setCreatingProject(true);
+    setCodeError(null);
+    try {
+      const res = await fetch('/api/connector/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCodeError(body.message ?? 'Project could not be created.');
+        return;
+      }
+      const created = body.project as OwnedProject;
+      setProjects((curr) => [...curr, created]);
+      setSelectedProjectId(created.id);
+      setNewProjectName('');
+    } catch (error) {
+      setCodeError((error as Error).message);
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
   const generateCode = async () => {
     setBusy(true);
     setCodeError(null);
     try {
-      const res = await fetch('/api/connector/pairing-codes', { method: 'POST' });
+      const res = await fetch('/api/connector/pairing-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedProjectId ? { projectId: selectedProjectId } : {}),
+      });
       const body = await res.json();
       if (!res.ok) {
         setCodeError(body.message ?? 'A pairing code could not be created.');
@@ -309,6 +368,9 @@ export default function ConnectPage() {
           <Link href="/studio" className="text-pink-700 underline">
             Studio
           </Link>
+          <Link href="/settings/site" className="text-pink-700 underline">
+            Site settings
+          </Link>
           <Link href="/settings/keys" className="text-pink-700 underline">
             Model API keys
           </Link>
@@ -324,6 +386,54 @@ export default function ConnectPage() {
         site — content, media, settings, plugins, themes, files and code. Every write still needs a
         plan, your approval, a snapshot and read-back verification.
       </p>
+
+      <section className="mt-6 rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-[200px] flex-1">
+            <label htmlFor="project-select" className="block text-xs font-semibold text-ink/70">
+              Project workspace
+            </label>
+            <select
+              id="project-select"
+              value={selectedProjectId}
+              onChange={(e) => {
+                setSelectedProjectId(e.target.value);
+                setCode(null);
+              }}
+              className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm text-ink"
+            >
+              {projects.length === 0 ? (
+                <option value="">My Sites (default)</option>
+              ) : (
+                projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="New project name…"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              maxLength={120}
+              className="rounded-lg border border-black/15 px-3 py-2 text-sm text-ink"
+            />
+            <button
+              type="button"
+              onClick={handleCreateProject}
+              disabled={creatingProject || !newProjectName.trim()}
+              className="rounded-lg border border-black/15 bg-white px-3 py-2 text-sm font-medium text-ink hover:bg-black/[0.02] disabled:opacity-50"
+            >
+              {creatingProject ? 'Creating…' : '+ Project'}
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="mt-8 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-ink">1. Get a pairing code</h2>

@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,10 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.9.0 =
+* `site.search` (scope `read`): bounded keyword search across public posts, pages, and media attachments (`1–25` items).
+* `terms.create`, `terms.assign`, `terms.restore` (scope `content`): create categories/tags in public taxonomies and assign/restore post terms with before-snapshot (`terms:<postId>:<taxonomy>`), read-back verification, and one-click undo.
 
 = 0.8.0 =
 * `settings.update` & `settings.restore` (scope `site_ops`): allowlisted option writes (`blogname`, `blogdescription`, `timezone_string`, `date_format`, `time_format`, `posts_per_page`, `default_comment_status`, `default_ping_status`) with before-snapshot, read-back verification, automatic rollback on mismatch, and one-click undo. `siteurl` and `home` remain strictly non-writable.

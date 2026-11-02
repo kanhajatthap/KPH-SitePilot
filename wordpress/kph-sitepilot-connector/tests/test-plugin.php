@@ -149,6 +149,11 @@ kph_sp_static_assert( false !== strpos( $tools_source, "'theme.info'" ), 'theme.
 kph_sp_static_assert( false !== strpos( $tools_source, "'users.list'" ), 'users.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'media.list'" ), 'media.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'terms.list'" ), 'terms.list tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'site.search'" ), 'site.search tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'terms.create'" ), 'terms.create tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'terms.assign'" ), 'terms.assign tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'terms.restore'" ), 'terms.restore tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'wp_set_object_terms' ), 'terms.assign uses wp_set_object_terms' );
 kph_sp_static_assert( false === strpos( $tools_source, "user_email" ), 'users.list never returns email addresses' );
 kph_sp_static_assert( false === strpos( $tools_source, "user_pass" ), 'users.list never returns password hashes' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'media'      =>" ) || false !== strpos( $tools_source, "'media.list'      => 'media'" ), 'media reads require the media scope' );

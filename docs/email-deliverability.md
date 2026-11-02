@@ -1,8 +1,8 @@
 # Auth email deliverability — runbook
 
-**Date:** 2026-11-01
+**Date:** 2026-11-02
 **Scope:** signup confirmation, password recovery, email change
-**Status:** app side fixed · Supabase project side blocked on owner input (see §5)
+**Status:** ✅ live — app-side Resend mailer (`RESEND_API_KEY` + `SITEPILOT_MAIL_FROM` on Vercel) + Supabase Auth URL Configuration (`site_url: "https://kph-sitepilot.vercel.app"` + `uri_allow_list` on `zgkewnhrymswhucigtib`) verified live
 
 ---
 
@@ -16,10 +16,10 @@ they are. Four independent causes can each produce an empty inbox.
 
 | # | Cause | Where it lives | Fixed by |
 |---|---|---|---|
-| 1 | No custom SMTP — Supabase's default mailer only delivers to addresses that belong to the project's organisation and throttles hard | Supabase → Authentication → Emails | **owner action** (§4) |
+| 1 | No custom SMTP — Supabase's default mailer only delivers to addresses that belong to the project's organisation and throttles hard | App-side Resend mailer (`auth/mailer.ts`) + Vercel env | **done** (`RESEND_API_KEY` + `SITEPILOT_MAIL_FROM` active on Vercel) |
 | 2 | The dashboard resolved its own origin to `localhost:3002`, so `emailRedirectTo` was unreachable | app code | **done** (§2) |
-| 3 | `Site URL` / redirect allow list did not contain the deployment, so Supabase refused the request before queueing a mail | Supabase → URL Configuration | **owner action** (§4) |
-| 4 | The hourly email quota was already spent (2–30 mails/hour on the built-in mailer) | Supabase rate limits | **done** (§2) + §3 |
+| 3 | `Site URL` / redirect allow list did not contain the deployment, so Supabase refused the request before queueing a mail | Supabase → URL Configuration (`zgkewnhrymswhucigtib`) | **done** (`site_url = https://kph-sitepilot.vercel.app`, `uri_allow_list` set via `supabase__update_auth_config` on 2026-11-02) |
+| 4 | The hourly email quota was already spent (2–30 mails/hour on the built-in mailer) | App-side Resend bypasses Supabase's 2/hr built-in mailer limit | **done** (§2) + §3 |
 
 ## 2. What the app does now
 

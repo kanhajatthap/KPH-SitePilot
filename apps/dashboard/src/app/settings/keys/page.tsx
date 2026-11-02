@@ -181,7 +181,10 @@ export default function ModelKeysSettingsPage() {
         <Link href="/studio" className="text-sm text-ink-muted underline-offset-4 hover:underline">
           ← Back to Studio
         </Link>
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap gap-4 text-sm">
+          <Link href="/settings/site" className="text-pink-700 underline">
+            Site settings
+          </Link>
           <Link href="/connect" className="text-pink-700 underline">
             Connected sites
           </Link>

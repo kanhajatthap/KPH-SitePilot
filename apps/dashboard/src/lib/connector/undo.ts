@@ -110,7 +110,7 @@ export function sanitizeSettingsValues(
 export type UndoResolution =
   | {
       ok: true;
-      tool: 'content.restore' | 'settings.restore';
+      tool: 'content.restore' | 'settings.restore' | 'terms.restore';
       args: Record<string, unknown>;
       risk: 'R1';
     }
@@ -150,6 +150,49 @@ export function resolveUndoJob(snapshot: {
       ok: true,
       tool: 'settings.restore',
       args: { before: { values } },
+      risk: 'R1',
+    };
+  }
+
+  if (resource.startsWith('terms:')) {
+    const rawId = (before as { id?: unknown }).id;
+    const id = typeof rawId === 'string' ? Number(rawId) : rawId;
+    const taxonomy = (before as { taxonomy?: unknown }).taxonomy;
+    const rawTermIds = (before as { termIds?: unknown }).termIds;
+
+    if (
+      typeof id !== 'number' ||
+      !Number.isInteger(id) ||
+      id <= 0 ||
+      typeof taxonomy !== 'string' ||
+      !/^[a-z0-9_-]{1,64}$/.test(taxonomy) ||
+      !Array.isArray(rawTermIds) ||
+      rawTermIds.length > 50
+    ) {
+      return {
+        ok: false,
+        code: 'SNAPSHOT_UNUSABLE',
+        message: 'Terms snapshot is missing post id, taxonomy, or termIds.',
+      };
+    }
+
+    const termIds: number[] = [];
+    for (const entry of rawTermIds) {
+      const parsed = typeof entry === 'string' ? Number(entry) : entry;
+      if (typeof parsed !== 'number' || !Number.isInteger(parsed) || parsed <= 0) {
+        return {
+          ok: false,
+          code: 'SNAPSHOT_UNUSABLE',
+          message: 'Terms snapshot contains an invalid term id.',
+        };
+      }
+      termIds.push(parsed);
+    }
+
+    return {
+      ok: true,
+      tool: 'terms.restore',
+      args: { id, taxonomy, termIds },
       risk: 'R1',
     };
   }

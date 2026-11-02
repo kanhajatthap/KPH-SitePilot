@@ -28,6 +28,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				// Read-only.
 				'site.info',
 				'site.health',
+				'site.search',
 				'content.list',
 				'content.get',
 				// Mutations. Every one snapshots first, verifies after, and is
@@ -41,6 +42,9 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'users.list',
 				'media.list',
 				'terms.list',
+				'terms.create',
+				'terms.assign',
+				'terms.restore',
 				'menus.list',
 				'settings.get',
 				'blocks.parse',
@@ -65,6 +69,7 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 			$map = array(
 				'site.info'       => 'read',
 				'site.health'     => 'read',
+				'site.search'     => 'read',
 				'content.list'    => 'read',
 				'content.get'     => 'read',
 				'content.update'  => 'content',
@@ -75,6 +80,9 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'users.list'      => 'site_ops',
 				'media.list'      => 'media',
 				'terms.list'      => 'read',
+				'terms.create'    => 'content',
+				'terms.assign'    => 'content',
+				'terms.restore'   => 'content',
 				'menus.list'      => 'read',
 				'settings.get'    => 'read',
 				'blocks.parse'    => 'read',
@@ -120,6 +128,8 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return KPH_SP_Capabilities::manifest();
 				case 'site.health':
 					return self::site_health();
+				case 'site.search':
+					return self::site_search( $args );
 				case 'content.list':
 					return self::content_list( $args );
 				case 'content.get':
@@ -140,6 +150,12 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::media_list( $args );
 				case 'terms.list':
 					return self::terms_list( $args );
+				case 'terms.create':
+					return self::terms_create( $args );
+				case 'terms.assign':
+					return self::terms_assign( $args );
+				case 'terms.restore':
+					return self::terms_restore( $args );
 				case 'menus.list':
 					return self::menus_list();
 				case 'settings.get':
@@ -1239,6 +1255,301 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'modified'  => (string) $post->post_modified_gmt,
 				'author'    => (int) $post->post_author,
 				'permalink' => (string) get_permalink( $post ),
+			);
+		}
+
+		/**
+		 * Bounded keyword search across public posts, pages and media attachments (E4-02).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function site_search( $args ) {
+			$raw_query = isset( $args['query'] ) && is_string( $args['query'] ) ? $args['query'] : '';
+			$query_str = sanitize_text_field( $raw_query );
+			if ( '' === $query_str || strlen( $query_str ) > 120 ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'site.search requires a "query" string between 1 and 120 characters.'
+				);
+			}
+
+			$limit = isset( $args['limit'] ) ? (int) $args['limit'] : 15;
+			$limit = max( 1, min( 25, $limit ) );
+
+			$allowed_types = array( 'post', 'page', 'attachment' );
+			$post_types    = $allowed_types;
+			if ( isset( $args['type'] ) && is_string( $args['type'] ) && '' !== $args['type'] ) {
+				$requested = sanitize_key( $args['type'] );
+				if ( ! in_array( $requested, $allowed_types, true ) ) {
+					return new WP_Error(
+						'kph_sp_invalid_argument',
+						'site.search type must be post, page or attachment.'
+					);
+				}
+				$post_types = array( $requested );
+			}
+
+			$wp_query = new WP_Query(
+				array(
+					's'              => $query_str,
+					'post_type'      => $post_types,
+					'post_status'    => array( 'publish', 'draft', 'pending', 'future', 'private', 'inherit' ),
+					'posts_per_page' => $limit,
+					'orderby'        => 'relevance',
+					'no_found_rows'  => false,
+				)
+			);
+
+			$items = array();
+			foreach ( $wp_query->posts as $post ) {
+				$items[] = array(
+					'id'          => (int) $post->ID,
+					'type'        => (string) $post->post_type,
+					'status'      => (string) $post->post_status,
+					'title'       => (string) get_the_title( $post ),
+					'slug'        => (string) $post->post_name,
+					'link'        => (string) esc_url_raw( (string) get_permalink( $post ) ),
+					'modifiedGmt' => (string) $post->post_modified_gmt,
+				);
+			}
+
+			return array(
+				'query' => $query_str,
+				'count' => count( $items ),
+				'total' => (int) $wp_query->found_posts,
+				'items' => $items,
+			);
+		}
+
+		/**
+		 * Creates (or finds) a term in a public taxonomy (E5-12).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function terms_create( $args ) {
+			$taxonomy = isset( $args['taxonomy'] ) ? sanitize_key( (string) $args['taxonomy'] ) : 'category';
+			$allowed  = get_taxonomies( array( 'public' => true ), 'names' );
+
+			if ( ! in_array( $taxonomy, $allowed, true ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_taxonomy',
+					sprintf( 'Taxonomy "%s" is not public on this site.', $taxonomy )
+				);
+			}
+
+			$name = isset( $args['name'] ) && is_string( $args['name'] )
+				? sanitize_text_field( $args['name'] )
+				: '';
+			if ( '' === $name || strlen( $name ) > 120 ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'terms.create requires a "name" between 1 and 120 characters.'
+				);
+			}
+
+			$existing = term_exists( $name, $taxonomy );
+			if ( $existing ) {
+				$term_id = is_array( $existing ) ? (int) $existing['term_id'] : (int) $existing;
+				$term    = get_term( $term_id, $taxonomy );
+				if ( $term && ! is_wp_error( $term ) ) {
+					return array(
+						'verified' => true,
+						'created'  => false,
+						'taxonomy' => $taxonomy,
+						'term'     => array(
+							'id'     => (int) $term->term_id,
+							'name'   => (string) $term->name,
+							'slug'   => (string) $term->slug,
+							'parent' => (int) $term->parent,
+						),
+					);
+				}
+			}
+
+			$insert_args = array();
+			if ( isset( $args['slug'] ) && is_string( $args['slug'] ) && '' !== $args['slug'] ) {
+				$insert_args['slug'] = sanitize_title( $args['slug'] );
+			}
+			if ( isset( $args['description'] ) && is_string( $args['description'] ) ) {
+				$insert_args['description'] = substr( sanitize_textarea_field( $args['description'] ), 0, 500 );
+			}
+			if ( isset( $args['parent'] ) && is_int( $args['parent'] ) && $args['parent'] > 0 ) {
+				$insert_args['parent'] = (int) $args['parent'];
+			}
+
+			$created = wp_insert_term( $name, $taxonomy, $insert_args );
+			if ( is_wp_error( $created ) ) {
+				return $created;
+			}
+
+			$term_id = isset( $created['term_id'] ) ? (int) $created['term_id'] : 0;
+			$term    = get_term( $term_id, $taxonomy );
+			if ( ! $term || is_wp_error( $term ) ) {
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'Created term could not be read back for verification.'
+				);
+			}
+
+			return array(
+				'verified' => true,
+				'created'  => true,
+				'taxonomy' => $taxonomy,
+				'term'     => array(
+					'id'     => (int) $term->term_id,
+					'name'   => (string) $term->name,
+					'slug'   => (string) $term->slug,
+					'parent' => (int) $term->parent,
+				),
+			);
+		}
+
+		/**
+		 * Assigns terms in a public taxonomy to a writable post, with before-snapshot
+		 * and read-back verification (E5-12).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function terms_assign( $args ) {
+			return self::mutate_object_terms( $args, false );
+		}
+
+		/**
+		 * Restores exact term IDs captured before a `terms.assign` write (E5-12 undo).
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function terms_restore( $args ) {
+			return self::mutate_object_terms( $args, true );
+		}
+
+		/**
+		 * Shared verified mutation path for `terms.assign` and `terms.restore`.
+		 *
+		 * @param array<string,mixed> $args       Arguments.
+		 * @param bool                $is_restore Whether empty termIds are permitted (restoring 0 terms).
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function mutate_object_terms( $args, $is_restore ) {
+			$post = self::load_writable_post( $args );
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$taxonomy = isset( $args['taxonomy'] ) ? sanitize_key( (string) $args['taxonomy'] ) : 'category';
+			$allowed  = get_taxonomies( array( 'public' => true ), 'names' );
+			if ( ! in_array( $taxonomy, $allowed, true ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_taxonomy',
+					sprintf( 'Taxonomy "%s" is not public on this site.', $taxonomy )
+				);
+			}
+
+			if ( ! is_object_in_taxonomy( $post->post_type, $taxonomy ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_taxonomy',
+					sprintf( 'Taxonomy "%s" is not attached to post type "%s".', $taxonomy, $post->post_type )
+				);
+			}
+
+			$raw_terms = null;
+			if ( $is_restore && isset( $args['termIds'] ) && is_array( $args['termIds'] ) ) {
+				$raw_terms = $args['termIds'];
+			} elseif ( isset( $args['terms'] ) && is_array( $args['terms'] ) ) {
+				$raw_terms = $args['terms'];
+			}
+
+			if ( ! is_array( $raw_terms ) || ( ! $is_restore && empty( $raw_terms ) ) || count( $raw_terms ) > 50 ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					$is_restore
+						? 'terms.restore requires a "termIds" array (0–50 integer IDs).'
+						: 'terms.assign requires a non-empty "terms" array (1–50 term IDs or names).'
+				);
+			}
+
+			$normalized = array();
+			foreach ( $raw_terms as $entry ) {
+				if ( is_int( $entry ) && $entry > 0 ) {
+					$normalized[] = (int) $entry;
+				} elseif ( ! $is_restore && is_string( $entry ) ) {
+					$clean = sanitize_text_field( $entry );
+					if ( '' === $clean || strlen( $clean ) > 120 ) {
+						return new WP_Error( 'kph_sp_invalid_argument', 'Each term name must be 1–120 characters.' );
+					}
+					$normalized[] = $clean;
+				} else {
+					return new WP_Error(
+						'kph_sp_invalid_argument',
+						$is_restore ? 'termIds must contain positive integer IDs.' : 'Each term must be a positive integer ID or string.'
+					);
+				}
+			}
+
+			$append = ! $is_restore && isset( $args['append'] ) ? (bool) $args['append'] : false;
+
+			$before_raw = wp_get_object_terms( $post->ID, $taxonomy, array( 'fields' => 'ids' ) );
+			if ( is_wp_error( $before_raw ) ) {
+				return $before_raw;
+			}
+			$before_ids = array_values( array_map( 'intval', (array) $before_raw ) );
+			sort( $before_ids );
+
+			$set_result = wp_set_object_terms( $post->ID, $normalized, $taxonomy, $append );
+			if ( is_wp_error( $set_result ) ) {
+				return $set_result;
+			}
+
+			$after_raw = wp_get_object_terms( $post->ID, $taxonomy, array( 'fields' => 'ids' ) );
+			if ( is_wp_error( $after_raw ) ) {
+				wp_set_object_terms( $post->ID, $before_ids, $taxonomy, false );
+				return $after_raw;
+			}
+			$after_ids = array_values( array_map( 'intval', (array) $after_raw ) );
+			sort( $after_ids );
+
+			if ( $is_restore ) {
+				$expected_ids = array_values( array_unique( array_map( 'intval', $normalized ) ) );
+				sort( $expected_ids );
+				if ( $expected_ids !== $after_ids ) {
+					wp_set_object_terms( $post->ID, $before_ids, $taxonomy, false );
+					return new WP_Error(
+						'kph_sp_verification_failed',
+						'Restored term IDs did not match the snapshot.',
+						array(
+							'expected' => $expected_ids,
+							'actual'   => $after_ids,
+						)
+					);
+				}
+			} elseif ( ! empty( $normalized ) && empty( $after_ids ) ) {
+				wp_set_object_terms( $post->ID, $before_ids, $taxonomy, false );
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'Assigned terms could not be read back from the post.'
+				);
+			}
+
+			return array(
+				'verified'         => true,
+				'restored'         => (bool) $is_restore,
+				'id'               => (int) $post->ID,
+				'taxonomy'         => $taxonomy,
+				'snapshotResource' => sprintf( 'terms:%d:%s', (int) $post->ID, $taxonomy ),
+				'before'           => array(
+					'id'       => (int) $post->ID,
+					'taxonomy' => $taxonomy,
+					'termIds'  => $before_ids,
+				),
+				'after'            => array(
+					'id'       => (int) $post->ID,
+					'taxonomy' => $taxonomy,
+					'termIds'  => $after_ids,
+				),
 			);
 		}
 	}

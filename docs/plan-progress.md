@@ -60,7 +60,10 @@
 | 2026-11-02 | E2-15 (fix) | **Fixed PostgREST cross-tenant `.update()` bug in `store.ts`.** `updateOwnedSite` and `rotateSiteCredentials` previously chained `.eq('projects.owner_id', ownerId)` onto `.from('sites').update(...)` — broken on `.select('id')` without embedded `projects` and unsafe because PostgREST embedded filters constrain the projection rather than gating base-table mutation. Both functions now verify `findOwnedSite(ownerId, siteId)` *before* issuing `.update(...)`. | `tests/connector-store-ownership.test.ts` **4 pass** (cross-tenant `updateOwnedSite` and `rotateSiteCredentials` return `null` with `0` `.update()` calls; owned site updates & rotates cleanly) | E3-11 |
 | 2026-11-02 | E3-11 / E9-12 | **BYOK model key management end-to-end.** `lib/connector/keys.ts` + `createSupabaseUserKeyStore()` + `GET/POST/DELETE /api/connector/keys` + `/settings/keys` UI (linked from Header, `/connect` and `/studio`). Supports `gemini`, `openrouter` and `groq`: keys are validated, optionally live-probed before saving, encrypted at rest with AES-256-GCM under `SITEPILOT_ENCRYPTION_KEY`, and never echoed or returned in plaintext (`last4` + status only). Includes stored-key live test (`action: 'test'`) and daily free-quota summary. | `tests/connector-keys.test.ts` **6 pass** (provider/format validation, AES-256-GCM round-trip, zero plaintext in masked views, failed live probe rejected with 422, stored-key test probe, `GET`/`POST`/`DELETE` route + auth gates) · `secret-boundary.test.ts` **3 pass** · `next build` lists `ƒ /api/connector/keys` and `○ /settings/keys` | E6-01 / E3-09 |
 | 2026-11-02 | E6-01 / E3-09 | **Safe `settings.update` + `settings.restore` & generalized undo (plugin 0.8.0).** Added 8-key writable allowlist (`blogname`, `blogdescription`, `timezone_string`, `date_format`, `time_format`, `posts_per_page`, `default_comment_status`, `default_ping_status`) — `siteurl`, `home` and `admin_email` are deliberately excluded on both platform and plugin so a prompt can never lock out the connector. Plugin captures a before-snapshot (`snapshotResource: 'settings'`), updates options, reads them back, and rolls back automatically on mismatch (`kph_sp_verification_failed`). Platform `lib/connector/undo.ts` resolves both `post:<id>` → `content.restore` and `settings` → `settings.restore`, failing closed on unknown keys or `irreversible:*` resources. Both model and deterministic planners now plan `settings.update` (plus R0 reads). | `tests/connector-undo.test.ts` **6 pass** · `connector-allowlist.test.ts` **5 pass** (20 allowlisted tools = 12 read + 8 write) · `model-planner.test.ts` **19 pass** (`siteurl`/`home` dropped) · `connector-plans.test.ts` **15 pass** (`siteurl` refused) | E2-14 / E9-11 |
-| 2026-11-02 | E2-14 / E9-11 / E4-06 / E9-13 | **Connector 0.8.0 admin polish + Connected Sites lifecycle + Capability graph.** Plugin `0.8.0` adds `handle_save_rotated` (64-hex rotated token+secret form), bounded 20-job `Recent activity` ring buffer (`kph_sp_recent_jobs`, cleaned on uninstall), and a secret-free `Diagnostic bundle` JSON panel. Platform `/connect` now supports pause/resume, inline environment & 7-scope editing (`PATCH /api/connector/sites/[id]`), and typed-confirmation `Rotate secret` (`POST .../rotate-secret`, one-time copyable credentials). `lib/capabilities.ts` (`evaluateSiteCapabilities`, `suggestPromptsForSite`) drives honest per-site tool availability badges, V2 labels, scope-aware prompt suggestions and step-arg previews in `/studio`. | `tests/capabilities.test.ts` **3 pass** · `node scripts/php-lint.mjs` **15 files OK** · static PHP checks **28/28 pass** · `bash scripts/build-connector-zip.sh` → `dist/kph-sitepilot-connector-0.8.0.zip` (**38,960 bytes**, v0.8.0) · full gate: `pnpm typecheck` **20/20**, `pnpm typecheck:edge` ✅, `pnpm lint` **11/11 + 15 PHP**, `pnpm test` **555 pass / 0 fail** (dashboard **268/268** across 34 files), `pnpm build` **11/11** (`24/24` routes) | PR + live deploy |
+| 2026-11-02 | E2-14 / E9-11 / E4-06 / E9-13 | **Connector 0.8.0 admin polish + Connected Sites lifecycle + Capability graph.** Plugin `0.8.0` adds `handle_save_rotated` (64-hex rotated token+secret form), bounded 20-job `Recent activity` ring buffer (`kph_sp_recent_jobs`, cleaned on uninstall), and a secret-free `Diagnostic bundle` JSON panel. Platform `/connect` now supports pause/resume, inline environment & 7-scope editing (`PATCH /api/connector/sites/[id]`), and typed-confirmation `Rotate secret` (`POST .../rotate-secret`, one-time copyable credentials). `lib/capabilities.ts` (`evaluateSiteCapabilities`, `suggestPromptsForSite`) drives honest per-site tool availability badges, V2 labels, scope-aware prompt suggestions and step-arg previews in `/studio`. | `tests/capabilities.test.ts` **3 pass** · `node scripts/php-lint.mjs` **15 files OK** · static PHP checks **28/28 pass** · `bash scripts/build-connector-zip.sh` → `dist/kph-sitepilot-connector-0.8.0.zip` (**38,960 bytes**, v0.8.0) · full gate: `pnpm typecheck` **20/20**, `pnpm typecheck:edge` ✅, `pnpm lint` **11/11 + 15 PHP**, `pnpm test` **555 pass / 0 fail** (dashboard **268/268** across 34 files), `pnpm build` **11/11** (`24/24` routes) | PR #14 (`e80383d`) |
+| 2026-11-02 | E1-10 / E1-15 / E1-04 | **Live Supabase (`zgkewnhrymswhucigtib`) & Vercel (`prj_iHQjzuoYG8uhYKV14hEHIPvNTfl8`) audit & remediation.** Verified Vercel prod `dpl_9tMmvUJ26AKm1N55GbBDGwxirWj7` (`READY`/`PROMOTED` on `e80383d`, cron `/api/cron/daily` `0 3 * * *`, all 8 env vars including `RESEND_API_KEY` + `SITEPILOT_MAIL_FROM` + `CRON_SECRET`). Fixed Supabase Auth URL config live via `supabase__update_auth_config` (`site_url: "https://kph-sitepilot.vercel.app"`, full `uri_allow_list` for prod, `*-kanhajatthaps-projects.vercel.app`, and `localhost:3002`). Verified all 22 `public` tables have `rls_enabled = true` & `rls_forced = true`, `anon` has 0 grants on v2 tables, and `authenticated` has `SELECT` only on the 8 owner-scoped read tables/view; pinned in `packages/supabase/tests/rls-v2.test.ts`. | `supabase__get_auth_config` verified · `supabase__execute_query` confirmed 22/22 RLS+FORCE & privilege grants · `packages/supabase/tests/rls-v2.test.ts` **6 pass** | E9-02 |
+| 2026-11-02 | E9-02 (P0 fix + CRUD) | **Fixed missing-project onboarding P0 bug live + shipped Projects CRUD.** Discovered `projects_count = 0` for 2 live users because `handle_new_user()` only inserted into `profiles`, causing `POST /api/connector/pairing-codes` to fail with `400 PROJECT_REQUIRED`. Created `supabase/migrations/20261102070000_auto_default_project.sql` and applied live as `20261102063413_auto_default_project` (backfilled `"My Sites"` for both existing accounts + updated `handle_new_user()`). Added `ensureOwnedProjectId`, `listOwnedProjects`, `createOwnedProject`, `projectBelongsToUser` in `store.ts`, `GET/POST /api/connector/projects`, optional `{ projectId }` on `POST /api/connector/pairing-codes`, and project workspace selector/creator on `/connect`. | `supabase__list_migrations` shows 6th migration `20261102063413` · live `public.projects` verified with 2 `"My Sites"` rows · `connector-projects-and-terms.test.ts` **5 pass** | E4-02 / E5-12 |
+| 2026-11-02 | E4-02 / E5-12 / E6-02 / E0-06 / E0-08 | **WordPress Connector `0.9.0` (24 allowlisted tools), Dedicated Safe Site Settings UI (`/settings/site`), `R0` job gate fix, & `validateHostedEnv`.** Added `site.search` (`R0`), `terms.create` (`R1`), `terms.assign` (`R1`), and `terms.restore` (`R1`, `terms:<postId>:<taxonomy>` snapshot undo) across PHP & TypeScript. Hardened `POST /api/connector/jobs` to reject any non-`R0` tool with `403 WRITE_REQUIRES_PLAN` and added owner-scoped `GET /api/connector/jobs?jobId=…`. Built `/settings/site` strictly from `WRITABLE_SETTINGS_KEYS` (zero free-text option keys, locked `siteurl`/`home` banner, live `settings.get` loader, before/after diff preview, hashed plan + approve + execute + undo). Added `validateHostedEnv()` to `@wp-agent/config` and updated `README.md`. | `node scripts/php-lint.mjs` **15 files OK** · `bash scripts/build-connector-zip.sh` → `dist/kph-sitepilot-connector-0.9.0.zip` (**40,832 bytes**, v0.9.0) · `pnpm typecheck` **20/20** · `pnpm typecheck:edge` ✅ · `pnpm lint` **11/11 + 15 PHP** · `pnpm test` **569 pass / 0 fail** (dashboard **273/273** across 35 files, supabase **42/42**, config **12/12**) · `pnpm build` **11/11** (`25/25` static/dynamic pages including `/settings/site` & `/api/connector/projects`) | PR + live deploy |
 
 ## Task status
 
@@ -92,31 +95,34 @@
 | E2-17 revoke / unpair | ✅ done | batch 6 |
 | E4-04 inventory reads (6 of 6) | ✅ done | batch 9 |
 | E1-12 auth flow on hosted (email half) | ✅ done | this batch |
-| E1-09 Vercel env vars | ✅ done (5 vars; `NEXT_PUBLIC_SITE_URL` added) | this batch |
-| E1-15 auth email deliverability | ⏳ app side done, Supabase side blocked on owner | `docs/email-deliverability.md` |
-| E1-11 hosted health/version | ✅ done | this batch |
-| E1-13 per-user quotas | ✅ done | this batch |
-| E1-14 daily cron | ✅ done | this batch |
-| E2-15 platform site APIs (+ pre-update ownership fix) | ✅ done | this batch |
-| E2-14 connector admin v0.8.0 (activity + rotated creds + diagnostic bundle) | ✅ done | this batch |
-| E3-09 generalized undo (`post:<id>` + `settings`) | ✅ done | this batch |
-| E3-11 BYOK model key API + AES-256-GCM store | ✅ done | this batch |
-| E4-06 per-site capability graph | ✅ done | this batch |
-| E6-01 `settings.update` + `settings.restore` | ✅ done | this batch |
-| E9-11 connected sites lifecycle UI (pause, scopes, rotate secret, disconnect) | ✅ done | this batch |
-| E9-12 `/settings/keys` BYOK UI | ✅ done | this batch |
-| E9-13 capability-aware Studio prompts & empty states | ✅ done | this batch |
+| E1-09 Vercel env vars | ✅ done (8 vars incl. Resend + Cron) | verified live |
+| E1-10 Vercel deployment + cron settings | ✅ done (`dpl_9tMmvUJ26AKm1N55GbBDGwxirWj7`) | verified live |
+| E1-15 auth email deliverability | ✅ done (`site_url` + `uri_allow_list` + Resend) | verified live |
+| E1-04 v2 RLS & grants test suite | ✅ done (`rls-v2.test.ts` + live DB audit) | this batch |
+| E0-04 / E0-05 / E0-06 / E0-08 base & hosted config | ✅ done | this batch |
+| E1-11 hosted health/version | ✅ done | batch 10 |
+| E1-13 per-user quotas | ✅ done | batch 10 |
+| E1-14 daily cron | ✅ done | batch 10 |
+| E2-15 platform site APIs (+ pre-update ownership fix) | ✅ done | PR #14 |
+| E2-14 connector admin v0.8.0 (activity + rotated creds + diagnostic bundle) | ✅ done | PR #14 |
+| E3-09 generalized undo (`post:<id>` + `settings` + `terms:<id>:<tax>`) | ✅ done | this batch |
+| E3-11 BYOK model key API + AES-256-GCM store | ✅ done | PR #14 |
+| E4-02 `site.search` across posts/pages/media | ✅ done (Connector `0.9.0`) | this batch |
+| E4-06 per-site capability graph (24 tools) | ✅ done | this batch |
+| E5-12 `terms.create` + `terms.assign` + `terms.restore` | ✅ done (Connector `0.9.0`) | this batch |
+| E6-01 `settings.update` + `settings.restore` | ✅ done | PR #14 |
+| E6-02 `/settings/site` safe allowlisted settings UI + diff + plan | ✅ done | this batch |
+| E9-02 Projects CRUD + switcher + auto-default `"My Sites"` migration | ✅ done (`20261102063413`) | this batch |
+| E9-11 connected sites lifecycle UI (pause, scopes, rotate secret, disconnect) | ✅ done | PR #14 |
+| E9-12 `/settings/keys` BYOK UI | ✅ done | PR #14 |
+| E9-13 capability-aware Studio prompts & empty states | ✅ done | PR #14 |
 
 ## Open blockers
 
 | Blocker | Owner | Workaround |
 |---|---|---|
-| CI red on `main` at the old commit | us | fixed in this branch; green run expected on the PR |
-| PHP runtime missing in sandbox | us | `php-parser` syntax gate locally; real `php -l` + PHP tests in CI |
-| Sandbox has no egress to `*.supabase.co`, so a local pairing attempt ends in `STORAGE_UNAVAILABLE` (`fetch failed`, ECONNRESET) | us | storage paths are verified against the live DB through the Supabase MCP instead; the deployed app has normal egress |
-| Supabase project `zgkewnhrymswhucigtib` is not reachable from the connected integration (only `tmgtqgjylmywrloulfpf` is), so Site URL / redirect list / SMTP / templates cannot be set from here | owner | app-side work shipped; runbook in `docs/email-deliverability.md` §4–5 |
-| Auth email delivery needs custom SMTP + a verified sending domain | owner | Supabase's built-in mailer only reaches project members; `GET /api/auth/status` shows what the app will send |
-| Vercel env is complete (5 vars) but the running deployment predates them | us | the next deployment picks them up; Vercel never applies env changes to an existing build |
+| PHP runtime binary missing in local sandbox | us | `node scripts/php-lint.mjs` (`php-parser` 7.4 grammar) locally; real PHP 8.2 `php -l` + `test-protocol.php` + `test-plugin.php` run on every PR in GitHub Actions (`wordpress-plugin` job) |
+| Sandbox has no direct network egress to `*.supabase.co` from local processes | us | Live Supabase & Vercel queries/migrations/configs are executed and verified directly through the connected `supabase` and `vercel` MCP integrations |
 
 ## Gate history
 
@@ -147,3 +153,5 @@
 | 2026-11-01 | 20/20 | **458 pass / 0 fail** | 11/11 | after the R2 confirmation gate, final head of PR #7 |
 | 2026-11-01 | 20/20 | **476 pass / 0 fail** | 11/11 | after the auth-email fix (`site-url`, resend, `/api/auth/status`); lint 11/11 + 15 PHP files |
 | 2026-11-01 | 20/20 | **481 pass / 0 fail** | 11/11 | after the hosted health/version endpoint (E1-11) |
+| 2026-11-02 | 20/20 | **555 pass / 0 fail** | 11/11 | PR #14 (`e80383d`): BYOK keys, Connector 0.8.0, `settings.update`/undo, capability graph |
+| 2026-11-02 | 20/20 | **569 pass / 0 fail** | 11/11 | Connector 0.9.0 (`site.search`, `terms.*`), `/settings/site`, Projects CRUD + auto-default DB migration `20261102063413`, `rls-v2.test.ts`, `validateHostedEnv` |

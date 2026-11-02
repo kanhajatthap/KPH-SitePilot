@@ -76,6 +76,15 @@ export async function insertPairingCode(input: CreatePairingCodeInput): Promise<
   return (data as { id: string }).id;
 }
 
+export interface OwnedProjectRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Returns the caller's project id (first project they own), if any. */
 export async function findOwnedProjectId(userId: string): Promise<string | null> {
   const supabase = createSupabaseAdminClient();
@@ -91,6 +100,118 @@ export async function findOwnedProjectId(userId: string): Promise<string | null>
   if (error) throw new Error(error.message);
   const row = (data ?? [])[0] as { id?: string } | undefined;
   return row?.id ?? null;
+}
+
+/** Checks that `projectId` belongs to `userId`. */
+export async function projectBelongsToUser(
+  projectId: string,
+  userId: string
+): Promise<boolean> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return false;
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('owner_id', userId)
+    .maybeSingle();
+
+  if (error || !data) return false;
+  return true;
+}
+
+/**
+ * Ensures the caller owns at least one project, creating a default "My Sites"
+ * workspace (and backfilling `profiles` if needed) when none exists yet.
+ */
+export async function ensureOwnedProjectId(
+  userId: string,
+  email?: string | null
+): Promise<string | null> {
+  const existing = await findOwnedProjectId(userId);
+  if (existing) return existing;
+
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  if (typeof email === 'string' && email.trim().length > 0) {
+    await supabase
+      .from('profiles')
+      .upsert({ id: userId, email: email.trim() }, { onConflict: 'id' });
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      owner_id: userId,
+      name: 'My Sites',
+      description: 'Default workspace created automatically',
+    })
+    .select('id')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return (data as { id: string }).id;
+}
+
+/** Lists all projects owned by `userId` (auto-creating a default workspace if empty). */
+export async function listOwnedProjects(
+  userId: string,
+  email?: string | null
+): Promise<OwnedProjectRow[]> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, owner_id, name, description, created_at, updated_at')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  if (Array.isArray(data) && data.length > 0) {
+    return data as OwnedProjectRow[];
+  }
+
+  await ensureOwnedProjectId(userId, email);
+  const { data: created, error: reloadErr } = await supabase
+    .from('projects')
+    .select('id, owner_id, name, description, created_at, updated_at')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (reloadErr) throw new Error(reloadErr.message);
+  return (created ?? []) as OwnedProjectRow[];
+}
+
+/** Creates a new project owned by `userId`. */
+export async function createOwnedProject(
+  userId: string,
+  input: { name: string; description?: string | null },
+  email?: string | null
+): Promise<OwnedProjectRow | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  if (typeof email === 'string' && email.trim().length > 0) {
+    await supabase
+      .from('profiles')
+      .upsert({ id: userId, email: email.trim() }, { onConflict: 'id' });
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      owner_id: userId,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+    })
+    .select('id, owner_id, name, description, created_at, updated_at')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as OwnedProjectRow;
 }
 
 /* -------------------------------------------------------------------------- */
