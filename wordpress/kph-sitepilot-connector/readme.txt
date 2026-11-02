@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.9.0
+Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,14 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 1.0.0 =
+* `site.logs` (scope `site_ops`): bounded, path- and email-redacted tail of `wp-content/debug.log` (`1–80` lines, max 64 KB read).
+* `site.health` (`E4-03`): enriched with memory limit, max upload bytes, debug/cron flags, HTTPS state, and uploads free disk bytes.
+* `content.create` (`E5-02`): optional `excerpt`, `featuredMediaId`, and `preventDuplicateSlug` guard.
+* `seo.meta.get` (scope `read`), `seo.meta.update` & `seo.meta.restore` (scope `content`): Yoast SEO, Rank Math, SEOPress, and universal `_sitepilot_seo_*` fallback with allowlisted meta keys, before-snapshot (`seo:<postId>`), read-back verification, and one-click undo (`E7-01`, `E7-02`).
+* `media.update` & `media.restore` (scope `media`), plus `media.set_featured` & `media.restore_featured` (scope `content`): image alt text, title, caption, description, and post featured image updates with snapshots (`media:<id>`, `featured:<postId>`) and one-click undo (`E5-10`).
+* `menus.save` & `menus.restore` (scope `content`): create or update navigation menus and theme locations with before-snapshot (`menu:<menuId>`), read-back verification, and one-click undo (`E5-13`).
 
 = 0.9.0 =
 * `site.search` (scope `read`): bounded keyword search across public posts, pages, and media attachments (`1–25` items).

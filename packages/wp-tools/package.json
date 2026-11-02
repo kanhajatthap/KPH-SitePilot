@@ -1,0 +1,31 @@
+{
+  "name": "@wp-agent/wp-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical WordPress Connector tool catalog, Zod argument schemas, and R0-R3 risk policy engine",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "pretest": "node -e \"if (!require('node:fs').existsSync('./dist/index.js')) require('node:child_process').execSync('pnpm run build', { stdio: 'inherit' })\"",
+    "test": "vitest run",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

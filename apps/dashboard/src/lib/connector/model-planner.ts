@@ -4,7 +4,7 @@ import {
   requestJsonCompletion,
   type PlannerProvider,
 } from '@wp-agent/model-adapters';
-import { TOOL_RISK } from './jobs';
+import { hardenToolRisk, PLANNABLE_TOOLS } from '@wp-agent/wp-tools';
 import type { PlanStep, PlannerResult, Risk } from './planner';
 import { sanitizeSettingsValues } from './undo';
 
@@ -19,29 +19,6 @@ import { sanitizeSettingsValues } from './undo';
  * a *dropped step*, never an executable one; if nothing survives, the caller
  * falls back to the deterministic planner.
  */
-
-const PLANNABLE_TOOLS = [
-  'content.update',
-  'content.create',
-  'content.get',
-  'content.list',
-  'site.health',
-  'site.search',
-  'plugins.list',
-  'theme.info',
-  'users.list',
-  'media.list',
-  'terms.list',
-  'terms.create',
-  'terms.assign',
-  'menus.list',
-  'settings.get',
-  'settings.update',
-  'blocks.parse',
-  'blocks.replace',
-  'content.publish',
-  'content.unpublish',
-] as const;
 
 const WRITABLE_STATUSES = ['draft', 'pending', 'publish', 'private'] as const;
 const CREATABLE_STATUSES = ['draft', 'pending', 'publish'] as const;
@@ -76,20 +53,26 @@ Reply with ONE JSON object and nothing else:
 
 Allowed tools and argument rules:
 - content.update: {"id": <post or page id>, "title"?: string, "content"?: string (Gutenberg block HTML allowed), "excerpt"?: string, "status"?: "draft"|"pending"|"publish"|"private"} — at least one of title/content/excerpt/status.
-- content.create: {"title": string, "content"?: string (Gutenberg block HTML), "type"?: "post"|"page", "status"?: "draft"|"pending"|"publish", "slug"?: string}
+- content.create: {"title": string, "content"?: string (Gutenberg block HTML), "excerpt"?: string, "type"?: "post"|"page", "status"?: "draft"|"pending"|"publish", "slug"?: string, "featuredMediaId"?: number, "preventDuplicateSlug"?: boolean}
 - content.get: {"id": <post id>}
 - content.list: {"postTypes"?: string[], "limit"?: number}
 - content.publish / content.unpublish: {"id": <post id>} — publishing makes content public.
 - blocks.parse: {"id": <post id>} — read the block tree of one post.
 - blocks.replace: {"id": <post id>, "index": <block index from blocks.parse>, "html": "<exactly one block of HTML>"}
 - settings.update: {"values": {"blogname"?: string, "blogdescription"?: string, "timezone_string"?: string, "date_format"?: string, "time_format"?: string, "posts_per_page"?: number (1..100), "default_comment_status"?: "open"|"closed", "default_ping_status"?: "open"|"closed"}} — never siteurl or home.
+- seo.meta.get: {"id": <post id>}
+- seo.meta.update: {"id": <post id>, "title"?: string, "description"?: string, "canonical"?: string, "ogTitle"?: string, "ogDescription"?: string, "noindex"?: boolean} — at least one SEO field.
+- media.update: {"id": <attachment id>, "alt"?: string, "title"?: string, "caption"?: string, "description"?: string} — at least one field.
+- media.set_featured: {"id": <post id>, "mediaId": <attachment id or 0 to clear>}
+- menus.save: {"menuId"?: number, "name"?: string, "location"?: string, "items": [{"title": string, "url": string}]}
+- site.logs: {"lines"?: number (1..200)}
 - site.search: {"query": string (1..120 chars), "type"?: "post"|"page"|"attachment", "limit"?: number (1..25)}
 - terms.create: {"taxonomy"?: "category"|"post_tag"|string, "name": string (1..120 chars), "slug"?: string, "description"?: string}
 - terms.assign: {"id": <post id>, "taxonomy"?: "category"|"post_tag"|string, "terms": [<term id or name>, ...], "append"?: boolean}
-- site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
+- site.info, site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
 
 Rules:
-- Never invent ids. If the request does not name a post or page id, you may only use content.create, settings.update, terms.create, or a list/read/search tool.
+- Never invent ids. If the request does not name a post, page, or attachment id, you may only use content.create, settings.update, terms.create, menus.save (with name), or a list/read/search/logs tool.
 - When asked to design, build, or create a homepage, landing page, Elementor layout, or multi-section page without an existing id, use content.create with "type": "page", "status": "draft" (unless explicitly asked to publish), and rich WordPress Gutenberg block HTML ("<!-- wp:group -->", "<!-- wp:heading -->", "<!-- wp:paragraph -->", "<!-- wp:columns -->", "<!-- wp:buttons -->") containing tailored copy, headings, feature cards, and call-to-action buttons that work seamlessly in Hello Elementor and Gutenberg.
 - Copy any quoted replacement text exactly as written; do not translate or embellish it.
 - Use the fewest steps that satisfy the request. One change per step.
@@ -118,21 +101,18 @@ export function buildPlannerUserPrompt(prompt: string, site: SiteContextForPromp
   return lines.join('\n');
 }
 
-function riskFloor(tool: string): Risk {
-  return (TOOL_RISK[tool] as Risk | undefined) ?? 'R0';
-}
-
-function hardenRisk(tool: string, claimed: Risk | undefined): Risk {
-  const floor = riskFloor(tool);
-  if (!claimed) return floor;
-  return RISK_ORDER.indexOf(claimed) > RISK_ORDER.indexOf(floor) ? claimed : floor;
-}
-
 function asPositiveInt(value: unknown): number | null {
   const parsed = typeof value === 'string' ? Number(value) : value;
   if (typeof parsed !== 'number' || !Number.isFinite(parsed)) return null;
   const int = Math.trunc(parsed);
   return int > 0 && int <= 2_147_483_647 ? int : null;
+}
+
+function asNonNegativeInt(value: unknown): number | null {
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed)) return null;
+  const int = Math.trunc(parsed);
+  return int >= 0 && int <= 2_147_483_647 ? int : null;
 }
 
 function asText(value: unknown, max = 20_000): string | undefined {
@@ -144,7 +124,7 @@ function asText(value: unknown, max = 20_000): string | undefined {
  * exactly as the connector would understand it.
  */
 export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
-  if (!(PLANNABLE_TOOLS as readonly string[]).includes(raw.tool)) return null;
+  if (!PLANNABLE_TOOLS.includes(raw.tool)) return null;
 
   const args = (raw.args ?? {}) as Record<string, unknown>;
   const cleaned: Record<string, unknown> = {};
@@ -191,6 +171,9 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       const content = asText(args.content, 100_000);
       if (content) cleaned.content = content;
 
+      const excerpt = asText(args.excerpt, 2_000);
+      if (excerpt) cleaned.excerpt = excerpt;
+
       const slug =
         typeof args.slug === 'string'
           ? args.slug
@@ -201,13 +184,21 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
               .slice(0, 200)
           : '';
       if (slug) cleaned.slug = slug;
+
+      const featuredMediaId = asPositiveInt(args.featuredMediaId);
+      if (featuredMediaId) cleaned.featuredMediaId = featuredMediaId;
+
+      if (typeof args.preventDuplicateSlug === 'boolean') {
+        cleaned.preventDuplicateSlug = args.preventDuplicateSlug;
+      }
       break;
     }
 
     case 'content.get':
     case 'blocks.parse':
     case 'content.publish':
-    case 'content.unpublish': {
+    case 'content.unpublish':
+    case 'seo.meta.get': {
       const id = asPositiveInt(args.id);
       if (!id) return null;
       cleaned.id = id;
@@ -243,6 +234,12 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       break;
     }
 
+    case 'site.logs': {
+      const lines = asPositiveInt(args.lines);
+      if (lines) cleaned.lines = Math.min(200, lines);
+      break;
+    }
+
     case 'terms.list': {
       const taxonomy = typeof args.taxonomy === 'string' ? args.taxonomy.trim().toLowerCase() : 'category';
       if (!/^[a-z0-9_-]{1,32}$/.test(taxonomy)) return null;
@@ -255,6 +252,109 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       const values = sanitizeSettingsValues(candidate);
       if (!values) return null;
       cleaned.values = values;
+      break;
+    }
+
+    case 'seo.meta.update': {
+      const id = asPositiveInt(args.id);
+      if (!id) return null;
+
+      const title = typeof args.title === 'string' ? args.title.trim().slice(0, 300) : undefined;
+      const description =
+        typeof args.description === 'string' ? args.description.trim().slice(0, 500) : undefined;
+      const canonical =
+        typeof args.canonical === 'string' ? args.canonical.trim().slice(0, 500) : undefined;
+      const ogTitle =
+        typeof args.ogTitle === 'string' ? args.ogTitle.trim().slice(0, 300) : undefined;
+      const ogDescription =
+        typeof args.ogDescription === 'string' ? args.ogDescription.trim().slice(0, 500) : undefined;
+      const noindex = typeof args.noindex === 'boolean' ? args.noindex : undefined;
+
+      if (canonical && canonical.length > 0 && !/^https?:\/\//i.test(canonical)) {
+        return null;
+      }
+
+      if (
+        title === undefined &&
+        description === undefined &&
+        canonical === undefined &&
+        ogTitle === undefined &&
+        ogDescription === undefined &&
+        noindex === undefined
+      ) {
+        return null;
+      }
+
+      cleaned.id = id;
+      if (title !== undefined) cleaned.title = title;
+      if (description !== undefined) cleaned.description = description;
+      if (canonical !== undefined) cleaned.canonical = canonical;
+      if (ogTitle !== undefined) cleaned.ogTitle = ogTitle;
+      if (ogDescription !== undefined) cleaned.ogDescription = ogDescription;
+      if (noindex !== undefined) cleaned.noindex = noindex;
+      break;
+    }
+
+    case 'media.update': {
+      const id = asPositiveInt(args.id);
+      if (!id) return null;
+
+      const alt = typeof args.alt === 'string' ? args.alt.trim().slice(0, 300) : undefined;
+      const title = typeof args.title === 'string' ? args.title.trim().slice(0, 300) : undefined;
+      const caption =
+        typeof args.caption === 'string' ? args.caption.trim().slice(0, 1_000) : undefined;
+      const description =
+        typeof args.description === 'string' ? args.description.trim().slice(0, 4_000) : undefined;
+
+      if (
+        alt === undefined &&
+        title === undefined &&
+        caption === undefined &&
+        description === undefined
+      ) {
+        return null;
+      }
+
+      cleaned.id = id;
+      if (alt !== undefined) cleaned.alt = alt;
+      if (title !== undefined) cleaned.title = title;
+      if (caption !== undefined) cleaned.caption = caption;
+      if (description !== undefined) cleaned.description = description;
+      break;
+    }
+
+    case 'media.set_featured': {
+      const id = asPositiveInt(args.id);
+      const mediaId = asNonNegativeInt(args.mediaId);
+      if (!id || mediaId === null) return null;
+      cleaned.id = id;
+      cleaned.mediaId = mediaId;
+      break;
+    }
+
+    case 'menus.save': {
+      const menuId = asPositiveInt(args.menuId);
+      const name = asText(args.name, 120)?.trim();
+      if (!menuId && !name) return null;
+      if (!Array.isArray(args.items) || args.items.length === 0 || args.items.length > 50) {
+        return null;
+      }
+
+      const items: Array<{ title: string; url: string }> = [];
+      for (const entry of args.items) {
+        if (!entry || typeof entry !== 'object') return null;
+        const itemTitle = asText((entry as { title?: unknown }).title, 120)?.trim();
+        const itemUrl = asText((entry as { url?: unknown }).url, 500)?.trim();
+        if (!itemTitle || !itemUrl || !/^(?:https?:\/\/|\/|#)/i.test(itemUrl)) return null;
+        items.push({ title: itemTitle, url: itemUrl });
+      }
+
+      if (menuId) cleaned.menuId = menuId;
+      if (name) cleaned.name = name;
+      if (typeof args.location === 'string' && /^[a-z0-9_-]{1,64}$/.test(args.location)) {
+        cleaned.location = args.location;
+      }
+      cleaned.items = items;
       break;
     }
 
@@ -320,7 +420,7 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
   return {
     tool: raw.tool,
     args: cleaned,
-    risk: hardenRisk(raw.tool, raw.risk),
+    risk: hardenToolRisk(raw.tool, raw.risk),
     summary: (raw.summary ?? '').trim().slice(0, 200) || describeStep(raw.tool, cleaned),
   };
 }
@@ -348,6 +448,23 @@ function describeStep(tool: string, args: Record<string, unknown>): string {
           : [];
       return keys.length ? `Update site settings (${keys.join(', ')})` : 'Update site settings';
     }
+    case 'seo.meta.get':
+      return `Read SEO meta of item ${String(args.id ?? '')}`;
+    case 'seo.meta.update':
+      return `Update SEO meta of item ${String(args.id ?? '')}`;
+    case 'media.update':
+      return `Update media #${String(args.id ?? '')} metadata`;
+    case 'media.set_featured':
+      return Number(args.mediaId) === 0
+        ? `Clear featured image on item ${String(args.id ?? '')}`
+        : `Set featured image #${String(args.mediaId ?? '')} on item ${String(args.id ?? '')}`;
+    case 'menus.save':
+      return `Save navigation menu ${args.name ? `"${String(args.name)}"` : `#${String(args.menuId ?? '')}`}`.slice(
+        0,
+        200
+      );
+    case 'site.logs':
+      return 'Read sanitized PHP debug log tail';
     case 'site.search':
       return `Search site for "${String(args.query ?? '')}"`.slice(0, 200);
     case 'terms.create':

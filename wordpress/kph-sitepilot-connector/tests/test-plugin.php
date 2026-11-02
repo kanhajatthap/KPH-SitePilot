@@ -131,12 +131,14 @@ kph_sp_static_assert( false !== strpos( $capabilities_source, 'wp_is_block_theme
 kph_sp_static_assert( false === strpos( $capabilities_source, 'user_email' ), 'manifest never collects emails' );
 kph_sp_static_assert( false === strpos( $capabilities_source, 'site_secret' ), 'manifest never reads credentials' );
 
-// Tool registry: deny by default, scope-gated, read-only in this build.
+// Tool registry: deny by default, scope-gated, allowlisted writes + snapshots.
 $tools_source = file_get_contents( $plugin_dir . '/includes/class-tools.php' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'site.info'" ), 'site.info tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "kph_sp_unknown_tool" ), 'unknown tools are rejected' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'has_scope' ), 'tools check the site scope' );
-kph_sp_static_assert( false === strpos( $tools_source, 'update_post_meta' ), 'tools never touch post meta' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function allowed_seo_meta_keys' ), 'post-meta writes enforce SEO allowlist' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function update_allowlisted_post_meta' ), 'post-meta writes route through single allowlist guard' );
+kph_sp_static_assert( 1 === substr_count( $tools_source, 'update_post_meta(' ), 'update_post_meta called only inside update_allowlisted_post_meta' );
 kph_sp_static_assert( false === strpos( $tools_source, 'wp_remote_' ), 'tools never make their own HTTP calls' );
 
 // Write tools (0.4.0): declared, scoped, snapshotted, verified, and reversible.
@@ -184,8 +186,22 @@ kph_sp_static_assert( false !== strpos( $tools_source, 'kph_sp_verification_fail
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_slash' ), 'content is slashed before wp_update_post' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_kses_post' ), 'write tools sanitise content' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'draft' =>" ) || false !== strpos( $tools_source, "'draft'," ), 'create defaults to draft' );
-kph_sp_static_assert( false === strpos( $tools_source, 'delete_post' ), 'write tools never delete content' );
+kph_sp_static_assert( false === strpos( $tools_source, "'content.delete'" ), 'no content.delete tool exists' );
+kph_sp_static_assert( 1 === substr_count( $tools_source, 'wp_delete_post(' ) && false !== strpos( $tools_source, "'nav_menu_item' === get_post_type" ), 'wp_delete_post is restricted solely to nav_menu_item replacement' );
 kph_sp_static_assert( false === strpos( $tools_source, 'unfiltered_html' ), 'write tools never grant unfiltered HTML' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'site.logs'" ), 'site.logs tool registered (E4-05)' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function redact_log_line' ), 'site.logs redacts paths, emails, and tokens' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'seo.meta.get'" ), 'seo.meta.get tool registered (E7-01)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'seo.meta.update'" ), 'seo.meta.update tool registered (E7-02)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'seo.meta.restore'" ), 'seo.meta.restore tool registered (E7-02)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.update'" ), 'media.update tool registered (E5-10)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.restore'" ), 'media.restore tool registered (E5-10)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.set_featured'" ), 'media.set_featured tool registered (E5-10)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'media.restore_featured'" ), 'media.restore_featured tool registered (E5-10)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'menus.save'" ), 'menus.save tool registered (E5-13)' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'menus.restore'" ), 'menus.restore tool registered (E5-13)' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'preventDuplicateSlug' ), 'content.create guards duplicate slugs (E5-02)' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'uploadsFreeBytes' ), 'site.health reports uploads disk stats (E4-03)' );
 
 // Job runner: signed, outbound-only, lease-safe.
 $runner_source = file_get_contents( $plugin_dir . '/includes/class-job-runner.php' );

@@ -11,7 +11,7 @@ A local-first, provider-independent agent workspace that reads, plans, drafts an
 [![pnpm](https://img.shields.io/badge/pnpm-12.14-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8_strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white)](https://nextjs.org)
-[![Tests](https://img.shields.io/badge/tests-380%2B_passing-3FB950)](#quality-gates)
+[![Tests](https://img.shields.io/badge/tests-600%2B_passing-3FB950)](#quality-gates)
 [![Security](https://img.shields.io/badge/security-deny--by--default-8B5CF6)](#security-model)
 [![Status](https://img.shields.io/badge/status-hosted_%2B_local_beta-3FB950)](#roadmap)
 
@@ -23,7 +23,7 @@ A local-first, provider-independent agent workspace that reads, plans, drafts an
 
 > [!IMPORTANT]
 > **Two execution modes — zero unsupervised writes:**
-> - **Hosted SaaS + WordPress Connector (`0.9.0`):** Pair any WordPress site via single-use pairing code (`/connect`), manage content, blocks, categories/tags, and allowlisted site settings from `/studio` and `/settings/site`, bring your own encrypted Gemini / OpenRouter / Groq key (`/settings/keys`), and rely on **Plan → Human Approval → Snapshot → Read-back Verify → One-Click Undo**.
+> - **Hosted SaaS + WordPress Connector (`1.0.0`, 34 allowlisted tools):** Pair any WordPress site via single-use pairing code (`/connect`), manage content, Gutenberg blocks, SEO metadata (Yoast / Rank Math / SEOPress / SitePilot), media alt text & featured images, navigation menus, categories/tags, and allowlisted site settings from `/studio`, `/settings/site`, and `/activity`, bring your own encrypted Gemini / OpenRouter / Groq key (`/settings/keys`), and rely on **Plan → Human Approval → Snapshot → Read-back Verify → One-Click Undo**.
 > - **Local-only mode:** When Supabase variables are unset, every connection stays strictly bound to `*.local` / `localhost` / `127.0.0.1` with zero cloud dependencies.
 >
 > See [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md), [`docs/sitepilot-backlog.md`](./docs/sitepilot-backlog.md), and [`docs/plan-progress.md`](./docs/plan-progress.md).

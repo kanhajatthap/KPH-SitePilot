@@ -186,6 +186,7 @@ if ( ! class_exists( 'KPH_SP_Capabilities' ) ) {
 				'woocommerce'    => class_exists( 'WooCommerce' ) || $has( 'woocommerce' ),
 				'yoast'          => defined( 'WPSEO_VERSION' ) || $has( 'wordpress-seo' ),
 				'rankMath'       => class_exists( 'RankMath' ) || $has( 'seo-by-rank-math' ),
+				'seopress'       => defined( 'SEOPRESS_VERSION' ) || $has( 'wp-seopress' ),
 				'objectCache'    => (bool) wp_using_ext_object_cache(),
 				'cachePlugin'    => $has( 'wp-rocket' ) || $has( 'w3-total-cache' ) || $has( 'litespeed' ) || $has( 'wp-super-cache' ),
 			);

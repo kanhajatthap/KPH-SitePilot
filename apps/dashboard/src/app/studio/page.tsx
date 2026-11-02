@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { evaluateRiskPolicy } from '@wp-agent/wp-tools';
 import { evaluateSiteCapabilities, suggestPromptsForSite } from '../../lib/capabilities';
+import { StepVisualPreview } from '../../components/StepVisualPreview';
 
 /**
  * Studio — the prompt-first surface.
@@ -342,6 +344,14 @@ export default function StudioPage() {
     [selectedSite]
   );
 
+  const riskDecision = useMemo(() => {
+    if (!plan) return null;
+    return evaluateRiskPolicy({
+      steps: plan.steps,
+      environment: selectedSite?.environment,
+    });
+  }, [plan, selectedSite?.environment]);
+
   const confirmationKind: 'none' | 'word' | 'plan-id' =
     plan?.risk === 'R3' ? 'plan-id' : plan?.risk === 'R2' ? 'word' : 'none';
   const needsConfirmation = confirmationKind !== 'none';
@@ -370,6 +380,9 @@ export default function StudioPage() {
         <div className="flex flex-wrap gap-4 text-sm">
           <Link className="text-pink-700 underline" href="/">
             Workspace
+          </Link>
+          <Link className="text-pink-700 underline" href="/activity">
+            Activity log
           </Link>
           <Link className="text-pink-700 underline" href="/connect">
             Connected sites
@@ -556,6 +569,12 @@ export default function StudioPage() {
             </p>
           ) : null}
 
+          {riskDecision?.stagingAdvice ? (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+              {riskDecision.stagingAdvice}
+            </p>
+          ) : null}
+
           <ol className="mt-4 space-y-2">
             {plan.steps.map((step, index) => {
               const job = jobs[index];
@@ -572,6 +591,7 @@ export default function StudioPage() {
                       {argPreview}
                     </p>
                   ) : null}
+                  <StepVisualPreview step={step} siteUrl={selectedSite?.url} />
                   <div className="mt-1 flex flex-wrap items-center gap-3 text-xs">
                     <span className="text-ink/40">step {index + 1}</span>
                     {job ? (

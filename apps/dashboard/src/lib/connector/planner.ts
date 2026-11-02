@@ -34,12 +34,18 @@ function highestRisk(steps: PlanStep[]): Risk {
 
 /** Pulls a post/page id out of "#123", "post 123" or "page 42". */
 export function extractPostId(prompt: string): number | null {
+  const named = prompt.match(/\b(?:post|page|article)\s+#?(\d{1,9})\b/i);
+  if (named) return Number(named[1]);
+
   const explicit = prompt.match(/#(\d{1,9})\b/);
   if (explicit) return Number(explicit[1]);
 
-  const named = prompt.match(/\b(?:post|page|article)\s+(\d{1,9})\b/i);
-  if (named) return Number(named[1]);
+  return null;
+}
 
+function extractMediaId(prompt: string): number | null {
+  const mediaMatch = prompt.match(/\b(?:media|attachment|image)\s+#?(\d{1,9})\b/i);
+  if (mediaMatch) return Number(mediaMatch[1]);
   return null;
 }
 
@@ -55,6 +61,12 @@ export function extractQuotedText(prompt: string): string | null {
   if (single) return single[1];
 
   return null;
+}
+
+function extractNamedQuote(prompt: string, fieldPattern: string): string | null {
+  const regex = new RegExp(`\\b(?:${fieldPattern})\\s*(?:to|:|=)?\\s*["\\u201c']([^"\\u201d']{1,500})["\\u201d']`, 'i');
+  const match = prompt.match(regex);
+  return match ? match[1].trim() : null;
 }
 
 function looksLikeHtml(value: string): boolean {
@@ -126,7 +138,36 @@ export function planFromPrompt(prompt: string): PlannerResult {
 
   const lower = text.toLowerCase();
   const postId = extractPostId(text);
+  const mediaId = extractMediaId(text);
   const quoted = extractQuotedText(text);
+
+  const wantsSiteLogs =
+    !postId &&
+    !quoted &&
+    /\b(read|check|show|inspect|tail|get)\b/.test(lower) &&
+    /\b(debug\s*log|error\s*logs?|php\s*logs?|site\s*logs?)\b/.test(lower);
+
+  const wantsSeoRead =
+    !!postId &&
+    !quoted &&
+    /\b(read|check|show|inspect|get)\b/.test(lower) &&
+    /\bseo\b/.test(lower);
+
+  const wantsSeoUpdate =
+    !!postId &&
+    /\b(update|change|set|edit)\b/.test(lower) &&
+    /\bseo\b/.test(lower);
+
+  const wantsFeaturedSet =
+    !!postId &&
+    /\bfeatured\s+image\b/.test(lower) &&
+    (/\b(set|assign|change|update)\b/.test(lower) || /\b(clear|remove)\b/.test(lower));
+
+  const wantsMediaUpdate =
+    !!mediaId &&
+    !wantsFeaturedSet &&
+    /\b(update|change|set|edit)\b/.test(lower) &&
+    /\b(alt\s*text|alt|caption|media|attachment)\b/.test(lower);
 
   const wantsCreate = /\b(create|add|new)\b/.test(lower) && /\b(page|post|article)\b/.test(lower);
   const wantsDesignPage =
@@ -169,6 +210,134 @@ export function planFromPrompt(prompt: string): PlannerResult {
     return fail(
       'Changing siteurl or home is blocked so SitePilot can never lock out your WordPress connection.'
     );
+  }
+
+  if (wantsSiteLogs) {
+    return {
+      ok: true,
+      summary: 'Read sanitized PHP debug log tail',
+      risk: 'R0',
+      steps: [
+        {
+          tool: 'site.logs',
+          args: { lines: 50 },
+          risk: 'R0',
+          summary: 'Read last 50 sanitized PHP error/debug log lines',
+        },
+      ],
+    };
+  }
+
+  if (wantsSeoRead && postId) {
+    return {
+      ok: true,
+      summary: `Read SEO metadata of #${postId}`,
+      risk: 'R0',
+      steps: [
+        {
+          tool: 'seo.meta.get',
+          args: { id: postId },
+          risk: 'R0',
+          summary: `Read SEO metadata for item #${postId}`,
+        },
+      ],
+    };
+  }
+
+  if (wantsSeoUpdate && postId) {
+    const seoTitle = extractNamedQuote(text, 'seo\\s+title|meta\\s+title|title');
+    const seoDesc = extractNamedQuote(text, 'seo\\s+description|meta\\s+description|description');
+    const canonical = extractNamedQuote(text, 'canonical(?:\\s+url)?');
+    const noindexMatch = /\bnoindex\b/.test(lower)
+      ? !/\b(?:remove|disable|clear)\s+noindex\b/.test(lower)
+      : undefined;
+
+    const seoArgs: Record<string, unknown> = { id: postId };
+    if (seoTitle) seoArgs.title = seoTitle.slice(0, 300);
+    if (seoDesc) seoArgs.description = seoDesc.slice(0, 500);
+    if (canonical && /^https?:\/\//i.test(canonical)) seoArgs.canonical = canonical.slice(0, 500);
+    if (noindexMatch !== undefined) seoArgs.noindex = noindexMatch;
+
+    if (Object.keys(seoArgs).length === 1 && quoted) {
+      if (/\bdescription\b/.test(lower)) seoArgs.description = quoted.trim().slice(0, 500);
+      else seoArgs.title = quoted.trim().slice(0, 300);
+    }
+
+    if (Object.keys(seoArgs).length === 1) {
+      return fail(
+        'Provide the SEO title or description in quotes, for example: update SEO meta of post #12: title "Guide", description "Notes".'
+      );
+    }
+
+    return {
+      ok: true,
+      summary: `Update SEO metadata on #${postId}`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'seo.meta.update',
+          args: seoArgs,
+          risk: 'R1',
+          summary: `Update SEO metadata on #${postId}`,
+        },
+      ],
+    };
+  }
+
+  if (wantsFeaturedSet && postId) {
+    const shouldClear = /\b(clear|remove)\b/.test(lower);
+    const targetMediaId = shouldClear ? 0 : mediaId;
+    if (targetMediaId === null) {
+      return fail(
+        'Specify the media attachment ID, for example: set featured image of post #12 to media #5.'
+      );
+    }
+    return {
+      ok: true,
+      summary: shouldClear
+        ? `Clear featured image on #${postId}`
+        : `Set featured image #${targetMediaId} on #${postId}`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'media.set_featured',
+          args: { id: postId, mediaId: targetMediaId },
+          risk: 'R1',
+          summary: shouldClear
+            ? `Clear featured image on #${postId}`
+            : `Set featured image #${targetMediaId} on #${postId}`,
+        },
+      ],
+    };
+  }
+
+  if (wantsMediaUpdate && mediaId) {
+    if (!quoted) {
+      return fail(
+        'Put the new alt text or caption in quotes, for example: update alt text of media #5 to "Dashboard overview".'
+      );
+    }
+    const field = /\bcaption\b/.test(lower)
+      ? 'caption'
+      : /\bdescription\b/.test(lower)
+        ? 'description'
+        : /\btitle\b/.test(lower) && !/\balt\b/.test(lower)
+          ? 'title'
+          : 'alt';
+
+    return {
+      ok: true,
+      summary: `Update ${field} of media #${mediaId}`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'media.update',
+          args: { id: mediaId, [field]: quoted.trim() },
+          risk: 'R1',
+          summary: `Update ${field} of media #${mediaId} to “${quoted.trim()}”`,
+        },
+      ],
+    };
   }
 
   if (wantsReadSettings) {

@@ -16,6 +16,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "pretest": "node -e \"if (!require('node:fs').existsSync('./dist/index.js')) require('node:child_process').execSync('pnpm run build', { stdio: 'inherit' })\"",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:live": "vitest run tests/gemini-live.integration.test.ts",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""

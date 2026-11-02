@@ -8,8 +8,8 @@ export const metadata: Metadata = {
 };
 
 const REQUIREMENTS = [
-  ['WordPress', '6.4 or newer (6.8 tested)'],
-  ['PHP', '8.1 or newer'],
+  ['WordPress', '6.4 or newer (6.8+ tested)'],
+  ['PHP', '7.4 or newer (8.2+ recommended)'],
   ['Outbound HTTPS', 'The site calls SitePilot; no inbound port is ever opened'],
   ['Administrator access', 'Only a user with "manage options" can pair or disconnect'],
 ];
@@ -21,10 +21,10 @@ const STEPS: Array<{ title: string; body: React.ReactNode }> = [
       <>
         <a
           href="/downloads/kph-sitepilot-connector.zip"
-          download="kph-sitepilot-connector-0.9.0.zip"
+          download="kph-sitepilot-connector-1.0.0.zip"
           className="mr-2 inline-block rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800"
         >
-          ⬇ Download KPH SitePilot Connector (v0.9.0 .zip)
+          ⬇ Download KPH SitePilot Connector (v1.0.0 .zip)
         </a>
         or grab the archive from{' '}
         <a

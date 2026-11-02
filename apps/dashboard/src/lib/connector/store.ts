@@ -925,3 +925,172 @@ export function createSupabaseUserKeyStore(): UserKeyStore | null {
     },
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Activity & Audit Timeline (E9-10)                                          */
+/* -------------------------------------------------------------------------- */
+
+import { resolveUndoJob } from './undo';
+
+export interface ActivitySiteSummary {
+  id: string;
+  project_id: string;
+  name: string;
+  url: string;
+  environment: string;
+  status: string;
+  plugin_version: string | null;
+  last_seen_at: string | null;
+}
+
+export interface ActivityPlanEntry {
+  id: string;
+  site_id: string;
+  prompt: string;
+  summary: string;
+  risk: string;
+  status: string;
+  steps: Array<{ tool: string; summary?: string; risk?: string }>;
+  created_at: string;
+}
+
+export interface ActivityJobEntry {
+  id: string;
+  site_id: string;
+  plan_id: string | null;
+  tool: string;
+  risk: string;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  error: { code?: string; message?: string } | null;
+  created_at: string;
+}
+
+export interface ActivitySnapshotEntry {
+  id: string;
+  site_id: string;
+  job_id: string | null;
+  resource: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  restored_at: string | null;
+  created_at: string;
+  undoable: boolean;
+  undoTool: string | null;
+}
+
+export interface OwnerActivityTimeline {
+  sites: ActivitySiteSummary[];
+  plans: ActivityPlanEntry[];
+  jobs: ActivityJobEntry[];
+  snapshots: ActivitySnapshotEntry[];
+}
+
+export async function listOwnerActivity(
+  ownerId: string,
+  options?: { siteId?: string | null; status?: string | null; limit?: number }
+): Promise<OwnerActivityTimeline | 'site_not_found' | null> {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  const limit = Math.max(5, Math.min(60, options?.limit ?? 30));
+
+  const { data: projectRows, error: projectErr } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('owner_id', ownerId);
+
+  if (projectErr) throw new Error(projectErr.message);
+  const projectIds = (projectRows ?? []).map((p: { id: string }) => p.id);
+  if (projectIds.length === 0) {
+    return { sites: [], plans: [], jobs: [], snapshots: [] };
+  }
+
+  const { data: siteRows, error: siteErr } = await supabase
+    .from('sites')
+    .select('id, project_id, name, url, environment, status, plugin_version, last_seen_at')
+    .in('project_id', projectIds)
+    .order('created_at', { ascending: false });
+
+  if (siteErr) throw new Error(siteErr.message);
+  const sites = (siteRows ?? []) as ActivitySiteSummary[];
+  const ownedSiteIds = new Set(sites.map((s) => s.id));
+
+  const requestedSiteId = options?.siteId?.trim() || null;
+  if (requestedSiteId && !ownedSiteIds.has(requestedSiteId)) {
+    return 'site_not_found';
+  }
+
+  if (sites.length === 0) {
+    return { sites: [], plans: [], jobs: [], snapshots: [] };
+  }
+
+  const targetSiteIds = requestedSiteId ? [requestedSiteId] : Array.from(ownedSiteIds);
+  const statusFilter = options?.status?.trim() || null;
+
+  let plansQuery = supabase
+    .from('plans')
+    .select('id, site_id, prompt, summary, risk, status, steps, created_at')
+    .in('site_id', targetSiteIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (statusFilter) {
+    plansQuery = plansQuery.eq('status', statusFilter);
+  }
+
+  let jobsQuery = supabase
+    .from('jobs')
+    .select('id, site_id, plan_id, tool, risk, status, attempts, max_attempts, error, created_at')
+    .in('site_id', targetSiteIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (statusFilter) {
+    jobsQuery = jobsQuery.eq('status', statusFilter);
+  }
+
+  const snapshotsQuery = supabase
+    .from('snapshots')
+    .select('id, site_id, job_id, resource, before, after, restored_at, created_at')
+    .in('site_id', targetSiteIds)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  const [plansRes, jobsRes, snapshotsRes] = await Promise.all([
+    plansQuery,
+    jobsQuery,
+    snapshotsQuery,
+  ]);
+
+  if (plansRes.error) throw new Error(plansRes.error.message);
+  if (jobsRes.error) throw new Error(jobsRes.error.message);
+  if (snapshotsRes.error) throw new Error(snapshotsRes.error.message);
+
+  const snapshots: ActivitySnapshotEntry[] = (
+    (snapshotsRes.data ?? []) as Array<{
+      id: string;
+      site_id: string;
+      job_id: string | null;
+      resource: string;
+      before: Record<string, unknown> | null;
+      after: Record<string, unknown> | null;
+      restored_at: string | null;
+      created_at: string;
+    }>
+  ).map((snap) => {
+    const resolution = resolveUndoJob({ resource: snap.resource, before: snap.before });
+    return {
+      ...snap,
+      undoable: resolution.ok && !snap.restored_at,
+      undoTool: resolution.ok ? resolution.tool : null,
+    };
+  });
+
+  return {
+    sites,
+    plans: (plansRes.data ?? []) as ActivityPlanEntry[],
+    jobs: (jobsRes.data ?? []) as ActivityJobEntry[],
+    snapshots,
+  };
+}
+

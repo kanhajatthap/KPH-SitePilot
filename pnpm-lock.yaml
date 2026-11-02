@@ -236,6 +236,9 @@ importers:
       '@wp-agent/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
+      '@wp-agent/wp-tools':
+        specifier: workspace:*
+        version: link:../../packages/wp-tools
       next:
         specifier: ^15.1.7
         version: 15.5.28(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -437,6 +440,22 @@ importers:
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
+
+  packages/wp-tools:
+    dependencies:
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.9
+        version: 22.20.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@22.20.5)(jiti@1.21.7)
 
 packages:
 
