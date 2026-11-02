@@ -27,6 +27,9 @@ export interface ProviderMetadata {
   placeholder: string;
   freeTierNote: string;
   defaultModel: string;
+  keyConsoleUrl: string;
+  keyConsoleLabel: string;
+  setupSteps: readonly string[];
 }
 
 export const PROVIDER_CATALOG: readonly ProviderMetadata[] = [
@@ -36,6 +39,13 @@ export const PROVIDER_CATALOG: readonly ProviderMetadata[] = [
     placeholder: 'AIza…',
     freeTierNote: 'Free tier via Google AI Studio (recommended primary planner).',
     defaultModel: defaultPlannerModel('gemini'),
+    keyConsoleUrl: 'https://aistudio.google.com/apikey',
+    keyConsoleLabel: 'Open Google AI Studio',
+    setupSteps: [
+      'Open Google AI Studio (aistudio.google.com/apikey) and sign in with your Google account.',
+      'Click "Create API key" (100% free tier — no credit card required) and copy the key starting with AIza…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
   },
   {
     provider: 'openrouter',
@@ -43,6 +53,13 @@ export const PROVIDER_CATALOG: readonly ProviderMetadata[] = [
     placeholder: 'sk-or-v1-…',
     freeTierNote: 'Supports free :free models and multi-provider routing.',
     defaultModel: defaultPlannerModel('openrouter'),
+    keyConsoleUrl: 'https://openrouter.ai/keys',
+    keyConsoleLabel: 'Open OpenRouter Keys',
+    setupSteps: [
+      'Open openrouter.ai/keys and sign in with Google, GitHub, or email.',
+      'Click "Create Key", give it a label (for example "SitePilot"), and copy the key starting with sk-or-v1-…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
   },
   {
     provider: 'groq',
@@ -50,6 +67,13 @@ export const PROVIDER_CATALOG: readonly ProviderMetadata[] = [
     placeholder: 'gsk_…',
     freeTierNote: 'Low-latency free tier for fast structured JSON plans.',
     defaultModel: defaultPlannerModel('groq'),
+    keyConsoleUrl: 'https://console.groq.com/keys',
+    keyConsoleLabel: 'Open Groq Console',
+    setupSteps: [
+      'Open console.groq.com/keys and sign in to your free Groq Cloud account.',
+      'Click "Create API Key", enter a display name (for example "SitePilot"), and copy the key starting with gsk_…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
   },
 ] as const;
 
@@ -81,6 +105,9 @@ export interface PublicKeyView {
   placeholder: string;
   freeTierNote: string;
   defaultModel: string;
+  keyConsoleUrl: string;
+  keyConsoleLabel: string;
+  setupSteps: readonly string[];
   configured: boolean;
   last4: string | null;
   status: 'active' | 'not_configured';
@@ -153,6 +180,9 @@ export async function listUserKeys(
       placeholder: meta.placeholder,
       freeTierNote: meta.freeTierNote,
       defaultModel: meta.defaultModel,
+      keyConsoleUrl: meta.keyConsoleUrl,
+      keyConsoleLabel: meta.keyConsoleLabel,
+      setupSteps: meta.setupSteps,
       configured: Boolean(active),
       last4: active ? active.last4.slice(-4) : null,
       status: active ? 'active' : 'not_configured',

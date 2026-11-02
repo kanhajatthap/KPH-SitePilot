@@ -11,11 +11,47 @@ interface KeyView {
   placeholder: string;
   freeTierNote: string;
   defaultModel: string;
+  keyConsoleUrl?: string;
+  keyConsoleLabel?: string;
+  setupSteps?: string[];
   configured: boolean;
   last4: string | null;
   status: 'active' | 'not_configured';
   updatedAt: string | null;
 }
+
+const FALLBACK_KEY_GUIDES: Record<
+  ByokProvider,
+  { url: string; label: string; steps: readonly string[] }
+> = {
+  gemini: {
+    url: 'https://aistudio.google.com/apikey',
+    label: 'Open Google AI Studio',
+    steps: [
+      'Open Google AI Studio (aistudio.google.com/apikey) and sign in with your Google account.',
+      'Click "Create API key" (100% free tier — no credit card required) and copy the key starting with AIza…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
+  },
+  openrouter: {
+    url: 'https://openrouter.ai/keys',
+    label: 'Open OpenRouter Keys',
+    steps: [
+      'Open openrouter.ai/keys and sign in with Google, GitHub, or email.',
+      'Click "Create Key", give it a label (for example "SitePilot"), and copy the key starting with sk-or-v1-…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
+  },
+  groq: {
+    url: 'https://console.groq.com/keys',
+    label: 'Open Groq Console',
+    steps: [
+      'Open console.groq.com/keys and sign in to your free Groq Cloud account.',
+      'Click "Create API Key", enter a display name (for example "SitePilot"), and copy the key starting with gsk_…',
+      'Paste the key above, tick "Verify with a live ping before saving", and click Save key.',
+    ],
+  },
+};
 
 interface QuotaSpec {
   limit: number;
@@ -226,6 +262,11 @@ export default function ModelKeysSettingsPage() {
           const isSaving = busy === `save:${item.provider}`;
           const isTesting = busy === `test:${item.provider}`;
           const isDeleting = busy === `delete:${item.provider}`;
+          const fallbackGuide = FALLBACK_KEY_GUIDES[item.provider];
+          const guideUrl = item.keyConsoleUrl || fallbackGuide.url;
+          const guideLabel = item.keyConsoleLabel || fallbackGuide.label;
+          const guideSteps =
+            item.setupSteps && item.setupSteps.length > 0 ? item.setupSteps : fallbackGuide.steps;
 
           return (
             <section
@@ -239,15 +280,25 @@ export default function ModelKeysSettingsPage() {
                     {item.freeTierNote} Default model: <code>{item.defaultModel}</code>
                   </p>
                 </div>
-                {item.configured ? (
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                    Active · ••••{item.last4}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-black/5 px-2.5 py-1 text-xs text-ink/60">
-                    Not configured
-                  </span>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={guideUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-pink-200 bg-pink-50 px-2.5 py-1 text-xs font-medium text-pink-700 hover:bg-pink-100"
+                  >
+                    Get free key ↗
+                  </a>
+                  {item.configured ? (
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                      Active · ••••{item.last4}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-black/5 px-2.5 py-1 text-xs text-ink/60">
+                      Not configured
+                    </span>
+                  )}
+                </div>
               </div>
 
               {item.updatedAt ? (
@@ -331,6 +382,31 @@ export default function ModelKeysSettingsPage() {
                   {notice.text}
                 </p>
               ) : null}
+
+              <details className="group mt-4 rounded-xl border border-black/5 bg-black/[0.015] px-4 py-3">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-pink-700 select-none">
+                  <span>How to get API key ({item.label} — Free Tier)</span>
+                  <span className="text-ink/50 transition-transform group-open:rotate-180">▾</span>
+                </summary>
+                <div className="mt-3 border-t border-black/5 pt-3 text-xs text-ink/80">
+                  <ol className="list-decimal space-y-1.5 pl-4">
+                    {guideSteps.map((step, index) => (
+                      <li key={index}>{step}</li>
+                    ))}
+                  </ol>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <a
+                      href={guideUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-pink-700"
+                    >
+                      {guideLabel} ↗
+                    </a>
+                    <span className="font-mono text-[11px] text-ink-muted">{guideUrl}</span>
+                  </div>
+                </div>
+              </details>
             </section>
           );
         })}
