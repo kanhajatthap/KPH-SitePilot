@@ -18,6 +18,8 @@ describe('auth email diagnostics endpoint', () => {
     key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     site: process.env.NEXT_PUBLIC_SITE_URL,
     vercel: process.env.VERCEL_URL,
+    resend: process.env.RESEND_API_KEY,
+    from: process.env.SITEPILOT_MAIL_FROM,
   };
 
   beforeEach(() => {
@@ -35,6 +37,8 @@ describe('auth email diagnostics endpoint', () => {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: original.key,
       NEXT_PUBLIC_SITE_URL: original.site,
       VERCEL_URL: original.vercel,
+      RESEND_API_KEY: original.resend,
+      SITEPILOT_MAIL_FROM: original.from,
     });
     vi.restoreAllMocks();
   });
@@ -57,12 +61,36 @@ describe('auth email diagnostics endpoint', () => {
       callback: 'https://kph-sitepilot.vercel.app/auth/callback',
       recovery: 'https://kph-sitepilot.vercel.app/auth/confirm?next=%2Freset-password',
     });
-    expect(body.warnings).toEqual([]);
+    // With no app-side mailer the report says so rather than pretending the
+    // inbox is somebody else's problem. The sender address is the only new fact.
+    expect(body.mailer).toEqual({ configured: false, provider: 'resend', from: null });
+    expect(body.warnings).toEqual([
+      'No app-side mailer is configured (RESEND_API_KEY + SITEPILOT_MAIL_FROM), so authentication email depends on the Supabase project SMTP.',
+    ]);
     // No key material, no project URL, no user data.
     const text = JSON.stringify(body);
     expect(text).not.toContain('eyJ');
     expect(text).not.toContain('supabase.co');
     expect(text).not.toContain(ANON_KEY);
+  });
+
+  it('goes quiet about the mailer once one is configured', async () => {
+    withEnv({
+      RESEND_API_KEY: 're_test_key_1234567890',
+      SITEPILOT_MAIL_FROM: 'no-reply@kph.example',
+    });
+
+    const response = await GET(new Request('https://kph-sitepilot.vercel.app/api/auth/status?probe=0'));
+    const body = await response.json();
+
+    expect(body.warnings).toEqual([]);
+    expect(body.mailer).toEqual({
+      configured: true,
+      provider: 'resend',
+      from: 'no-reply@kph.example',
+    });
+    // The key itself must never reach the response.
+    expect(JSON.stringify(body)).not.toContain('re_test_key');
   });
 
   it('shouts when production would email loopback links', async () => {
