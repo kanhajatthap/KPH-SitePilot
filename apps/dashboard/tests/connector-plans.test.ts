@@ -138,6 +138,41 @@ describe('planner', () => {
     }
   });
 
+  it('plans safe site settings changes and refuses siteurl/home changes (E6-01)', () => {
+    const titlePlan = planFromPrompt('Change the site title to "KPH Studio"');
+    expect(titlePlan.ok).toBe(true);
+    if (titlePlan.ok) {
+      expect(titlePlan.risk).toBe('R1');
+      expect(titlePlan.steps).toEqual([
+        {
+          tool: 'settings.update',
+          args: { values: { blogname: 'KPH Studio' } },
+          risk: 'R1',
+          summary: 'Change site title (blogname) to “KPH Studio”',
+        },
+      ]);
+    }
+
+    const taglinePlan = planFromPrompt('Set the site tagline to "Shipped with SitePilot"');
+    expect(taglinePlan.ok).toBe(true);
+    if (taglinePlan.ok) {
+      expect(taglinePlan.steps[0].args).toEqual({ values: { blogdescription: 'Shipped with SitePilot' } });
+    }
+
+    const inspectSettings = planFromPrompt('Read the current site settings');
+    expect(inspectSettings.ok).toBe(true);
+    if (inspectSettings.ok) {
+      expect(inspectSettings.risk).toBe('R0');
+      expect(inspectSettings.steps[0].tool).toBe('settings.get');
+    }
+
+    const forbiddenUrl = planFromPrompt('Change siteurl to "https://evil.example"');
+    expect(forbiddenUrl.ok).toBe(false);
+    if (!forbiddenUrl.ok) {
+      expect(forbiddenUrl.reason).toContain('siteurl');
+    }
+  });
+
   it('refuses when the target or the new text is missing', () => {
     const noId = planFromPrompt('Change the title to something nicer');
     expect(noId.ok).toBe(false);

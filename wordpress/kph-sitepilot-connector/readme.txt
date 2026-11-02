@@ -4,7 +4,7 @@ Tags: ai, agent, connector, sitepilot, automation
 Requires at least: 6.4
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.7.0
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,6 +51,10 @@ Yes. Disconnecting revokes the site token on the platform, and deleting the plug
 stored settings.
 
 == Changelog ==
+
+= 0.8.0 =
+* `settings.update` & `settings.restore` (scope `site_ops`): allowlisted option writes (`blogname`, `blogdescription`, `timezone_string`, `date_format`, `time_format`, `posts_per_page`, `default_comment_status`, `default_ping_status`) with before-snapshot, read-back verification, automatic rollback on mismatch, and one-click undo. `siteurl` and `home` remain strictly non-writable.
+* Admin screen (`E2-14`): recent activity table (last 20 executed jobs, redacted), shareable diagnostic bundle (zero secrets/tokens/emails), and an admin-only form to apply rotated credentials issued by SitePilot.
 
 = 0.7.0 =
 * `blocks.parse`: the block tree of one post as a bounded list (index, name, attributes, HTML) — nested blocks flattened in document order.

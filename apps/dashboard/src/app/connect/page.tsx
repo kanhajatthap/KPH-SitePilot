@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ALL_SITE_SCOPES, evaluateSiteCapabilities, type SiteScope } from '../../lib/capabilities';
 
 interface ConnectedSite {
   id: string;
   url: string;
   name: string;
-  environment: string;
-  status: string;
+  environment: 'local' | 'staging' | 'production' | string;
+  status: 'active' | 'paused' | 'revoked' | 'offline' | string;
   scopes: string[] | null;
   plugin_version: string | null;
   wp_version: string | null;
@@ -17,19 +18,21 @@ interface ConnectedSite {
 }
 
 function summarizeCapabilities(capabilities: Record<string, unknown> | null): string | null {
-  if (!capabilities) return null;
+  if (!capabilities || Object.keys(capabilities).length === 0) return null;
 
-  const theme = capabilities.theme as { type?: string; name?: string } | undefined;
-  const builders = capabilities.builders as Record<string, unknown> | undefined;
-  const postTypes = capabilities.postTypes as unknown[] | undefined;
-  const plugins = capabilities.plugins as unknown[] | undefined;
-
+  const graph = evaluateSiteCapabilities({ scopes: ALL_SITE_SCOPES, capabilities });
   const parts: string[] = [];
-  if (theme?.type) parts.push(`${theme.type} theme`);
-  if (postTypes?.length) parts.push(`${postTypes.length} post types`);
-  if (plugins?.length) parts.push(`${plugins.length} plugins`);
-  if (builders?.woocommerce) parts.push('WooCommerce');
-  if (builders?.elementor) parts.push('Elementor');
+
+  if (graph.themeName) {
+    parts.push(`${graph.themeName} (${graph.isBlockTheme ? 'block' : 'classic'})`);
+  } else {
+    parts.push(graph.isBlockTheme ? 'block theme' : 'classic theme');
+  }
+  if (graph.postTypeCount) parts.push(`${graph.postTypeCount} post types`);
+  if (graph.pluginCount) parts.push(`${graph.pluginCount} plugins`);
+  if (graph.hasWooCommerce) parts.push('WooCommerce');
+  if (graph.hasElementor) parts.push('Elementor');
+  if (graph.hasSeoPlugin) parts.push('SEO plugin');
 
   return parts.length ? parts.join(' · ') : null;
 }
@@ -48,11 +51,25 @@ interface PairingCode {
   expiresInSeconds: number;
 }
 
+interface RotatedSecretState {
+  siteId: string;
+  siteName: string;
+  token: string;
+  secret: string;
+}
+
 function formatCountdown(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
+
+const STATUS_BADGE: Record<string, string> = {
+  active: 'bg-emerald-50 text-emerald-700',
+  paused: 'bg-amber-50 text-amber-800',
+  revoked: 'bg-rose-50 text-rose-700',
+  offline: 'bg-black/5 text-ink/60',
+};
 
 export default function ConnectPage() {
   const [sites, setSites] = useState<ConnectedSite[]>([]);
@@ -64,6 +81,10 @@ export default function ConnectPage() {
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
   const [jobBusy, setJobBusy] = useState<string | null>(null);
   const [config, setConfig] = useState<ConnectorConfig | null>(null);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
+  const [draftEnv, setDraftEnv] = useState<'local' | 'staging' | 'production'>('production');
+  const [draftScopes, setDraftScopes] = useState<SiteScope[]>(['read']);
+  const [rotated, setRotated] = useState<RotatedSecretState | null>(null);
 
   const loadSites = useCallback(async () => {
     try {
@@ -155,6 +176,100 @@ export default function ConnectPage() {
     }
   };
 
+  const patchSite = async (
+    siteId: string,
+    patch: Record<string, unknown>,
+    successMessage: string
+  ) => {
+    setJobBusy(siteId);
+    try {
+      const res = await fetch(`/api/connector/sites/${siteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const body = await res.json().catch(() => ({}));
+      setJobNotice((current) => ({
+        ...current,
+        [siteId]: res.ok ? successMessage : body.message ?? 'Update failed.',
+      }));
+      if (res.ok) {
+        setEditingSiteId(null);
+        await loadSites();
+      }
+    } catch (error) {
+      setJobNotice((current) => ({ ...current, [siteId]: (error as Error).message }));
+    } finally {
+      setJobBusy(null);
+    }
+  };
+
+  const openEditor = (site: ConnectedSite) => {
+    if (editingSiteId === site.id) {
+      setEditingSiteId(null);
+      return;
+    }
+    const env =
+      site.environment === 'local' || site.environment === 'staging' ? site.environment : 'production';
+    const currentScopes = (site.scopes ?? ['read']).filter((s): s is SiteScope =>
+      (ALL_SITE_SCOPES as readonly string[]).includes(s)
+    );
+    setDraftEnv(env);
+    setDraftScopes(currentScopes.includes('read') ? currentScopes : ['read', ...currentScopes]);
+    setEditingSiteId(site.id);
+  };
+
+  const toggleDraftScope = (scope: SiteScope) => {
+    if (scope === 'read') return; // read is mandatory
+    setDraftScopes((current) =>
+      current.includes(scope) ? current.filter((item) => item !== scope) : [...current, scope]
+    );
+  };
+
+  const rotateSecret = async (site: ConnectedSite) => {
+    const typed = window.prompt(
+      `Type the site name to rotate credentials for ${site.url} — the old secret stops working immediately, and you must paste the new token + secret into WordPress.\n\n${site.name}`
+    );
+    if (typed === null) return;
+
+    if (typed.trim() !== site.name) {
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: 'The name did not match, so credentials were not rotated.',
+      }));
+      return;
+    }
+
+    setJobBusy(site.id);
+    try {
+      const res = await fetch(`/api/connector/sites/${site.id}/rotate-secret`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setJobNotice((current) => ({
+          ...current,
+          [site.id]: body.message ?? 'Secret rotation failed.',
+        }));
+        return;
+      }
+
+      setRotated({
+        siteId: site.id,
+        siteName: site.name,
+        token: String(body.credentials?.token ?? ''),
+        secret: String(body.credentials?.secret ?? ''),
+      });
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: 'Credentials rotated. Copy them from the banner above right now.',
+      }));
+      await loadSites();
+    } catch (error) {
+      setJobNotice((current) => ({ ...current, [site.id]: (error as Error).message }));
+    } finally {
+      setJobBusy(null);
+    }
+  };
+
   const disconnect = async (site: ConnectedSite) => {
     const typed = window.prompt(
       `Type the site name to disconnect ${site.url} — queued jobs are cancelled and the connector must be paired again.\n\n${site.name}`
@@ -190,9 +305,17 @@ export default function ConnectPage() {
         <Link href="/" className="text-sm text-ink-muted underline-offset-4 hover:underline">
           ← Back to SitePilot
         </Link>
-        <Link href="/docs/connector" className="text-sm text-pink-700 underline">
-          Install guide
-        </Link>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <Link href="/studio" className="text-pink-700 underline">
+            Studio
+          </Link>
+          <Link href="/settings/keys" className="text-pink-700 underline">
+            Model API keys
+          </Link>
+          <Link href="/docs/connector" className="text-pink-700 underline">
+            Install guide
+          </Link>
+        </div>
       </div>
 
       <h1 className="mt-6 text-2xl font-semibold text-ink">Connect a WordPress site</h1>
@@ -253,6 +376,52 @@ export default function ConnectPage() {
         </section>
       ) : null}
 
+      {rotated ? (
+        <section className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-950">
+            New credentials for {rotated.siteName} — copy these now (shown once)
+          </p>
+          <p className="mt-1 text-xs text-amber-900/80">
+            In WordPress open <strong>SitePilot → Apply rotated credentials</strong> and paste all
+            three values. Once you dismiss this notice they can never be retrieved again.
+          </p>
+          <div className="mt-3 space-y-2 text-xs">
+            <div>
+              <span className="font-medium text-amber-950">Site ID:</span>{' '}
+              <code className="break-all rounded bg-white/80 px-2 py-0.5">{rotated.siteId}</code>
+            </div>
+            <div>
+              <span className="font-medium text-amber-950">New token:</span>{' '}
+              <code className="break-all rounded bg-white/80 px-2 py-0.5">{rotated.token}</code>
+            </div>
+            <div>
+              <span className="font-medium text-amber-950">New secret:</span>{' '}
+              <code className="break-all rounded bg-white/80 px-2 py-0.5">{rotated.secret}</code>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(
+                  `Site ID: ${rotated.siteId}\nToken: ${rotated.token}\nSecret: ${rotated.secret}`
+                );
+              }}
+              className="rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-medium text-white"
+            >
+              Copy credentials
+            </button>
+            <button
+              type="button"
+              onClick={() => setRotated(null)}
+              className="rounded-lg border border-amber-400 px-3 py-1.5 text-xs text-amber-950"
+            >
+              Dismiss — I saved them in WordPress
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-6 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-ink">Connected sites</h2>
 
@@ -263,63 +432,172 @@ export default function ConnectPage() {
         ) : null}
 
         <ul className="mt-4 space-y-3">
-          {sites.map((site) => (
-            <li key={site.id} className="rounded-xl border border-black/5 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium text-ink">{site.name}</p>
-                  <p className="text-xs text-ink-muted">{site.url}</p>
+          {sites.map((site) => {
+            const isEditing = editingSiteId === site.id;
+            return (
+              <li key={site.id} className="rounded-xl border border-black/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-ink">{site.name}</p>
+                    <p className="text-xs text-ink-muted">{site.url}</p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-1 text-xs font-medium ${
+                      STATUS_BADGE[site.status] ?? 'bg-black/5 text-ink/70'
+                    }`}
+                  >
+                    {site.status}
+                  </span>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-                  {site.status}
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-ink-muted">
-                {site.environment} · WordPress {site.wp_version ?? 'unknown'} · connector{' '}
-                {site.plugin_version ?? 'unknown'}
-              </p>
-              <p className="mt-1 text-xs text-ink-muted">
-                Scopes: {(site.scopes ?? []).join(', ') || 'read'}
-              </p>
-              {summarizeCapabilities(site.capabilities) ? (
-                <p className="mt-1 text-xs text-ink-muted">
-                  Detected: {summarizeCapabilities(site.capabilities)}
+                <p className="mt-2 text-xs text-ink-muted">
+                  {site.environment} · WordPress {site.wp_version ?? 'unknown'} · connector{' '}
+                  {site.plugin_version ?? 'unknown'}
                 </p>
-              ) : (
                 <p className="mt-1 text-xs text-ink-muted">
-                  No capability manifest yet — the connector uploads it on first contact.
+                  Scopes: {(site.scopes ?? []).join(', ') || 'read'}
                 </p>
-              )}
-              {site.last_seen_at ? (
-                <p className="mt-1 text-xs text-ink-muted">
-                  Last contact: {new Date(site.last_seen_at).toLocaleString()}
-                </p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void refreshCapabilities(site.id)}
-                  disabled={jobBusy === site.id}
-                  className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink disabled:opacity-60"
-                >
-                  {jobBusy === site.id ? 'Queueing…' : 'Refresh capabilities'}
-                </button>
-                {site.status === 'active' ? (
+                {summarizeCapabilities(site.capabilities) ? (
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Detected: {summarizeCapabilities(site.capabilities)}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-ink-muted">
+                    No capability manifest yet — the connector uploads it on first contact.
+                  </p>
+                )}
+                {site.last_seen_at ? (
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Last contact: {new Date(site.last_seen_at).toLocaleString()}
+                  </p>
+                ) : null}
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {site.status === 'active' ? (
+                    <button
+                      type="button"
+                      onClick={() => void refreshCapabilities(site.id)}
+                      disabled={jobBusy === site.id}
+                      className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink disabled:opacity-60"
+                    >
+                      {jobBusy === site.id ? 'Working…' : 'Refresh capabilities'}
+                    </button>
+                  ) : null}
+
+                  {site.status === 'active' || site.status === 'paused' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void patchSite(
+                          site.id,
+                          { status: site.status === 'paused' ? 'active' : 'paused' },
+                          site.status === 'paused'
+                            ? 'Site resumed. Polling is active again.'
+                            : 'Site paused. No jobs will be claimed until resumed.'
+                        )
+                      }
+                      disabled={jobBusy === site.id}
+                      className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink disabled:opacity-60"
+                    >
+                      {site.status === 'paused' ? 'Resume' : 'Pause'}
+                    </button>
+                  ) : null}
+
+                  {site.status !== 'revoked' ? (
+                    <button
+                      type="button"
+                      onClick={() => openEditor(site)}
+                      disabled={jobBusy === site.id}
+                      className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink disabled:opacity-60"
+                    >
+                      {isEditing ? 'Close settings' : 'Scopes & env'}
+                    </button>
+                  ) : null}
+
                   <button
                     type="button"
-                    onClick={() => void disconnect(site)}
+                    onClick={() => void rotateSecret(site)}
                     disabled={jobBusy === site.id}
-                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-60"
+                    className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs text-amber-800 disabled:opacity-60"
                   >
-                    Disconnect
+                    Rotate secret
                   </button>
+
+                  {site.status !== 'revoked' ? (
+                    <button
+                      type="button"
+                      onClick={() => void disconnect(site)}
+                      disabled={jobBusy === site.id}
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-700 disabled:opacity-60"
+                    >
+                      Disconnect
+                    </button>
+                  ) : null}
+
+                  {jobNotice[site.id] ? (
+                    <span className="text-xs text-ink-muted">{jobNotice[site.id]}</span>
+                  ) : null}
+                </div>
+
+                {isEditing ? (
+                  <div className="mt-4 rounded-xl border border-black/5 bg-black/[0.015] p-3">
+                    <label className="block text-xs font-medium text-ink">
+                      Environment
+                      <select
+                        value={draftEnv}
+                        onChange={(event) =>
+                          setDraftEnv(event.target.value as 'local' | 'staging' | 'production')
+                        }
+                        className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-xs"
+                      >
+                        <option value="production">production</option>
+                        <option value="staging">staging</option>
+                        <option value="local">local</option>
+                      </select>
+                    </label>
+
+                    <p className="mt-3 text-xs font-medium text-ink">Allowed platform scopes</p>
+                    <div className="mt-1.5 flex flex-wrap gap-3">
+                      {ALL_SITE_SCOPES.map((scope) => (
+                        <label key={scope} className="flex items-center gap-1.5 text-xs text-ink-muted">
+                          <input
+                            type="checkbox"
+                            checked={draftScopes.includes(scope)}
+                            disabled={scope === 'read'}
+                            onChange={() => toggleDraftScope(scope)}
+                          />
+                          <span>{scope}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void patchSite(
+                            site.id,
+                            { environment: draftEnv, scopes: draftScopes },
+                            'Environment and scopes updated.'
+                          )
+                        }
+                        disabled={jobBusy === site.id}
+                        className="rounded-lg bg-pink-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+                      >
+                        Save changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSiteId(null)}
+                        className="rounded-lg border border-black/10 px-3 py-1.5 text-xs text-ink"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
-                {jobNotice[site.id] ? (
-                  <span className="text-xs text-ink-muted">{jobNotice[site.id]}</span>
-                ) : null}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
 
         <button

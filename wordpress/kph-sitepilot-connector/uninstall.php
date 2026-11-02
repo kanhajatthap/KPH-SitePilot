@@ -15,6 +15,7 @@ delete_transient( 'kph_sp_last_heartbeat' );
 delete_transient( 'kph_sp_poll_lock' );
 delete_option( 'kph_sp_last_contact' );
 delete_option( 'kph_sp_last_job_error' );
+delete_option( 'kph_sp_recent_jobs' );
 
 // Multisite: clean each site's options as well.
 if ( is_multisite() ) {
@@ -27,9 +28,7 @@ if ( is_multisite() ) {
 		delete_transient( 'kph_sp_poll_lock' );
 		delete_option( 'kph_sp_last_contact' );
 		delete_option( 'kph_sp_last_job_error' );
-delete_transient( 'kph_sp_poll_lock' );
-delete_option( 'kph_sp_last_contact' );
-delete_option( 'kph_sp_last_job_error' );
+		delete_option( 'kph_sp_recent_jobs' );
 		restore_current_blog();
 	}
 }

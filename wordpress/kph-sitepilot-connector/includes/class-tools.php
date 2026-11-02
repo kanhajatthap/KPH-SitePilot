@@ -49,6 +49,9 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'content.publish',
 				'content.unpublish',
 				'blocks.replace',
+				// Allowlisted settings writes + undo (E6-01 / E3-09).
+				'settings.update',
+				'settings.restore',
 			);
 		}
 
@@ -78,6 +81,8 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'content.publish' => 'content',
 				'content.unpublish' => 'content',
 				'blocks.replace'  => 'content',
+				'settings.update' => 'site_ops',
+				'settings.restore' => 'site_ops',
 			);
 
 			return isset( $map[ $tool ] ) ? $map[ $tool ] : 'read';
@@ -147,6 +152,10 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 					return self::content_publish( $args, 'draft' );
 				case 'blocks.replace':
 					return self::blocks_replace( $args );
+				case 'settings.update':
+					return self::settings_update( $args );
+				case 'settings.restore':
+					return self::settings_restore( $args );
 			}
 
 			return new WP_Error( 'kph_sp_unknown_tool', 'Tool dispatch failed.' );
@@ -512,6 +521,200 @@ if ( ! class_exists( 'KPH_SP_Tools' ) ) {
 				'count'    => count( $values ),
 				'readable' => $allowed,
 				'values'   => $values,
+			);
+		}
+
+		/**
+		 * Options that may be mutated remotely (`siteurl` and `home` are excluded
+		 * by design so a prompt can never rewrite the site origin).
+		 *
+		 * @return string[]
+		 */
+		private static function writable_settings_keys() {
+			return array(
+				'blogname',
+				'blogdescription',
+				'timezone_string',
+				'date_format',
+				'time_format',
+				'posts_per_page',
+				'default_comment_status',
+				'default_ping_status',
+			);
+		}
+
+		/**
+		 * Validates a map of option updates before touching `get_option` or
+		 * `update_option`.
+		 *
+		 * @param mixed $raw Raw option map.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function validate_settings_values( $raw ) {
+			if ( ! is_array( $raw ) || empty( $raw ) ) {
+				return new WP_Error(
+					'kph_sp_invalid_argument',
+					'settings.update requires a non-empty "values" object.'
+				);
+			}
+
+			$allowed = self::writable_settings_keys();
+			$cleaned = array();
+
+			foreach ( $raw as $raw_key => $value ) {
+				$key = sanitize_key( (string) $raw_key );
+				if ( '' === $key || ! in_array( $key, $allowed, true ) ) {
+					return new WP_Error(
+						'kph_sp_option_not_allowed',
+						sprintf( 'Option "%s" is not writable through the connector.', (string) $raw_key )
+					);
+				}
+
+				switch ( $key ) {
+					case 'blogname':
+						$text = sanitize_text_field( (string) $value );
+						if ( '' === $text || strlen( $text ) > 200 ) {
+							return new WP_Error( 'kph_sp_invalid_argument', 'blogname must be 1–200 characters.' );
+						}
+						$cleaned[ $key ] = $text;
+						break;
+
+					case 'blogdescription':
+						$text = sanitize_text_field( (string) $value );
+						if ( strlen( $text ) > 400 ) {
+							return new WP_Error( 'kph_sp_invalid_argument', 'blogdescription must be at most 400 characters.' );
+						}
+						$cleaned[ $key ] = $text;
+						break;
+
+					case 'timezone_string':
+						$tz = sanitize_text_field( (string) $value );
+						if ( '' !== $tz && ! in_array( $tz, timezone_identifiers_list(), true ) ) {
+							return new WP_Error( 'kph_sp_invalid_argument', 'timezone_string must be a valid PHP timezone identifier.' );
+						}
+						$cleaned[ $key ] = $tz;
+						break;
+
+					case 'date_format':
+					case 'time_format':
+						$fmt = sanitize_text_field( (string) $value );
+						if ( '' === $fmt || strlen( $fmt ) > 64 ) {
+							return new WP_Error( 'kph_sp_invalid_argument', sprintf( '%s must be 1–64 characters.', $key ) );
+						}
+						$cleaned[ $key ] = $fmt;
+						break;
+
+					case 'posts_per_page':
+						$ppp = (int) $value;
+						if ( $ppp < 1 || $ppp > 100 ) {
+							return new WP_Error( 'kph_sp_invalid_argument', 'posts_per_page must be between 1 and 100.' );
+						}
+						$cleaned[ $key ] = $ppp;
+						break;
+
+					case 'default_comment_status':
+					case 'default_ping_status':
+						$status = sanitize_key( (string) $value );
+						if ( ! in_array( $status, array( 'open', 'closed' ), true ) ) {
+							return new WP_Error( 'kph_sp_invalid_argument', sprintf( '%s must be "open" or "closed".', $key ) );
+						}
+						$cleaned[ $key ] = $status;
+						break;
+				}
+			}
+
+			return $cleaned;
+		}
+
+		/**
+		 * Updates allowlisted options with before-snapshot, read-back verification,
+		 * and automatic rollback on mismatch.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function settings_update( $args ) {
+			$raw = isset( $args['values'] ) ? $args['values'] : $args;
+			return self::apply_settings_values( $raw, false );
+		}
+
+		/**
+		 * Restores allowlisted options from a pre-write snapshot.
+		 *
+		 * @param array<string,mixed> $args Arguments.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function settings_restore( $args ) {
+			$before = isset( $args['before'] ) && is_array( $args['before'] ) ? $args['before'] : array();
+			$raw    = isset( $before['values'] ) ? $before['values'] : $before;
+			return self::apply_settings_values( $raw, true );
+		}
+
+		/**
+		 * Shared verified option writer.
+		 *
+		 * @param mixed $raw        Option map.
+		 * @param bool  $is_restore True when running as an undo job.
+		 * @return array<string,mixed>|WP_Error
+		 */
+		private static function apply_settings_values( $raw, $is_restore ) {
+			$validated = self::validate_settings_values( $raw );
+			if ( is_wp_error( $validated ) ) {
+				return $validated;
+			}
+
+			$before_values = array();
+			foreach ( $validated as $key => $expected ) {
+				$current = get_option( $key, '' );
+				$before_values[ $key ] = 'posts_per_page' === $key ? (int) $current : (string) $current;
+			}
+
+			foreach ( $validated as $key => $expected ) {
+				update_option( $key, $expected );
+			}
+
+			$after_values = array();
+			$mismatched   = false;
+			foreach ( $validated as $key => $expected ) {
+				$stored = get_option( $key, '' );
+				if ( 'posts_per_page' === $key ) {
+					$actual = (int) $stored;
+					$after_values[ $key ] = $actual;
+					if ( $actual !== (int) $expected ) {
+						$mismatched = true;
+					}
+				} else {
+					$actual = (string) $stored;
+					$after_values[ $key ] = $actual;
+					if ( $actual !== (string) $expected ) {
+						$mismatched = true;
+					}
+				}
+			}
+
+			if ( $mismatched ) {
+				foreach ( $before_values as $key => $previous ) {
+					update_option( $key, $previous );
+				}
+				return new WP_Error(
+					'kph_sp_verification_failed',
+					'WordPress stored different option values than requested; rolled back to previous settings.',
+					array(
+						'before'   => array( 'values' => $before_values ),
+						'expected' => $validated,
+						'actual'   => $after_values,
+					)
+				);
+			}
+
+			return array(
+				'verified'         => true,
+				'snapshotResource' => 'settings',
+				'changedKeys'      => array_keys( $validated ),
+				'before'           => array( 'values' => $before_values ),
+				'after'            => array( 'values' => $after_values ),
+				'changed'          => $before_values !== $after_values,
+				'restore'          => (bool) $is_restore,
 			);
 		}
 

@@ -20,6 +20,8 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 		const LOCK_TRANSIENT          = 'kph_sp_poll_lock';
 		const CONTACT_TRANSIENT       = 'kph_sp_last_heartbeat';
 		const LAST_JOB_OPTION         = 'kph_sp_last_job_at';
+		const RECENT_JOBS_OPTION      = 'kph_sp_recent_jobs';
+		const MAX_RECENT_JOBS         = 20;
 		const HEARTBEAT_INTERVAL      = 300; // seconds
 		const LIVE_POLL_SECONDS       = 5;
 		const MINUTE_POLL_SECONDS     = 60;
@@ -217,17 +219,20 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 			self::$current_job = null;
 
 			if ( is_wp_error( $result ) ) {
-				$payload = array(
+				$error_code = (string) $result->get_error_code();
+				$non_retry  = array( 'kph_sp_unknown_tool', 'kph_sp_scope_missing', 'kph_sp_option_not_allowed' );
+				$payload    = array(
 					'jobId'     => $job_id,
 					'ok'        => false,
 					'error'     => array(
-						'code'    => (string) $result->get_error_code(),
+						'code'    => $error_code,
 						'message' => (string) $result->get_error_message(),
 					),
-					// Unknown tool / missing scope will not fix themselves.
-					'retryable' => ! in_array( $result->get_error_code(), array( 'kph_sp_unknown_tool', 'kph_sp_scope_missing' ), true ),
+					// Unknown tool / missing scope / disallowed option will not fix themselves.
+					'retryable' => ! in_array( $error_code, $non_retry, true ),
 					'durationMs' => $elapsed,
 				);
+				self::record_activity( $job_id, $tool, false, $elapsed, $error_code );
 			} else {
 				$payload = array(
 					'jobId'      => $job_id,
@@ -239,13 +244,21 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 
 				// Mutation tools return the pre-write state; forward it so the
 				// platform can offer a one-click undo even if the user closes the tab.
-				if ( is_array( $result ) && isset( $result['before'] ) && is_array( $result['before'] ) && ! empty( $result['id'] ) ) {
+				if ( is_array( $result ) && isset( $result['snapshotResource'] ) && is_string( $result['snapshotResource'] ) && isset( $result['before'] ) && is_array( $result['before'] ) ) {
+					$payload['snapshot'] = array(
+						'resource' => $result['snapshotResource'],
+						'before'   => $result['before'],
+						'after'    => isset( $result['after'] ) && is_array( $result['after'] ) ? $result['after'] : null,
+					);
+				} elseif ( is_array( $result ) && isset( $result['before'] ) && is_array( $result['before'] ) && ! empty( $result['id'] ) ) {
 					$payload['snapshot'] = array(
 						'resource' => 'post:' . (int) $result['id'],
 						'before'   => $result['before'],
 						'after'    => isset( $result['after'] ) && is_array( $result['after'] ) ? $result['after'] : null,
 					);
 				}
+
+				self::record_activity( $job_id, $tool, true, $elapsed, '' );
 			}
 
 			$report = self::request( sprintf( self::PATH_RESULT, rawurlencode( $job_id ) ), $payload );
@@ -388,6 +401,45 @@ if ( ! class_exists( 'KPH_SP_Job_Runner' ) ) {
 				),
 				false
 			);
+		}
+
+		/**
+		 * Appends a bounded, redacted activity entry (max 20) for the WP admin page.
+		 *
+		 * Never stores arguments, post bodies or credentials — only the tool name,
+		 * status, duration, error code and job id prefix.
+		 *
+		 * @param string $job_id     Job UUID.
+		 * @param string $tool       Tool name.
+		 * @param bool   $ok         True on success.
+		 * @param int    $elapsed_ms Duration in milliseconds.
+		 * @param string $error_code Optional error code.
+		 */
+		public static function record_activity( $job_id, $tool, $ok, $elapsed_ms, $error_code = '' ) {
+			$existing = self::recent_jobs();
+			$entry    = array(
+				'jobPrefix'  => substr( preg_replace( '/[^a-zA-Z0-9-]/', '', (string) $job_id ), 0, 8 ),
+				'tool'       => sanitize_text_field( (string) $tool ),
+				'status'     => $ok ? 'succeeded' : 'failed',
+				'durationMs' => max( 0, (int) $elapsed_ms ),
+				'errorCode'  => sanitize_key( (string) $error_code ),
+				'at'         => gmdate( 'c' ),
+			);
+
+			array_unshift( $existing, $entry );
+			$bounded = array_slice( $existing, 0, self::MAX_RECENT_JOBS );
+
+			update_option( self::RECENT_JOBS_OPTION, $bounded, false );
+		}
+
+		/**
+		 * Returns the bounded list of recent job executions (newest first).
+		 *
+		 * @return array<int,array<string,mixed>>
+		 */
+		public static function recent_jobs() {
+			$stored = get_option( self::RECENT_JOBS_OPTION, array() );
+			return is_array( $stored ) ? $stored : array();
 		}
 	}
 }

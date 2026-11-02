@@ -649,7 +649,14 @@ export interface SiteUpdate {
   scopes?: string[];
 }
 
-/** Applies an owner-checked partial update and returns the new row. */
+/**
+ * Applies an owner-checked partial update and returns the new row.
+ *
+ * Ownership is verified *before* issuing the `UPDATE`: in PostgREST an embedded
+ * `.eq('projects.owner_id', …)` filter only constrains the returned `SELECT`
+ * projection after mutating the base row. Checking `findOwnedSite` first ensures
+ * a cross-tenant request never touches `sites`.
+ */
 export async function updateOwnedSite(
   ownerId: string,
   siteId: string,
@@ -658,11 +665,13 @@ export async function updateOwnedSite(
   const supabase = createSupabaseAdminClient();
   if (!supabase) return null;
 
+  const owned = await findOwnedSite(ownerId, siteId);
+  if (!owned) return null;
+
   const { data, error } = await supabase
     .from('sites')
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', siteId)
-    .eq('projects.owner_id', ownerId)
     .select(OWNED_SITE_COLUMNS)
     .maybeSingle();
 
@@ -684,7 +693,8 @@ export interface RotatedCredentials {
  * The secret is encrypted at rest and never stored in plaintext; the caller sees
  * it exactly once. Rotating also clears `revoked`, because an operator rotating a
  * credential is re-authorising the site — otherwise the new credentials would be
- * dead on arrival.
+ * dead on arrival. Ownership is verified before writing so another account's
+ * site id answers `null` without touching storage.
  */
 export async function rotateSiteCredentials(
   ownerId: string,
@@ -702,6 +712,9 @@ export async function rotateSiteCredentials(
     throw new Error('SITEPILOT_ENCRYPTION_KEY is not configured.');
   }
 
+  const owned = await findOwnedSite(ownerId, siteId);
+  if (!owned) return null;
+
   const token = generateSiteToken();
   const secret = generateSiteSecret();
 
@@ -714,7 +727,6 @@ export async function rotateSiteCredentials(
       updated_at: new Date().toISOString(),
     })
     .eq('id', siteId)
-    .eq('projects.owner_id', ownerId)
     .select('id')
     .maybeSingle();
 
@@ -722,4 +734,73 @@ export async function rotateSiteCredentials(
   if (!data) return null;
 
   return { token, secret };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bring-your-own-key (BYOK) storage port (E3-11 / E9-12)                     */
+/* -------------------------------------------------------------------------- */
+
+import type { ByokProvider, StoredUserKeySummary, UserKeyStore } from './keys';
+
+export function createSupabaseUserKeyStore(): UserKeyStore | null {
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) return null;
+
+  return {
+    async listKeys(ownerId: string): Promise<StoredUserKeySummary[]> {
+      const { data, error } = await supabase
+        .from('user_api_keys')
+        .select('provider, last4, status, updated_at')
+        .eq('owner_id', ownerId);
+
+      if (error) throw new Error(error.message);
+      return (data ?? []) as StoredUserKeySummary[];
+    },
+
+    async getEncryptedKey(ownerId: string, provider: ByokProvider) {
+      const { data, error } = await supabase
+        .from('user_api_keys')
+        .select('key_encrypted, status')
+        .eq('owner_id', ownerId)
+        .eq('provider', provider)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+      return (data as { key_encrypted: string; status: string } | null) ?? null;
+    },
+
+    async upsertKey(input): Promise<StoredUserKeySummary> {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('user_api_keys')
+        .upsert(
+          {
+            owner_id: input.ownerId,
+            provider: input.provider,
+            key_encrypted: input.keyEncrypted,
+            last4: input.last4,
+            status: 'active',
+            updated_at: now,
+          },
+          { onConflict: 'owner_id,provider' }
+        )
+        .select('provider, last4, status, updated_at')
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as StoredUserKeySummary;
+    },
+
+    async deleteKey(ownerId: string, provider: ByokProvider): Promise<boolean> {
+      const { data, error } = await supabase
+        .from('user_api_keys')
+        .delete()
+        .eq('owner_id', ownerId)
+        .eq('provider', provider)
+        .select('id');
+
+      if (error) throw new Error(error.message);
+      return Array.isArray(data) && data.length > 0;
+    },
+  };
 }

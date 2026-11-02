@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { evaluateSiteCapabilities, suggestPromptsForSite } from '../../lib/capabilities';
 
 /**
  * Studio — the prompt-first surface.
@@ -18,6 +19,8 @@ interface ConnectedSite {
   name: string;
   environment: string;
   status: string;
+  scopes: string[] | null;
+  capabilities: Record<string, unknown> | null;
   last_seen_at: string | null;
 }
 
@@ -80,11 +83,25 @@ const STATUS_STYLE: Record<string, string> = {
   cancelled: 'text-ink/40',
 };
 
-const EXAMPLES = [
-  'Change the heading of post 12 to “Built for teams that ship”',
-  'Rewrite the content of page 8 with a short intro about our pricing',
-  'Create a draft page titled “Careers” with our open roles',
-];
+function formatStepArgs(args: Record<string, unknown>): string | null {
+  const entries = Object.entries(args ?? {});
+  if (entries.length === 0) return null;
+
+  return entries
+    .map(([key, value]) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const nested = Object.entries(value as Record<string, unknown>)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join(', ');
+        return `${key}: { ${nested} }`;
+      }
+      const rendered = typeof value === 'string' && value.length > 90
+        ? `${JSON.stringify(value.slice(0, 87))}…`
+        : JSON.stringify(value);
+      return `${key}: ${rendered}`;
+    })
+    .join(' · ');
+}
 
 export default function StudioPage() {
   const [sites, setSites] = useState<ConnectedSite[]>([]);
@@ -241,6 +258,19 @@ export default function StudioPage() {
   }
 
   const activeSites = sites.filter((site) => site.status === 'active');
+  const selectedSite = useMemo(
+    () => activeSites.find((site) => site.id === siteId) ?? activeSites[0] ?? null,
+    [activeSites, siteId]
+  );
+  const capabilityGraph = useMemo(
+    () => (selectedSite ? evaluateSiteCapabilities(selectedSite) : null),
+    [selectedSite]
+  );
+  const examples = useMemo(
+    () => (selectedSite ? suggestPromptsForSite(selectedSite) : []),
+    [selectedSite]
+  );
+
   const confirmationKind: 'none' | 'word' | 'plan-id' =
     plan?.risk === 'R3' ? 'plan-id' : plan?.risk === 'R2' ? 'word' : 'none';
   const needsConfirmation = confirmationKind !== 'none';
@@ -260,9 +290,12 @@ export default function StudioPage() {
             Describe the change. Review the plan. Approve it. SitePilot writes it, verifies it, and can undo it.
           </p>
         </div>
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap gap-4 text-sm">
           <Link className="text-pink-700 underline" href="/connect">
             Connected sites
+          </Link>
+          <Link className="text-pink-700 underline" href="/settings/keys">
+            Model API keys
           </Link>
           <Link className="text-pink-700 underline" href="/docs/connector">
             Install guide
@@ -302,19 +335,50 @@ export default function StudioPage() {
             ))}
           </select>
 
+          {capabilityGraph ? (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-700">
+                {capabilityGraph.availableCount} tools enabled
+              </span>
+              {capabilityGraph.hasManifest ? (
+                <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-ink/70">
+                  {capabilityGraph.isBlockTheme ? 'Block theme' : 'Classic theme'}
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-amber-800">
+                  Capability scan pending first heartbeat
+                </span>
+              )}
+              {capabilityGraph.hasWooCommerce ? (
+                <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-ink/70">WooCommerce</span>
+              ) : null}
+              {capabilityGraph.hasElementor ? (
+                <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-ink/70">Elementor</span>
+              ) : null}
+              {capabilityGraph.disabledByScopeCount > 0 ? (
+                <Link
+                  href="/connect"
+                  className="rounded-full bg-amber-50 px-2.5 py-0.5 text-amber-800 underline"
+                >
+                  {capabilityGraph.disabledByScopeCount} tools gated by scope
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+
           <label className="mt-5 block text-xs font-medium uppercase tracking-wide text-ink/50" htmlFor="prompt">
             What should change?
           </label>
           <textarea
             id="prompt"
             className="mt-2 h-28 w-full rounded-lg border border-black/10 px-3 py-2 text-sm"
-            placeholder="Change the heading of post 12 to “Built for teams that ship”"
+            placeholder="Change the title of post #12 to “Built for teams that ship”"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
           />
 
           <div className="mt-2 flex flex-wrap gap-2">
-            {EXAMPLES.map((example) => (
+            {examples.map((example) => (
               <button
                 key={example}
                 type="button"
@@ -335,7 +399,12 @@ export default function StudioPage() {
             {busy === 'plan' ? 'Planning…' : 'Create plan'}
           </button>
           <p className="mt-2 text-xs text-ink/50">
-            Include a post or page number (<code>#12</code> or <code>post 12</code>) and the exact text you want.
+            Add a free{' '}
+            <Link href="/settings/keys" className="text-pink-700 underline">
+              Gemini, OpenRouter or Groq key
+            </Link>{' '}
+            for natural-language planning, or use exact targets (<code>#12</code>, <code>site title</code>) with the
+            built-in deterministic planner.
           </p>
         </section>
       )}
@@ -373,19 +442,28 @@ export default function StudioPage() {
 
           {planner?.fallbackReason ? (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              The model planner was unavailable, so the built-in planner produced this plan: {planner.fallbackReason}
+              The model planner was unavailable, so the built-in planner produced this plan: {planner.fallbackReason}{' '}
+              <Link href="/settings/keys" className="underline">
+                Check model API keys
+              </Link>
             </p>
           ) : null}
 
           <ol className="mt-4 space-y-2">
             {plan.steps.map((step, index) => {
               const job = jobs[index];
+              const argPreview = formatStepArgs(step.args);
               return (
                 <li key={`${step.tool}-${index}`} className="rounded-xl border border-black/5 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm">{step.summary}</span>
                     <span className="text-xs text-ink/50">{step.tool}</span>
                   </div>
+                  {argPreview ? (
+                    <p className="mt-1 break-words rounded bg-black/[0.025] px-2 py-1 font-mono text-[11px] text-ink/70">
+                      {argPreview}
+                    </p>
+                  ) : null}
                   <div className="mt-1 flex flex-wrap items-center gap-3 text-xs">
                     <span className="text-ink/40">step {index + 1}</span>
                     {job ? (
