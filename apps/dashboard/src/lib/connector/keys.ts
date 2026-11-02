@@ -1,6 +1,6 @@
 import {
   defaultPlannerModel,
-  requestJsonCompletion,
+  verifyProviderKey,
   type JsonCompletionResult,
   type PlannerProvider,
 } from '@wp-agent/model-adapters';
@@ -126,13 +126,9 @@ export function validateRawApiKey(
 }
 
 const defaultProbe: KeyProbeFn = ({ provider, apiKey }) =>
-  requestJsonCompletion({
+  verifyProviderKey({
     provider,
     apiKey,
-    systemPrompt: 'Reply with {"ok":true} and nothing else.',
-    userPrompt: 'Ping',
-    model: defaultPlannerModel(provider),
-    timeoutMs: 10_000,
   });
 
 /** Lists all supported providers with masked status for the owner. */

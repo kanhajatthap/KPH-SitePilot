@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultPlannerModel, requestJsonCompletion } from '../src/planner';
+import { defaultPlannerModel, requestJsonCompletion, verifyProviderKey } from '../src/planner';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -34,6 +34,40 @@ describe('requestJsonCompletion', () => {
     const body = JSON.parse(String(init.body));
     expect(body.systemInstruction.parts[0].text).toBe('sys');
     expect(body.generationConfig.responseMimeType).toBe('application/json');
+    expect(body.generationConfig.temperature).toBeUndefined();
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+  });
+
+  it('ignores thought parts in Gemini responses so JSON remains clean', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        candidates: [
+          {
+            content: {
+              parts: [
+                { thought: true, text: 'Let me reason carefully first...' },
+                { text: '{"summary":"clean","steps":[]}' },
+              ],
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await requestJsonCompletion({
+      provider: 'gemini',
+      apiKey: 'test-key-1234567890',
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      text: '{"summary":"clean","steps":[]}',
+      provider: 'gemini',
+      model: defaultPlannerModel('gemini'),
+    });
   });
 
   it('calls OpenRouter with a bearer token and JSON response format', async () => {
@@ -141,5 +175,68 @@ describe('requestJsonCompletion', () => {
 
     expect(result.ok).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('verifyProviderKey', () => {
+  it('verifies Gemini keys via GET /v1beta/models without running inference or leaking the key', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        models: [{ name: 'models/gemini-2.5-flash' }, { name: 'models/gemini-3.8-flash' }],
+      })
+    );
+
+    const result = await verifyProviderKey({
+      provider: 'gemini',
+      apiKey: 'AIzaSySecretKey9999',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      text: '{"ok":true}',
+      provider: 'gemini',
+      model: 'gemini-3.8-flash',
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models?pageSize=50');
+    expect(url).not.toContain('AIzaSySecretKey9999');
+    expect(init.method).toBe('GET');
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('AIzaSySecretKey9999');
+  });
+
+  it('verifies OpenRouter via /v1/auth/key and Groq via /openai/v1/models', async () => {
+    const orFetch = vi.fn(async () => jsonResponse({ data: { label: 'test' } }));
+    const orRes = await verifyProviderKey({
+      provider: 'openrouter',
+      apiKey: 'sk-or-v1-test-key-1234',
+      fetchImpl: orFetch as unknown as typeof fetch,
+    });
+    expect(orRes.ok).toBe(true);
+    expect((orFetch.mock.calls[0] as unknown as [string])[0]).toBe('https://openrouter.ai/api/v1/auth/key');
+
+    const groqFetch = vi.fn(async () => jsonResponse({ data: [{ id: 'llama-3.3-70b-versatile' }] }));
+    const groqRes = await verifyProviderKey({
+      provider: 'groq',
+      apiKey: 'gsk_test_key_12345678',
+      fetchImpl: groqFetch as unknown as typeof fetch,
+    });
+    expect(groqRes.ok).toBe(true);
+    expect((groqFetch.mock.calls[0] as unknown as [string])[0]).toBe('https://api.groq.com/openai/v1/models');
+  });
+
+  it('returns clear HTTP error reason without echoing the API key', async () => {
+    const fetchImpl = vi.fn(async () => new Response('invalid key', { status: 400 }));
+    const result = await verifyProviderKey({
+      provider: 'gemini',
+      apiKey: 'AIzaSyInvalidKeyDoNotLeak',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('HTTP 400');
+    expect(result.reason).not.toContain('AIzaSyInvalidKeyDoNotLeak');
   });
 });
