@@ -177,3 +177,112 @@ export function loadConfig(
 
   return parsed.data;
 }
+
+export interface HostedEnvStatus {
+  mode: 'local' | 'saas';
+  supabaseUrl?: string;
+  plannerMode: 'auto' | 'model' | 'deterministic';
+  cronProtected: boolean;
+  appMailerConfigured: boolean;
+}
+
+function isValidThirtyTwoByteKey(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return true;
+  try {
+    const decoded = Buffer.from(trimmed, 'base64');
+    return decoded.length === 32 && decoded.toString('base64').replace(/=+$/, '') === trimmed.replace(/=+$/, '');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates hosted SaaS runtime environment variables (E0-06).
+ *
+ * When `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are unset,
+ * returns `{ mode: 'local' }`. When SaaS mode is enabled, fails closed with a
+ * secret-free `AgentError` if required server keys are missing or malformed.
+ */
+export function validateHostedEnv(
+  envSource: Record<string, string | undefined> = process.env
+): HostedEnvStatus {
+  const supabaseUrl = envSource.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? '';
+  const supabaseAnon = envSource.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? '';
+  const plannerRaw = (envSource.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
+
+  if (!['auto', 'model', 'deterministic'].includes(plannerRaw)) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: SITEPILOT_PLANNER must be "auto", "model", or "deterministic"'
+    );
+  }
+  const plannerMode = plannerRaw as 'auto' | 'model' | 'deterministic';
+
+  if (!supabaseUrl && !supabaseAnon) {
+    return {
+      mode: 'local',
+      plannerMode,
+      cronProtected: Boolean(envSource.CRON_SECRET && envSource.CRON_SECRET.trim().length >= 16),
+      appMailerConfigured: Boolean(envSource.RESEND_API_KEY?.trim() && envSource.SITEPILOT_MAIL_FROM?.trim()),
+    };
+  }
+
+  if (!supabaseUrl || !supabaseAnon) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must both be set for SaaS mode'
+    );
+  }
+
+  let parsedSupabase: URL;
+  try {
+    parsedSupabase = new URL(supabaseUrl);
+  } catch {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: NEXT_PUBLIC_SUPABASE_URL must be a valid URL'
+    );
+  }
+
+  const isLocalSupabase = ['localhost', '127.0.0.1'].includes(parsedSupabase.hostname);
+  if (parsedSupabase.protocol !== 'https:' && !isLocalSupabase) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: NEXT_PUBLIC_SUPABASE_URL must use HTTPS on non-local hosts'
+    );
+  }
+
+  const serviceRole = envSource.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? '';
+  if (!serviceRole) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: SUPABASE_SERVICE_ROLE_KEY is required in SaaS mode'
+    );
+  }
+
+  const encKey = envSource.SITEPILOT_ENCRYPTION_KEY?.trim() ?? '';
+  if (!encKey || !isValidThirtyTwoByteKey(encKey)) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: SITEPILOT_ENCRYPTION_KEY must be a 32-byte key (64 hex chars or base64)'
+    );
+  }
+
+  const isProd = (envSource.NODE_ENV ?? 'development') === 'production';
+  const cronSecret = envSource.CRON_SECRET?.trim() ?? '';
+  if (isProd && cronSecret.length < 16) {
+    throw new AgentError(
+      ErrorCode.CONFIGURATION_ERROR,
+      'Hosted configuration error: CRON_SECRET (at least 16 characters) is required in production SaaS mode'
+    );
+  }
+
+  return {
+    mode: 'saas',
+    supabaseUrl,
+    plannerMode,
+    cronProtected: cronSecret.length >= 16,
+    appMailerConfigured: Boolean(envSource.RESEND_API_KEY?.trim() && envSource.SITEPILOT_MAIL_FROM?.trim()),
+  };
+}

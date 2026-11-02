@@ -11,9 +11,9 @@ A local-first, provider-independent agent workspace that reads, plans, drafts an
 [![pnpm](https://img.shields.io/badge/pnpm-12.14-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8_strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white)](https://nextjs.org)
-[![Tests](https://img.shields.io/badge/tests-260%2B_passing-3FB950)](#quality-gates)
+[![Tests](https://img.shields.io/badge/tests-380%2B_passing-3FB950)](#quality-gates)
 [![Security](https://img.shields.io/badge/security-deny--by--default-8B5CF6)](#security-model)
-[![Status](https://img.shields.io/badge/status-local--first_alpha-F59E0B)](#roadmap)
+[![Status](https://img.shields.io/badge/status-hosted_%2B_local_beta-3FB950)](#roadmap)
 
 **[Quick start](#quick-start)** · **[Architecture](#architecture)** · **[API](#api-reference)** · **[Security](#security-model)** · **[Docs](#documentation-index)**
 
@@ -22,9 +22,11 @@ A local-first, provider-independent agent workspace that reads, plans, drafts an
 ---
 
 > [!IMPORTANT]
-> **The current build is local-only.** Every connection is validated against a local-only allowlist (`*.local`, `localhost`, `127.0.0.1`); credentials stay server-side, writes are draft-only, and every mutating action requires a human approval checkpoint.
+> **Two execution modes — zero unsupervised writes:**
+> - **Hosted SaaS + WordPress Connector (`0.9.0`):** Pair any WordPress site via single-use pairing code (`/connect`), manage content, blocks, categories/tags, and allowlisted site settings from `/studio` and `/settings/site`, bring your own encrypted Gemini / OpenRouter / Groq key (`/settings/keys`), and rely on **Plan → Human Approval → Snapshot → Read-back Verify → One-Click Undo**.
+> - **Local-only mode:** When Supabase variables are unset, every connection stays strictly bound to `*.local` / `localhost` / `127.0.0.1` with zero cloud dependencies.
 >
-> **Next (planned):** a hosted **SitePilot Connector** plugin so any WordPress site can connect with a pairing code and be managed from prompts — plan, approve, apply, verify, undo. See [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md).
+> See [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md), [`docs/sitepilot-backlog.md`](./docs/sitepilot-backlog.md), and [`docs/plan-progress.md`](./docs/plan-progress.md).
 
 ## Why this exists
 
@@ -412,7 +414,7 @@ pnpm build         # Turborepo build across the workspace
 | Type safety | `pnpm typecheck` | ❌ |
 | Live Gemini (1 request) | `pnpm test:live` | ✅ opt-in |
 | Live WordPress read | `pnpm test:wp:live` | ✅ auto-skips if site is down |
-| WordPress plugin | `php wordpress/wp-agent-bridge/tests/test-plugin.php` | ❌ |
+| WordPress bridge & connector | `php wordpress/wp-agent-bridge/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-plugin.php` | ❌ |
 
 The same gates run in CI on every push and pull request to `main`.
 
@@ -424,13 +426,13 @@ The same gates run in CI on every push and pull request to `main`.
 |---|---|:---:|
 | **1** | Read-only foundation: contracts, audit, SSRF-guarded client, bridge plugin | ✅ |
 | **2A** | Gemini provider, `/api/chat`, provider-independent adapters | ✅ |
-| **2B** | Tool loop inside the agent with approval checkpoints | ⏳ next |
+| **2B** | Tool loop inside the agent with approval checkpoints | ✅ |
 | **4** | Site planner, design system engine, preview canvas | ✅ |
 | **5** | Controlled WordPress writes (draft-only, hash-locked) | ✅ |
 | **6** | Builder integrations: Gutenberg, Elementor, ACF, WooCommerce, FSE | ✅ |
-| **7** | Supabase SaaS foundation: auth, RLS, vault, rate limits | ✅ local · ☁️ hosted gated |
+| **7** | Supabase SaaS foundation: auth, RLS, vault, rate limits | ✅ |
 | **8** | Security review, OWASP LLM matrix, release readiness | ✅ |
-| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector plugin, prompt-driven WordPress management | 🚧 **in progress** (M0 ✅ · M1 ✅ · M2: pairing + job pipeline live · write tools next) · [master plan](./docs/sitepilot-master-plan.md) |
+| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector `0.9.0` (24 tools), BYOK keys, Studio + Safe Site Settings + One-click Undo | 🚧 **live** (M0–M6 shipped · WooCommerce/SEO/Media upload next) · [master plan](./docs/sitepilot-master-plan.md) |
 
 ---
 

@@ -26,11 +26,14 @@ const PLANNABLE_TOOLS = [
   'content.get',
   'content.list',
   'site.health',
+  'site.search',
   'plugins.list',
   'theme.info',
   'users.list',
   'media.list',
   'terms.list',
+  'terms.create',
+  'terms.assign',
   'menus.list',
   'settings.get',
   'settings.update',
@@ -79,6 +82,9 @@ Allowed tools and argument rules:
 - blocks.parse: {"id": <post id>} — read the block tree of one post.
 - blocks.replace: {"id": <post id>, "index": <block index from blocks.parse>, "html": "<exactly one block of HTML>"}
 - settings.update: {"values": {"blogname"?: string, "blogdescription"?: string, "timezone_string"?: string, "date_format"?: string, "time_format"?: string, "posts_per_page"?: number (1..100), "default_comment_status"?: "open"|"closed", "default_ping_status"?: "open"|"closed"}} — never siteurl or home.
+- site.search: {"query": string (1..120 chars), "type"?: "post"|"page"|"attachment", "limit"?: number (1..25)}
+- terms.create: {"taxonomy"?: "category"|"post_tag"|string, "name": string (1..120 chars), "slug"?: string, "description"?: string}
+- terms.assign: {"id": <post id>, "taxonomy"?: "category"|"post_tag"|string, "terms": [<term id or name>, ...], "append"?: boolean}
 - site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
 
 Rules:
@@ -235,6 +241,60 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       break;
     }
 
+    case 'site.search': {
+      const query = asText(args.query, 120)?.trim();
+      if (!query) return null;
+      cleaned.query = query;
+      if (args.type === 'post' || args.type === 'page' || args.type === 'attachment') {
+        cleaned.type = args.type;
+      }
+      const limit = asPositiveInt(args.limit);
+      if (limit !== null) cleaned.limit = Math.min(25, limit);
+      break;
+    }
+
+    case 'terms.create': {
+      const name = asText(args.name, 120)?.trim();
+      if (!name) return null;
+      const taxonomy =
+        typeof args.taxonomy === 'string' && /^[a-z0-9_-]{1,64}$/.test(args.taxonomy)
+          ? args.taxonomy
+          : 'category';
+      cleaned.taxonomy = taxonomy;
+      cleaned.name = name;
+      const slug = asText(args.slug, 120)?.trim();
+      if (slug) cleaned.slug = slug;
+      const description = asText(args.description, 500)?.trim();
+      if (description) cleaned.description = description;
+      break;
+    }
+
+    case 'terms.assign': {
+      const id = asPositiveInt(args.id);
+      if (id === null || !Array.isArray(args.terms) || args.terms.length === 0 || args.terms.length > 50) {
+        return null;
+      }
+      const terms: Array<number | string> = [];
+      for (const entry of args.terms) {
+        if (typeof entry === 'number' && Number.isInteger(entry) && entry > 0) {
+          terms.push(entry);
+        } else if (typeof entry === 'string' && entry.trim().length > 0 && entry.trim().length <= 120) {
+          terms.push(entry.trim());
+        } else {
+          return null;
+        }
+      }
+      const taxonomy =
+        typeof args.taxonomy === 'string' && /^[a-z0-9_-]{1,64}$/.test(args.taxonomy)
+          ? args.taxonomy
+          : 'category';
+      cleaned.id = id;
+      cleaned.taxonomy = taxonomy;
+      cleaned.terms = terms;
+      if (typeof args.append === 'boolean') cleaned.append = args.append;
+      break;
+    }
+
     default:
       // Inventory reads take no arguments we care about; never forward unknown keys.
       break;
@@ -271,6 +331,12 @@ function describeStep(tool: string, args: Record<string, unknown>): string {
           : [];
       return keys.length ? `Update site settings (${keys.join(', ')})` : 'Update site settings';
     }
+    case 'site.search':
+      return `Search site for "${String(args.query ?? '')}"`.slice(0, 200);
+    case 'terms.create':
+      return `Create ${String(args.taxonomy ?? 'category')} "${String(args.name ?? '')}"`.slice(0, 200);
+    case 'terms.assign':
+      return `Assign ${String(args.taxonomy ?? 'category')} terms on item ${String(args.id ?? '')}`;
     default:
       return `Run ${tool}`;
   }

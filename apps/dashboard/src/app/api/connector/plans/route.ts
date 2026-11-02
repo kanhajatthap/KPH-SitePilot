@@ -4,6 +4,7 @@ import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { planFromPrompt, type PlannerResult } from '../../../../lib/connector/planner';
 import { planWithModel, toPlannerResult } from '../../../../lib/connector/model-planner';
 import { createPlan } from '../../../../lib/connector/plans';
+import { sanitizeSettingsValues } from '../../../../lib/connector/undo';
 import {
   createSupabasePlanStore,
   getSiteContext,
@@ -16,7 +17,8 @@ export const dynamic = 'force-dynamic';
 
 const CreatePlanSchema = z.object({
   siteId: z.string().uuid(),
-  prompt: z.string().min(4).max(4000),
+  prompt: z.string().min(4).max(4000).optional(),
+  settingsValues: z.record(z.unknown()).optional(),
 });
 
 function json(body: unknown, status: number) {
@@ -44,8 +46,23 @@ export async function POST(req: Request) {
   }
 
   const parsed = CreatePlanSchema.safeParse(payload);
-  if (!parsed.success) {
-    return json({ error: 'VALIDATION_FAILED', message: 'A siteId and prompt are required.' }, 400);
+  if (!parsed.success || (!parsed.data.prompt && !parsed.data.settingsValues)) {
+    return json({ error: 'VALIDATION_FAILED', message: 'A siteId and prompt (or settingsValues) are required.' }, 400);
+  }
+
+  let prevalidatedSettings: Record<string, string | number> | null = null;
+  if (parsed.data.settingsValues !== undefined) {
+    prevalidatedSettings = sanitizeSettingsValues(parsed.data.settingsValues);
+    if (!prevalidatedSettings) {
+      return json(
+        {
+          error: 'VALIDATION_FAILED',
+          message:
+            'settingsValues must contain only allowlisted WordPress options within valid ranges (siteurl and home are never writable).',
+        },
+        400
+      );
+    }
   }
 
   if (!(await siteBelongsToUser(parsed.data.siteId, auth.context.user.id))) {
@@ -57,57 +74,81 @@ export async function POST(req: Request) {
     return json({ error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked.' }, 409);
   }
 
-  // Planner selection. `auto` (default) uses the caller's own model key when
-  // they have one and quietly falls back to the deterministic grammar; `model`
-  // refuses instead of guessing; `deterministic` never calls a provider.
-  const mode = (process.env.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
-  if (!['auto', 'model', 'deterministic'].includes(mode)) {
-    return json({ error: 'PLANNER_MISCONFIGURED', message: 'SITEPILOT_PLANNER must be auto, model or deterministic.' }, 500);
-  }
-
   let planned: PlannerResult;
-  let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode };
+  let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode: 'structured' };
+  let effectivePrompt = parsed.data.prompt ?? '';
 
-  const modelKey = mode === 'deterministic' ? null : await getUserApiKey(auth.context.user.id);
-
-  if (mode !== 'deterministic' && !modelKey && mode === 'model') {
-    return json(
-      {
-        error: 'PLANNER_KEY_MISSING',
-        message: 'The model planner is required on this deployment, but no model key is stored for your account.',
-      },
-      400
-    );
-  }
-
-  if (mode !== 'deterministic' && modelKey) {
-    const modelled = await planWithModel(
-      parsed.data.prompt,
-      { url: site.url, name: site.name, capabilities: site.capabilities },
-      {
-        provider: modelKey.provider,
-        apiKey: modelKey.key,
-        timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? 12000),
-      }
-    );
-
-    if (modelled.ok) {
-      planned = toPlannerResult(modelled.plan);
-      plannerMeta = {
-        kind: 'model',
-        mode,
-        provider: modelled.provider,
-        model: modelled.model,
-        droppedSteps: modelled.dropped,
-      };
-    } else if (mode === 'model') {
-      return json({ error: 'PLANNER_FAILED', message: modelled.reason }, 502);
-    } else {
-      planned = planFromPrompt(parsed.data.prompt);
-      plannerMeta = { kind: 'deterministic', mode, fallbackReason: modelled.reason };
-    }
+  if (prevalidatedSettings) {
+    const keys = Object.keys(prevalidatedSettings);
+    const summary = `Update site settings (${keys.join(', ')})`;
+    effectivePrompt = effectivePrompt || `Structured settings update: ${keys.join(', ')}`;
+    planned = {
+      ok: true,
+      summary,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'settings.update',
+          args: { values: prevalidatedSettings },
+          risk: 'R1',
+          summary,
+        },
+      ],
+    };
   } else {
-    planned = planFromPrompt(parsed.data.prompt);
+    const promptText = parsed.data.prompt as string;
+    effectivePrompt = promptText;
+
+    // Planner selection. `auto` (default) uses the caller's own model key when
+    // they have one and quietly falls back to the deterministic grammar; `model`
+    // refuses instead of guessing; `deterministic` never calls a provider.
+    const mode = (process.env.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
+    if (!['auto', 'model', 'deterministic'].includes(mode)) {
+      return json({ error: 'PLANNER_MISCONFIGURED', message: 'SITEPILOT_PLANNER must be auto, model or deterministic.' }, 500);
+    }
+
+    plannerMeta = { kind: 'deterministic', mode };
+    const modelKey = mode === 'deterministic' ? null : await getUserApiKey(auth.context.user.id);
+
+    if (mode !== 'deterministic' && !modelKey && mode === 'model') {
+      return json(
+        {
+          error: 'PLANNER_KEY_MISSING',
+          message: 'The model planner is required on this deployment, but no model key is stored for your account.',
+        },
+        400
+      );
+    }
+
+    if (mode !== 'deterministic' && modelKey) {
+      const modelled = await planWithModel(
+        promptText,
+        { url: site.url, name: site.name, capabilities: site.capabilities },
+        {
+          provider: modelKey.provider,
+          apiKey: modelKey.key,
+          timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? 12000),
+        }
+      );
+
+      if (modelled.ok) {
+        planned = toPlannerResult(modelled.plan);
+        plannerMeta = {
+          kind: 'model',
+          mode,
+          provider: modelled.provider,
+          model: modelled.model,
+          droppedSteps: modelled.dropped,
+        };
+      } else if (mode === 'model') {
+        return json({ error: 'PLANNER_FAILED', message: modelled.reason }, 502);
+      } else {
+        planned = planFromPrompt(promptText);
+        plannerMeta = { kind: 'deterministic', mode, fallbackReason: modelled.reason };
+      }
+    } else {
+      planned = planFromPrompt(promptText);
+    }
   }
 
   if (!planned.ok) {
@@ -127,7 +168,7 @@ export async function POST(req: Request) {
       projectId: site.projectId,
       siteId: site.id,
       createdBy: auth.context.user.id,
-      prompt: parsed.data.prompt,
+      prompt: effectivePrompt,
       summary: planned.summary,
       steps: planned.steps,
       risk: planned.risk,

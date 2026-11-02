@@ -294,6 +294,9 @@ export default function StudioPage() {
           <Link className="text-pink-700 underline" href="/connect">
             Connected sites
           </Link>
+          <Link className="text-pink-700 underline" href="/settings/site">
+            Site settings
+          </Link>
           <Link className="text-pink-700 underline" href="/settings/keys">
             Model API keys
           </Link>

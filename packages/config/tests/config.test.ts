@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { loadConfig } from '../src/index.js';
+import { loadConfig, validateHostedEnv } from '../src/index.js';
 import { AgentError, ErrorCode } from '@wp-agent/contracts';
 
 describe('Config Package', () => {
@@ -104,5 +104,68 @@ describe('Config Package', () => {
     expect(config.aiProvider).toBe('gemini');
     expect(config.geminiApiKey).toBe('valid-gemini-key');
     expect(config.wpSiteUrl).toBe('https://secure-site.com');
+  });
+
+  describe('validateHostedEnv (E0-06)', () => {
+    it('returns local mode when Supabase env vars are unset', () => {
+      const status = validateHostedEnv({});
+      expect(status.mode).toBe('local');
+      expect(status.plannerMode).toBe('auto');
+      expect(status.cronProtected).toBe(false);
+    });
+
+    it('rejects partial Supabase configuration or missing service role / encryption key', () => {
+      expect(() =>
+        validateHostedEnv({
+          NEXT_PUBLIC_SUPABASE_URL: 'https://proj.supabase.co',
+        })
+      ).toThrowError(AgentError);
+
+      expect(() =>
+        validateHostedEnv({
+          NEXT_PUBLIC_SUPABASE_URL: 'https://proj.supabase.co',
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        })
+      ).toThrowError(/SUPABASE_SERVICE_ROLE_KEY is required/);
+
+      expect(() =>
+        validateHostedEnv({
+          NEXT_PUBLIC_SUPABASE_URL: 'https://proj.supabase.co',
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+          SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+          SITEPILOT_ENCRYPTION_KEY: 'too-short',
+        })
+      ).toThrowError(/SITEPILOT_ENCRYPTION_KEY must be a 32-byte key/);
+    });
+
+    it('requires CRON_SECRET in production SaaS mode and accepts valid full configuration', () => {
+      expect(() =>
+        validateHostedEnv({
+          NODE_ENV: 'production',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://proj.supabase.co',
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+          SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+          SITEPILOT_ENCRYPTION_KEY: 'a'.repeat(64),
+        })
+      ).toThrowError(/CRON_SECRET/);
+
+      const ok = validateHostedEnv({
+        NODE_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://proj.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+        SITEPILOT_ENCRYPTION_KEY: 'b'.repeat(64),
+        CRON_SECRET: 'c'.repeat(32),
+        RESEND_API_KEY: 're_test',
+        SITEPILOT_MAIL_FROM: 'SitePilot <noreply@example.com>',
+      });
+      expect(ok).toEqual({
+        mode: 'saas',
+        supabaseUrl: 'https://proj.supabase.co',
+        plannerMode: 'auto',
+        cronProtected: true,
+        appMailerConfigured: true,
+      });
+    });
   });
 });

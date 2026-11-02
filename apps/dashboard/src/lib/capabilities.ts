@@ -62,6 +62,7 @@ const TOOL_CATALOG: readonly CatalogItem[] = [
   // Shipped R0 reads
   { tool: 'site.info', label: 'Inspect site manifest', scope: 'read', risk: 'R0', shipped: true },
   { tool: 'site.health', label: 'Check site health', scope: 'read', risk: 'R0', shipped: true },
+  { tool: 'site.search', label: 'Search posts, pages & media', scope: 'read', risk: 'R0', shipped: true },
   { tool: 'content.list', label: 'List posts & pages', scope: 'read', risk: 'R0', shipped: true },
   { tool: 'content.get', label: 'Read post/page content', scope: 'read', risk: 'R0', shipped: true },
   { tool: 'blocks.parse', label: 'Parse Gutenberg block tree', scope: 'read', risk: 'R0', shipped: true },
@@ -77,6 +78,9 @@ const TOOL_CATALOG: readonly CatalogItem[] = [
   { tool: 'content.create', label: 'Create draft page/post', scope: 'content', risk: 'R1', shipped: true },
   { tool: 'content.update', label: 'Update post/page copy', scope: 'content', risk: 'R1', shipped: true },
   { tool: 'blocks.replace', label: 'Replace single Gutenberg block', scope: 'content', risk: 'R1', shipped: true },
+  { tool: 'terms.create', label: 'Create category or tag', scope: 'content', risk: 'R1', shipped: true },
+  { tool: 'terms.assign', label: 'Assign categories/tags to post', scope: 'content', risk: 'R1', shipped: true },
+  { tool: 'terms.restore', label: 'Restore post terms snapshot', scope: 'content', risk: 'R1', shipped: true },
   { tool: 'content.publish', label: 'Publish post/page (CONFIRM)', scope: 'content', risk: 'R2', shipped: true },
   { tool: 'content.unpublish', label: 'Move content back to draft', scope: 'content', risk: 'R1', shipped: true },
   { tool: 'content.restore', label: 'Restore content snapshot', scope: 'content', risk: 'R1', shipped: true },

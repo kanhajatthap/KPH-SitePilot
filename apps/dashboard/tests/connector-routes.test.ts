@@ -95,7 +95,9 @@ describe('connector routes', () => {
   });
 
   it('refuses to mint a pairing code without an account', async () => {
-    const res = await pairingCodeRoute();
+    const res = await pairingCodeRoute(
+      new Request('https://app.example.com/api/connector/pairing-codes', { method: 'POST' })
+    );
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('CONNECTOR_REQUIRES_ACCOUNT');

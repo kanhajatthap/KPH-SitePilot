@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { createSupabaseAdminClient } from '../../../../lib/supabase/admin';
-import { enqueueConnectorJob } from '../../../../lib/connector/store';
-import { CONNECTOR_TOOL_ALLOWLIST } from '../../../../lib/connector/jobs';
+import { enqueueConnectorJob, siteBelongsToUser } from '../../../../lib/connector/store';
+import { CONNECTOR_TOOL_ALLOWLIST, TOOL_RISK } from '../../../../lib/connector/jobs';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,11 +13,65 @@ const EnqueueSchema = z.object({
 });
 
 /**
- * POST /api/connector/jobs — enqueue a read-only job for one of *your* sites.
+ * GET /api/connector/jobs?jobId=<uuid> — read status and result of a single
+ * job owned by the signed-in caller.
+ */
+export async function GET(req: Request) {
+  const auth = await authenticateApiRequest();
+  if (!auth.ok) return auth.response;
+
+  if (auth.context.mode !== 'saas' || !auth.context.user) {
+    return NextResponse.json(
+      { error: 'CONNECTOR_REQUIRES_ACCOUNT', message: 'Sign in to inspect jobs.' },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const jobId = new URL(req.url).searchParams.get('jobId') ?? '';
+  if (!z.string().uuid().safeParse(jobId).success) {
+    return NextResponse.json(
+      { error: 'VALIDATION_FAILED', message: 'Provide a valid jobId query parameter.' },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: 'STORAGE_UNAVAILABLE', message: 'Connector storage is not configured.' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const { data: job, error } = await supabase
+    .from('jobs')
+    .select('id, site_id, tool, status, risk, attempts, result, error, created_at, updated_at')
+    .eq('id', jobId)
+    .maybeSingle();
+
+  if (error || !job) {
+    return NextResponse.json(
+      { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  const owned = await siteBelongsToUser((job as { site_id: string }).site_id, auth.context.user.id);
+  if (!owned) {
+    return NextResponse.json(
+      { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  return NextResponse.json({ job }, { headers: { 'Cache-Control': 'no-store' } });
+}
+
+/**
+ * POST /api/connector/jobs — enqueue a read-only (`R0`) job for one of *your* sites.
  *
- * This is the seed of the prompt-driven pipeline: today it can refresh the
- * capability manifest or run a health probe. Mutation tools arrive with the
- * plan/approval engine and will never be enqueued from this endpoint.
+ * Any mutation tool (`R1`/`R2`/`R3`) is rejected here with `403 WRITE_REQUIRES_PLAN`:
+ * writes must always pass through `POST /api/connector/plans` and explicit approval.
  */
 export async function POST(req: Request) {
   const auth = await authenticateApiRequest();
@@ -55,6 +109,16 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: 'TOOL_NOT_ALLOWED', message: `Tool "${parsed.data.tool}" cannot be queued from the dashboard.` },
       { status: 400, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  if (TOOL_RISK[parsed.data.tool] !== 'R0') {
+    return NextResponse.json(
+      {
+        error: 'WRITE_REQUIRES_PLAN',
+        message: `Tool "${parsed.data.tool}" modifies WordPress state and requires an approved plan.`,
+      },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 

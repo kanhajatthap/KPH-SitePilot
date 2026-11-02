@@ -10,6 +10,7 @@ import { CONNECTOR_TOOL_ALLOWLIST, TOOL_RISK } from '../src/lib/connector/jobs';
 const READ_TOOLS = [
   'site.info',
   'site.health',
+  'site.search',
   'content.list',
   'content.get',
   'plugins.list',
@@ -29,6 +30,9 @@ const WRITE_TOOLS = [
   'content.publish',
   'content.unpublish',
   'blocks.replace',
+  'terms.create',
+  'terms.assign',
+  'terms.restore',
   'settings.update',
   'settings.restore',
 ];

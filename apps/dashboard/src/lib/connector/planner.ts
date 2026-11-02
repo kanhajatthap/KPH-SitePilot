@@ -100,6 +100,16 @@ export function planFromPrompt(prompt: string): PlannerResult {
     !quoted &&
     /\b(list|show)\b/.test(lower) &&
     /\b(posts|pages)\b/.test(lower);
+  const wantsSearch = !postId && !!quoted && /\b(search|find)\b/.test(lower);
+  const wantsCreateTerm =
+    !postId &&
+    !!quoted &&
+    /\b(create|add|new)\b/.test(lower) &&
+    /\b(category|tag)\b/.test(lower);
+  const wantsAssignTerm =
+    !!postId &&
+    !!quoted &&
+    (/\b(assign|set|add)\b[\s\S]*\b(category|tag)\b/.test(lower) || /\btag\s+(?:post|page)\b/.test(lower));
 
   if (wantsForbiddenUrlChange) {
     return fail(
@@ -148,6 +158,74 @@ export function planFromPrompt(prompt: string): PlannerResult {
       summary: 'List recent posts and pages',
       risk: 'R0',
       steps: [{ tool: 'content.list', args: { perPage: 10 }, risk: 'R0', summary: 'List up to 10 recent items' }],
+    };
+  }
+
+  if (wantsSearch && quoted) {
+    const q = quoted.trim();
+    if (q.length < 1 || q.length > 120) {
+      return fail('Search queries must be between 1 and 120 characters.');
+    }
+    return {
+      ok: true,
+      summary: `Search site for “${q}”`,
+      risk: 'R0',
+      steps: [
+        {
+          tool: 'site.search',
+          args: { query: q, limit: 15 },
+          risk: 'R0',
+          summary: `Search posts, pages and media for “${q}”`,
+        },
+      ],
+    };
+  }
+
+  if (wantsCreateTerm && quoted) {
+    const taxonomy = /\btag\b/.test(lower) ? 'post_tag' : 'category';
+    const label = taxonomy === 'post_tag' ? 'tag' : 'category';
+    const name = quoted.trim();
+    if (name.length < 1 || name.length > 120) {
+      return fail('Category and tag names must be between 1 and 120 characters.');
+    }
+    return {
+      ok: true,
+      summary: `Create ${label} “${name}”`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'terms.create',
+          args: { taxonomy, name },
+          risk: 'R1',
+          summary: `Create ${label} “${name}”`,
+        },
+      ],
+    };
+  }
+
+  if (wantsAssignTerm && postId && quoted) {
+    const taxonomy = /\btag\b/.test(lower) ? 'post_tag' : 'category';
+    const label = taxonomy === 'post_tag' ? 'tags' : 'categories';
+    const terms = quoted
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0 && item.length <= 120)
+      .slice(0, 20);
+    if (terms.length === 0) {
+      return fail('Provide at least one category or tag name in quotes.');
+    }
+    return {
+      ok: true,
+      summary: `Assign ${label} (${terms.join(', ')}) to #${postId}`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'terms.assign',
+          args: { id: postId, taxonomy, terms },
+          risk: 'R1',
+          summary: `Assign ${label} ${terms.map((t) => `“${t}”`).join(', ')} to #${postId}`,
+        },
+      ],
     };
   }
 
