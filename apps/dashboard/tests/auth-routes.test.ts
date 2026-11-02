@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPrivatePath, isSignedConnectorPath } from '../src/lib/auth/routes';
+import { isPrivatePath, isSafeStaticPath, isSignedConnectorPath } from '../src/lib/auth/routes';
 
 describe('signed connector paths', () => {
   it('lets a paired site reach the machine-to-machine endpoints', () => {
@@ -35,5 +35,10 @@ describe('signed connector paths', () => {
     expect(isSignedConnectorPath('/api/connector/jobs/../result')).toBe(false);
     expect(isSignedConnectorPath('/api/connector/jobs/1/result')).toBe(false);
     expect(isSignedConnectorPath('/api/connector/jobs/claim/../claim')).toBe(false);
+  });
+
+  it('serves connector ZIP downloads as safe static assets', () => {
+    expect(isSafeStaticPath('/downloads/kph-sitepilot-connector.zip')).toBe(true);
+    expect(isSafeStaticPath('/downloads/kph-sitepilot-connector-0.9.0.zip')).toBe(true);
   });
 });

@@ -436,7 +436,32 @@ export default function ConnectPage() {
       </section>
 
       <section className="mt-8 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-ink">1. Get a pairing code</h2>
+        <h2 className="text-base font-semibold text-ink">1. Download &amp; install the WordPress plugin</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Download the official <strong>KPH SitePilot Connector</strong> ZIP below, then in your
+          WordPress admin open <strong>Plugins → Add New Plugin → Upload Plugin</strong>, choose the
+          ZIP, install and activate it.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <a
+            href="/downloads/kph-sitepilot-connector.zip"
+            download="kph-sitepilot-connector-0.9.0.zip"
+            className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+          >
+            <span>⬇ Download WordPress Plugin (v0.9.0 .zip)</span>
+          </a>
+          <a
+            href="https://github.com/kanhajatthap/KPH-SitePilot/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-medium text-pink-700 underline"
+          >
+            GitHub Release &amp; checksums ↗
+          </a>
+        </div>
+
+        <h2 className="mt-8 text-base font-semibold text-ink">2. Generate a pairing code</h2>
         <p className="mt-1 text-sm text-ink-muted">
           Codes are single-use and expire after ten minutes.
         </p>
@@ -452,8 +477,17 @@ export default function ConnectPage() {
           </button>
 
           {code ? (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <code className="rounded-lg bg-black/5 px-4 py-2 text-lg tracking-[0.2em]">{code.code}</code>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(code.code);
+                }}
+                className="rounded-lg border border-black/15 px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-black/5"
+              >
+                Copy code
+              </button>
               <span className="text-xs text-ink-muted">expires in {formatCountdown(remaining)}</span>
             </div>
           ) : null}
@@ -461,14 +495,13 @@ export default function ConnectPage() {
 
         {codeError ? <p className="mt-3 text-sm text-red-600">{codeError}</p> : null}
 
-        <h2 className="mt-8 text-base font-semibold text-ink">2. Paste it in WordPress</h2>
+        <h2 className="mt-8 text-base font-semibold text-ink">3. Paste it in WordPress</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-muted">
-          <li>Install and activate the <strong>KPH SitePilot Connector</strong> plugin.</li>
           <li>
-            Open <strong>SitePilot → Connection</strong> and set the platform URL to this
-            deployment.
+            In WordPress left sidebar, open <strong>SitePilot</strong> (Platform URL is already
+            pre-filled to <code>https://kph-sitepilot.vercel.app</code>).
           </li>
-          <li>Paste the code and press <strong>Connect site</strong>.</li>
+          <li>Paste the 8-character pairing code and press <strong>Connect site</strong>.</li>
         </ol>
       </section>
 
