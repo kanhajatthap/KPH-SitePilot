@@ -82,6 +82,102 @@ export function planFromPrompt(prompt: string): PlannerResult {
   const wantsTitle = /\btitle\b/.test(lower);
   const wantsContent = /\b(content|body|text|copy|rewrite|replace|paragraph|section)\b/.test(lower);
   const wantsPublish = /\b(publish|go live|live karo)\b/.test(lower);
+  const wantsForbiddenUrlChange = !postId && /\b(siteurl|site\s+url|home\s+url)\b/.test(lower);
+  const wantsSiteTitle = !postId && /\b(site\s+(?:title|name)|blogname)\b/.test(lower);
+  const wantsTagline = !postId && /\b(tagline|site\s+description|blogdescription)\b/.test(lower);
+  const wantsReadSettings =
+    !postId &&
+    !quoted &&
+    /\b(read|check|show|inspect|list|get)\b/.test(lower) &&
+    /\b(site\s+settings|settings)\b/.test(lower);
+  const wantsSiteHealth =
+    !postId &&
+    !quoted &&
+    /\b(check|read|show|inspect)\b/.test(lower) &&
+    /\b(site\s+health|wordpress\s*(?:&|and)\s*php)\b/.test(lower);
+  const wantsListContent =
+    !postId &&
+    !quoted &&
+    /\b(list|show)\b/.test(lower) &&
+    /\b(posts|pages)\b/.test(lower);
+
+  if (wantsForbiddenUrlChange) {
+    return fail(
+      'Changing siteurl or home is blocked so SitePilot can never lock out your WordPress connection.'
+    );
+  }
+
+  if (wantsReadSettings) {
+    const includeTheme = /\btheme\b/.test(lower);
+    const steps: PlanStep[] = [
+      {
+        tool: 'settings.get',
+        args: {},
+        risk: 'R0',
+        summary: 'Read allowlisted WordPress settings',
+      },
+    ];
+    if (includeTheme) {
+      steps.push({
+        tool: 'theme.info',
+        args: {},
+        risk: 'R0',
+        summary: 'Read active theme details',
+      });
+    }
+    return {
+      ok: true,
+      summary: includeTheme ? 'Read site settings and active theme' : 'Read site settings',
+      risk: 'R0',
+      steps,
+    };
+  }
+
+  if (wantsSiteHealth) {
+    return {
+      ok: true,
+      summary: 'Check WordPress site health',
+      risk: 'R0',
+      steps: [{ tool: 'site.health', args: {}, risk: 'R0', summary: 'Check site health and versions' }],
+    };
+  }
+
+  if (wantsListContent) {
+    return {
+      ok: true,
+      summary: 'List recent posts and pages',
+      risk: 'R0',
+      steps: [{ tool: 'content.list', args: { perPage: 10 }, risk: 'R0', summary: 'List up to 10 recent items' }],
+    };
+  }
+
+  if (wantsSiteTitle || wantsTagline) {
+    if (!quoted) {
+      return fail(
+        'Put the new site setting in quotes, for example: change site title to "KPH Studio".'
+      );
+    }
+    const key = wantsSiteTitle ? 'blogname' : 'blogdescription';
+    const label = wantsSiteTitle ? 'site title' : 'tagline';
+    const trimmed = quoted.trim();
+    if ((wantsSiteTitle && (trimmed.length < 1 || trimmed.length > 200)) || trimmed.length > 400) {
+      return fail('That setting value is outside WordPress length limits.');
+    }
+
+    return {
+      ok: true,
+      summary: `Change ${label} to “${trimmed}”`,
+      risk: 'R1',
+      steps: [
+        {
+          tool: 'settings.update',
+          args: { values: { [key]: trimmed } },
+          risk: 'R1',
+          summary: `Change ${label} (${key}) to “${trimmed}”`,
+        },
+      ],
+    };
+  }
 
   if (wantsCreate) {
     if (!quoted) {

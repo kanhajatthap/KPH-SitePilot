@@ -146,6 +146,13 @@ export function Header({
         </Link>
 
         <Link
+          href="/settings/keys"
+          className="focus-ring hidden rounded-lg px-2 py-1 text-[12px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:inline-flex"
+        >
+          AI Keys
+        </Link>
+
+        <Link
           href="/about"
           className="focus-ring hidden rounded-lg px-2 py-1 text-[12px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:inline-flex"
         >
@@ -355,6 +362,13 @@ export function Header({
               >
                 <Icon d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" className="h-3.5 w-3.5" />
                 Studio
+              </Link>
+              <Link
+                href="/settings/keys"
+                className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink-soft transition hover:bg-paper-deep hover:text-ink"
+              >
+                <Icon d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" className="h-3.5 w-3.5" />
+                Model API keys
               </Link>
               <Link
                 href="/about"

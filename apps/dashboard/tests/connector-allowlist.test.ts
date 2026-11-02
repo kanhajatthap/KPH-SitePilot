@@ -29,6 +29,8 @@ const WRITE_TOOLS = [
   'content.publish',
   'content.unpublish',
   'blocks.replace',
+  'settings.update',
+  'settings.restore',
 ];
 
 describe('connector tool allowlist', () => {

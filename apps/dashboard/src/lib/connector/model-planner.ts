@@ -6,6 +6,7 @@ import {
 } from '@wp-agent/model-adapters';
 import { TOOL_RISK } from './jobs';
 import type { PlanStep, PlannerResult, Risk } from './planner';
+import { sanitizeSettingsValues } from './undo';
 
 /**
  * Model-backed planner (E3-02).
@@ -32,6 +33,7 @@ const PLANNABLE_TOOLS = [
   'terms.list',
   'menus.list',
   'settings.get',
+  'settings.update',
   'blocks.parse',
   'blocks.replace',
   'content.publish',
@@ -76,6 +78,7 @@ Allowed tools and argument rules:
 - content.publish / content.unpublish: {"id": <post id>} — publishing makes content public.
 - blocks.parse: {"id": <post id>} — read the block tree of one post.
 - blocks.replace: {"id": <post id>, "index": <block index from blocks.parse>, "html": "<exactly one block of HTML>"}
+- settings.update: {"values": {"blogname"?: string, "blogdescription"?: string, "timezone_string"?: string, "date_format"?: string, "time_format"?: string, "posts_per_page"?: number (1..100), "default_comment_status"?: "open"|"closed", "default_ping_status"?: "open"|"closed"}} — never siteurl or home.
 - site.health, plugins.list, theme.info, users.list, media.list, terms.list, menus.list, settings.get: {} or their documented filters.
 
 Rules:
@@ -224,6 +227,14 @@ export function sanitizeStep(raw: z.infer<typeof StepSchema>): PlanStep | null {
       break;
     }
 
+    case 'settings.update': {
+      const candidate = 'values' in args ? args.values : args;
+      const values = sanitizeSettingsValues(candidate);
+      if (!values) return null;
+      cleaned.values = values;
+      break;
+    }
+
     default:
       // Inventory reads take no arguments we care about; never forward unknown keys.
       break;
@@ -253,6 +264,13 @@ function describeStep(tool: string, args: Record<string, unknown>): string {
       return `Move item ${String(args.id ?? '')} back to draft`;
     case 'blocks.replace':
       return `Replace block ${String(args.index ?? '')} of item ${String(args.id ?? '')}`;
+    case 'settings.update': {
+      const keys =
+        args.values && typeof args.values === 'object'
+          ? Object.keys(args.values as Record<string, unknown>)
+          : [];
+      return keys.length ? `Update site settings (${keys.join(', ')})` : 'Update site settings';
+    }
     default:
       return `Run ${tool}`;
   }

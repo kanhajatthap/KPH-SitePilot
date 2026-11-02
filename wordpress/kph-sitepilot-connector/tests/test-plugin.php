@@ -109,6 +109,11 @@ kph_sp_static_assert( false !== strpos( $admin_source, 'Not connected' ), 'hones
 kph_sp_static_assert( false !== strpos( $admin_source, 'id="kph-sp-pair"' ), 'pairing button is present and enabled' );
 kph_sp_static_assert( false !== strpos( $admin_source, 'id="kph-sp-unpair"' ), 'disconnect action is present when connected' );
 kph_sp_static_assert( false !== strpos( $admin_source, 'kph_sp_save_platform' ), 'platform URL can be configured' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'kph_sp_save_rotated' ), 'rotated credentials form is wired' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'Recent activity (last 20 jobs)' ), 'admin screen shows recent job activity' );
+kph_sp_static_assert( false !== strpos( $admin_source, 'Diagnostic bundle' ), 'admin screen exposes safe diagnostic bundle' );
+kph_sp_static_assert( false === strpos( $admin_source, "'siteSecret'" ), 'diagnostic bundle omits secret fields' );
+kph_sp_static_assert( false === strpos( $admin_source, "'siteToken'" ), 'diagnostic bundle omits token fields' );
 kph_sp_static_assert( false !== strpos( $admin_source, 'wp_localize_script' ), 'admin script receives REST endpoint + nonce' );
 
 // Admin script must use the REST nonce and never hold a site secret.
@@ -151,6 +156,10 @@ kph_sp_static_assert( false !== strpos( $tools_source, 'get_taxonomies' ), 'term
 kph_sp_static_assert( false !== strpos( $tools_source, "'menus.list'" ), 'menus.list tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'wp_get_nav_menu_items' ), 'menus.list reads real menu items' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'settings.get'" ), 'settings.get tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'settings.update'" ), 'settings.update tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'settings.restore'" ), 'settings.restore tool registered' );
+kph_sp_static_assert( false !== strpos( $tools_source, 'function writable_settings_keys' ), 'settings.update enforces a dedicated write allowlist' );
+kph_sp_static_assert( false !== strpos( $tools_source, "'settings.update' => 'site_ops'" ), 'settings.update requires site_ops scope' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.parse'" ), 'blocks.parse tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, "'blocks.replace'" ), 'blocks.replace tool registered' );
 kph_sp_static_assert( false !== strpos( $tools_source, 'serialize_blocks' ), 'blocks.replace re-serialises the whole document' );
@@ -192,6 +201,8 @@ kph_sp_static_assert( false !== strpos( $runner_source, 'LIVE_POLL_SECONDS' ), '
 kph_sp_static_assert( false !== strpos( $runner_source, 'IDLE_BACKOFF_AFTER' ), 'idle sites back off after an hour' );
 kph_sp_static_assert( false !== strpos( $runner_source, 'function current_job' ), 'the fatal handler can see the running job' );
 kph_sp_static_assert( false !== strpos( $runner_source, 'function report_failure' ), 'a failure can be reported outside the normal path' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'RECENT_JOBS_OPTION' ), 'runner stores bounded recent job activity' );
+kph_sp_static_assert( false !== strpos( $runner_source, 'snapshotResource' ), 'runner forwards settings snapshots as well as post snapshots' );
 
 // Fatal capture: a tool that dies must still produce a result.
 $fatal_source = file_get_contents( $plugin_dir . '/includes/class-fatal.php' );

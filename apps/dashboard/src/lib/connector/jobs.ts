@@ -76,13 +76,15 @@ export const CONNECTOR_TOOL_ALLOWLIST = new Set([
   'menus.list',
   'settings.get',
   'blocks.parse',
-  // mutations: snapshot → write → verify, reversible via content.restore
+  // mutations: snapshot → write → verify, reversible via content.restore / settings.restore
   'content.update',
   'content.create',
   'content.restore',
   'content.publish',
   'content.unpublish',
   'blocks.replace',
+  'settings.update',
+  'settings.restore',
 ]);
 
 /** Risk floor per tool; a plan may raise it, never lower it. */
@@ -106,6 +108,8 @@ export const TOOL_RISK: Record<string, 'R0' | 'R1' | 'R2' | 'R3'> = {
   'content.publish': 'R2',
   'content.unpublish': 'R1',
   'blocks.replace': 'R1',
+  'settings.update': 'R1',
+  'settings.restore': 'R1',
 };
 
 export function toClaimPayload(job: JobRow) {

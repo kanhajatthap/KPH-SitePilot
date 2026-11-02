@@ -112,3 +112,31 @@
 .kph-sp-result.is-pending {
 	color: #646970;
 }
+
+.kph-sp-details {
+	border-top: 1px solid #f0f0f1;
+	margin-top: 14px;
+	padding-top: 12px;
+}
+
+.kph-sp-details summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.kph-sp-activity-table th,
+.kph-sp-activity-table td {
+	width: auto;
+	padding-right: 12px;
+}
+
+.kph-sp-debug {
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 6px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	margin-top: 8px;
+	padding: 10px;
+	width: 100%;
+}

@@ -123,6 +123,25 @@ describe('parseModelPlan', () => {
     expect(sanitizeStep({ tool: 'blocks.replace', args: { id: 12, index: -3, html: 'x' } })).toBeNull();
   });
 
+  it('accepts settings.update for allowlisted options and rejects siteurl/home (E6-01)', () => {
+    const allowed = sanitizeStep({
+      tool: 'settings.update',
+      args: { values: { blogname: 'KPH Studio', timezone_string: 'Asia/Kolkata' } },
+    });
+    expect(allowed).toEqual({
+      tool: 'settings.update',
+      args: { values: { blogname: 'KPH Studio', timezone_string: 'Asia/Kolkata' } },
+      risk: 'R1',
+      summary: 'Update site settings (blogname, timezone_string)',
+    });
+
+    // siteurl and home are explicitly excluded so a prompt can never lock out the connector.
+    expect(sanitizeStep({ tool: 'settings.update', args: { values: { siteurl: 'https://evil.example' } } })).toBeNull();
+    expect(sanitizeStep({ tool: 'settings.update', args: { values: { home: 'https://evil.example' } } })).toBeNull();
+    expect(sanitizeStep({ tool: 'settings.update', args: { values: {} } })).toBeNull();
+    expect(sanitizeStep({ tool: 'settings.restore', args: { values: { blogname: 'Old' } } })).toBeNull();
+  });
+
   it('refuses invalid JSON and malformed plans', () => {
     expect(parseModelPlan('not json').ok).toBe(false);
     expect(parseModelPlan('{"steps":[]}').ok).toBe(false);

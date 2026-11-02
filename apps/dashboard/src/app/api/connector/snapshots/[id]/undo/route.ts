@@ -7,6 +7,7 @@ import {
   markSnapshotRestored,
   siteBelongsToUser,
 } from '../../../../../../lib/connector/store';
+import { resolveUndoJob } from '../../../../../../lib/connector/undo';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +15,9 @@ export const dynamic = 'force-dynamic';
  * POST /api/connector/snapshots/{id}/undo
  *
  * One click, one job: restores the exact pre-write fields captured before the
- * change. Undo is itself recorded as a job, so it shows up in history and can be
- * inspected like any other write.
+ * change (`content.restore` for posts/pages/blocks, `settings.restore` for
+ * allowlisted options). Undo is itself recorded as a job, so it shows up in
+ * history and can be inspected like any other write.
  */
 export async function POST(_req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await authenticateApiRequest();
@@ -44,10 +46,13 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
     );
   }
 
-  const before = snapshot.before ?? null;
-  if (!before || typeof before !== 'object' || !('id' in before)) {
+  const resolved = resolveUndoJob({
+    resource: snapshot.resource,
+    before: snapshot.before,
+  });
+  if (!resolved.ok) {
     return NextResponse.json(
-      { error: 'SNAPSHOT_UNUSABLE', message: 'This snapshot does not carry restorable fields.' },
+      { error: resolved.code, message: resolved.message },
       { status: 422, headers: { 'Cache-Control': 'no-store' } }
     );
   }
@@ -64,16 +69,16 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
     const jobId = await enqueueConnectorJob({
       projectId: snapshot.project_id,
       siteId: snapshot.site_id,
-      tool: 'content.restore',
-      args: { before },
-      risk: 'R1',
+      tool: resolved.tool,
+      args: resolved.args,
+      risk: resolved.risk,
       idempotencyKey: `undo:${snapshot.id}`,
     });
 
     await markSnapshotRestored(snapshot.id, jobId);
 
     return NextResponse.json(
-      { status: 'queued', jobId, resource: snapshot.resource },
+      { status: 'queued', jobId, tool: resolved.tool, resource: snapshot.resource },
       { status: 202, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {

@@ -26,6 +26,7 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 			add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 			add_action( 'admin_post_kph_sp_save_scopes', array( $this, 'handle_save_scopes' ) );
 			add_action( 'admin_post_kph_sp_save_platform', array( $this, 'handle_save_platform' ) );
+			add_action( 'admin_post_kph_sp_save_rotated', array( $this, 'handle_save_rotated' ) );
 		}
 
 		/**
@@ -139,6 +140,61 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 		}
 
 		/**
+		 * Applies rotated credentials issued by SitePilot (`POST /rotate-secret`).
+		 *
+		 * Validates 64-hex token and secret shapes before saving anything so a
+		 * typo never overwrites an existing working secret.
+		 */
+		public function handle_save_rotated() {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				wp_die( esc_html__( 'You do not have permission to manage this connection.', 'kph-sitepilot-connector' ) );
+			}
+
+			check_admin_referer( 'kph_sp_save_rotated' );
+
+			$site_id = isset( $_POST['kph_sp_rotated_site_id'] ) ? sanitize_text_field( wp_unslash( $_POST['kph_sp_rotated_site_id'] ) ) : '';
+			$token   = isset( $_POST['kph_sp_rotated_token'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_POST['kph_sp_rotated_token'] ) ) ) ) : '';
+			$raw_sec = isset( $_POST['kph_sp_rotated_secret'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_POST['kph_sp_rotated_secret'] ) ) ) ) : '';
+
+			$effective_site_id = '' !== $site_id ? $site_id : (string) KPH_SP_Settings::get( 'site_id', '' );
+
+			if ( ! preg_match( '/^[a-f0-9-]{36}$/i', $effective_site_id ) || ! preg_match( '/^[a-f0-9]{64}$/', $token ) || ! preg_match( '/^[a-f0-9]{64}$/', $raw_sec ) ) {
+				wp_safe_redirect(
+					add_query_arg(
+						array(
+							'page'    => self::SLUG,
+							'updated' => 'rotated_invalid',
+						),
+						admin_url( 'admin.php' )
+					)
+				);
+				exit;
+			}
+
+			KPH_SP_Settings::update(
+				array(
+					'site_id'     => $effective_site_id,
+					'site_token'  => $token,
+					'site_secret' => $raw_sec,
+				)
+			);
+
+			KPH_SP_Job_Runner::heartbeat( true );
+			wp_schedule_single_event( time() + 5, KPH_SP_CRON_HOOK );
+
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page'    => self::SLUG,
+						'updated' => 'rotated',
+					),
+					admin_url( 'admin.php' )
+				)
+			);
+			exit;
+		}
+
+		/**
 		 * Renders the screen.
 		 */
 		public function render() {
@@ -152,10 +208,27 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 			$secret     = (string) $settings['site_secret'];
 			$masked     = '' === $secret ? '—' : str_repeat( '•', 12 ) . substr( $secret, -4 );
 			$updated    = isset( $_GET['updated'] ) ? sanitize_key( wp_unslash( $_GET['updated'] ) ) : '';
-			$contact    = get_option( 'kph_sp_last_contact', array() );
-			$contact    = is_array( $contact ) ? $contact : array();
-			$job_error  = (string) get_option( 'kph_sp_last_job_error', '' );
-			$scope_help = array(
+			$contact     = get_option( 'kph_sp_last_contact', array() );
+			$contact     = is_array( $contact ) ? $contact : array();
+			$job_error   = (string) get_option( 'kph_sp_last_job_error', '' );
+			$recent_jobs = KPH_SP_Job_Runner::recent_jobs();
+			$debug_json  = wp_json_encode(
+				array(
+					'pluginVersion'   => KPH_SP_VERSION,
+					'wpVersion'       => get_bloginfo( 'version' ),
+					'phpVersion'      => PHP_VERSION,
+					'connected'       => (bool) $connected,
+					'siteId'          => (string) $settings['site_id'],
+					'platformUrl'     => (string) $settings['platform_url'],
+					'environment'     => (string) $settings['environment'],
+					'scopes'          => array_values( $scopes ),
+					'lastContact'     => $contact,
+					'lastJobError'    => $job_error,
+					'recentJobsCount' => count( $recent_jobs ),
+				),
+				JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+			);
+			$scope_help  = array(
 				'read'     => __( 'Inspect site, content, media, plugins and settings.', 'kph-sitepilot-connector' ),
 				'content'  => __( 'Create and update posts, pages, blocks, menus and taxonomies.', 'kph-sitepilot-connector' ),
 				'media'    => __( 'Upload, replace and describe media files.', 'kph-sitepilot-connector' ),
@@ -177,6 +250,18 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 				<?php if ( 'scopes' === $updated ) : ?>
 					<div class="notice notice-success is-dismissible">
 						<p><?php esc_html_e( 'Access scopes saved.', 'kph-sitepilot-connector' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<?php if ( 'rotated' === $updated ) : ?>
+					<div class="notice notice-success is-dismissible">
+						<p><?php esc_html_e( 'Rotated credentials applied and heartbeat queued.', 'kph-sitepilot-connector' ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<?php if ( 'rotated_invalid' === $updated ) : ?>
+					<div class="notice notice-error is-dismissible">
+						<p><?php esc_html_e( 'Rotated credentials did not match the expected 64-character hex format. Existing settings were kept.', 'kph-sitepilot-connector' ); ?></p>
 					</div>
 				<?php endif; ?>
 
@@ -269,6 +354,54 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 								</button>
 							</p>
 						</form>
+
+						<details class="kph-sp-details">
+							<summary><?php esc_html_e( 'Apply rotated credentials', 'kph-sitepilot-connector' ); ?></summary>
+							<p class="kph-sp-note">
+								<?php esc_html_e( 'If you rotated this site’s secret in SitePilot, paste the new one-time token and secret here. Existing credentials stay untouched unless both values pass validation.', 'kph-sitepilot-connector' ); ?>
+							</p>
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+								<input type="hidden" name="action" value="kph_sp_save_rotated" />
+								<?php wp_nonce_field( 'kph_sp_save_rotated' ); ?>
+								<p>
+									<label for="kph-sp-rotated-site-id"><?php esc_html_e( 'Site ID', 'kph-sitepilot-connector' ); ?></label><br />
+									<input
+										type="text"
+										id="kph-sp-rotated-site-id"
+										name="kph_sp_rotated_site_id"
+										class="regular-text"
+										value="<?php echo esc_attr( $settings['site_id'] ); ?>"
+										placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+										autocomplete="off"
+									/>
+								</p>
+								<p>
+									<label for="kph-sp-rotated-token"><?php esc_html_e( 'New token (64 hex)', 'kph-sitepilot-connector' ); ?></label><br />
+									<input
+										type="password"
+										id="kph-sp-rotated-token"
+										name="kph_sp_rotated_token"
+										class="regular-text"
+										autocomplete="off"
+									/>
+								</p>
+								<p>
+									<label for="kph-sp-rotated-secret"><?php esc_html_e( 'New secret (64 hex)', 'kph-sitepilot-connector' ); ?></label><br />
+									<input
+										type="password"
+										id="kph-sp-rotated-secret"
+										name="kph_sp_rotated_secret"
+										class="regular-text"
+										autocomplete="off"
+									/>
+								</p>
+								<p>
+									<button type="submit" class="button">
+										<?php esc_html_e( 'Apply rotated credentials', 'kph-sitepilot-connector' ); ?>
+									</button>
+								</p>
+							</form>
+						</details>
 					</div>
 
 					<div class="kph-sp-card">
@@ -307,6 +440,57 @@ if ( ! class_exists( 'KPH_SP_Admin_Page' ) ) {
 							</p>
 						</form>
 					</div>
+				</div>
+
+				<div class="kph-sp-card">
+					<h2><?php esc_html_e( 'Recent activity (last 20 jobs)', 'kph-sitepilot-connector' ); ?></h2>
+					<?php if ( empty( $recent_jobs ) ) : ?>
+						<p><?php esc_html_e( 'No jobs executed on this site yet.', 'kph-sitepilot-connector' ); ?></p>
+					<?php else : ?>
+						<table class="kph-sp-table kph-sp-activity-table">
+							<thead>
+								<tr>
+									<th><?php esc_html_e( 'Time (UTC)', 'kph-sitepilot-connector' ); ?></th>
+									<th><?php esc_html_e( 'Tool', 'kph-sitepilot-connector' ); ?></th>
+									<th><?php esc_html_e( 'Outcome', 'kph-sitepilot-connector' ); ?></th>
+									<th><?php esc_html_e( 'Duration', 'kph-sitepilot-connector' ); ?></th>
+									<th><?php esc_html_e( 'Job / Error', 'kph-sitepilot-connector' ); ?></th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ( $recent_jobs as $entry ) : ?>
+									<?php
+									$job_ok   = isset( $entry['status'] ) && 'succeeded' === $entry['status'];
+									$err_code = isset( $entry['errorCode'] ) ? (string) $entry['errorCode'] : '';
+									?>
+									<tr>
+										<td><code><?php echo esc_html( isset( $entry['at'] ) ? (string) $entry['at'] : '' ); ?></code></td>
+										<td><code><?php echo esc_html( isset( $entry['tool'] ) ? (string) $entry['tool'] : '' ); ?></code></td>
+										<td>
+											<span class="kph-sp-badge <?php echo $job_ok ? 'is-on' : 'is-off'; ?>">
+												<?php echo esc_html( $job_ok ? 'succeeded' : 'failed' ); ?>
+											</span>
+										</td>
+										<td><?php echo esc_html( (string) ( isset( $entry['durationMs'] ) ? (int) $entry['durationMs'] : 0 ) . ' ms' ); ?></td>
+										<td>
+											<code><?php echo esc_html( isset( $entry['jobPrefix'] ) ? (string) $entry['jobPrefix'] : '' ); ?></code>
+											<?php if ( '' !== $err_code ) : ?>
+												· <code><?php echo esc_html( $err_code ); ?></code>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					<?php endif; ?>
+				</div>
+
+				<div class="kph-sp-card">
+					<h2><?php esc_html_e( 'Diagnostic bundle (safe to share)', 'kph-sitepilot-connector' ); ?></h2>
+					<p class="kph-sp-note">
+						<?php esc_html_e( 'Contains versions, scopes and last-contact telemetry only — never tokens, secrets or user emails.', 'kph-sitepilot-connector' ); ?>
+					</p>
+					<textarea class="kph-sp-debug" rows="8" readonly="readonly"><?php echo esc_textarea( (string) $debug_json ); ?></textarea>
 				</div>
 
 				<div class="kph-sp-card">
