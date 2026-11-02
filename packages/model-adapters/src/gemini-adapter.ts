@@ -21,7 +21,7 @@ export interface GeminiModelAdapterOptions {
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
-export const DEFAULT_TIMEOUT_MS = 30000;
+export const DEFAULT_TIMEOUT_MS = 45000;
 export const DEFAULT_MAX_PROMPT_LENGTH = 32768; // 32 KB character limit
 
 /**
@@ -320,12 +320,13 @@ export class GeminiModelAdapter implements ModelAdapter {
 
     const { systemPrompt, contents } = this.validateMessages(messages);
 
-    // Prepare configuration
+    // Prepare configuration (Gemini 3.5+ deprecated sampling params like temperature)
     const config: Record<string, unknown> = {};
+    const isGemini3OrNewer = /^gemini-(?:3|4)(?:[.-]|$)/i.test(this.modelName.trim());
     if (systemPrompt) {
       config.systemInstruction = systemPrompt;
     }
-    if (options?.temperature !== undefined) {
+    if (options?.temperature !== undefined && !isGemini3OrNewer) {
       config.temperature = options.temperature;
     }
     if (options?.maxTokens !== undefined) {

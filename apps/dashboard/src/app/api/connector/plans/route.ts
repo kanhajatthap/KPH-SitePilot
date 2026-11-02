@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
 import { planFromPrompt, type PlannerResult } from '../../../../lib/connector/planner';
+import { PLANNER_TIMEOUT_MS } from '@wp-agent/model-adapters';
 import { planWithModel, toPlannerResult } from '../../../../lib/connector/model-planner';
 import { createPlan } from '../../../../lib/connector/plans';
 import { sanitizeSettingsValues } from '../../../../lib/connector/undo';
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
         {
           provider: modelKey.provider,
           apiKey: modelKey.key,
-          timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? 12000),
+          timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? PLANNER_TIMEOUT_MS),
         }
       );
 

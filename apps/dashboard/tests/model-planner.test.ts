@@ -209,6 +209,33 @@ describe('planWithModel', () => {
     if (outcome.ok) return;
     expect(outcome.reason).toContain('JSON');
   });
+
+  it('automatically falls back to gemini-2.5-flash when default gemini-3.8-flash times out or returns 503', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      call += 1;
+      if (call === 1) {
+        expect(url).toContain('gemini-3.8-flash');
+        return new Response('overloaded', { status: 503 });
+      }
+      expect(url).toContain('gemini-2.5-flash');
+      return new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: validPlan }] } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    });
+
+    const outcome = await planWithModel('change the hero', site, {
+      provider: 'gemini',
+      apiKey: 'key-1234567890',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.model).toBe('gemini-2.5-flash');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('prompt helpers', () => {

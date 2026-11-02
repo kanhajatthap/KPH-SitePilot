@@ -409,6 +409,12 @@ export interface ModelPlannerGateway {
   baseUrlOverride?: string;
 }
 
+export const GEMINI_FALLBACK_PLANNER_MODEL = 'gemini-2.5-flash';
+
+function shouldRetryOnGeminiFallback(reason: string): boolean {
+  return /timed out|HTTP (?:404|429|503)\b/i.test(reason);
+}
+
 /**
  * Runs the model, parses and hardens the answer.
  *
@@ -421,16 +427,38 @@ export async function planWithModel(
   site: SiteContextForPrompt,
   gateway: ModelPlannerGateway
 ): Promise<ModelPlanOutcome> {
-  const completion = await requestJsonCompletion({
+  const userPrompt = buildPlannerUserPrompt(prompt, site);
+  const primaryModel = gateway.model ?? defaultPlannerModel(gateway.provider);
+
+  let completion = await requestJsonCompletion({
     provider: gateway.provider,
     apiKey: gateway.apiKey,
     systemPrompt: PLANNER_SYSTEM_PROMPT,
-    userPrompt: buildPlannerUserPrompt(prompt, site),
-    model: gateway.model ?? defaultPlannerModel(gateway.provider),
+    userPrompt,
+    model: primaryModel,
     timeoutMs: gateway.timeoutMs,
     fetchImpl: gateway.fetchImpl,
     baseUrlOverride: gateway.baseUrlOverride,
   });
+
+  if (
+    !completion.ok &&
+    gateway.provider === 'gemini' &&
+    !gateway.model &&
+    primaryModel !== GEMINI_FALLBACK_PLANNER_MODEL &&
+    shouldRetryOnGeminiFallback(completion.reason)
+  ) {
+    completion = await requestJsonCompletion({
+      provider: gateway.provider,
+      apiKey: gateway.apiKey,
+      systemPrompt: PLANNER_SYSTEM_PROMPT,
+      userPrompt,
+      model: GEMINI_FALLBACK_PLANNER_MODEL,
+      timeoutMs: gateway.timeoutMs,
+      fetchImpl: gateway.fetchImpl,
+      baseUrlOverride: gateway.baseUrlOverride,
+    });
+  }
 
   if (!completion.ok) return { ok: false, reason: completion.reason };
 
