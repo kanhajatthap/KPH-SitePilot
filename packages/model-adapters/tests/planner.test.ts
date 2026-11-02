@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultPlannerModel, requestJsonCompletion, verifyProviderKey } from '../src/planner';
+import {
+  defaultPlannerModel,
+  rankGeminiGenerateModels,
+  requestJsonCompletion,
+  verifyProviderKey,
+} from '../src/planner';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -240,3 +245,92 @@ describe('verifyProviderKey', () => {
     expect(result.reason).not.toContain('AIzaSyInvalidKeyDoNotLeak');
   });
 });
+
+describe('rankGeminiGenerateModels & live Gemini model discovery', () => {
+  it('filters out non-generateContent and non-text models when ranking /v1beta/models', () => {
+    const ranked = rankGeminiGenerateModels({
+      models: [
+        { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
+        { name: 'models/gemini-2.5-flash-tts', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['interactions'] },
+        { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-flash-latest', supportedGenerationMethods: ['generateContent'] },
+      ],
+    });
+
+    expect(ranked).toEqual(['gemini-2.0-flash', 'gemini-flash-latest']);
+  });
+
+  it('discovers live generateContent models and avoids HTTP 404 when default model is unavailable', async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/v1beta/models?pageSize=100')) {
+        return jsonResponse({
+          models: [
+            { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['interactions'] },
+            { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
+          ],
+        });
+      }
+      if (url.includes('gemini-2.0-flash:generateContent')) {
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        if (body.generationConfig?.thinkingConfig) {
+          return new Response('thinkingConfig unsupported', { status: 400 });
+        }
+        return jsonResponse(geminiEnvelope);
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const result = await requestJsonCompletion({
+      provider: 'gemini',
+      apiKey: 'AIzaSyDiscoveryTest1234',
+      model: defaultPlannerModel('gemini'),
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+      discoverModels: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      text: '{"summary":"ok","steps":[]}',
+      provider: 'gemini',
+      model: 'gemini-2.0-flash',
+    });
+  });
+
+  it('falls back to the next discovered Gemini model if the primary returns HTTP 404', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/v1beta/models?pageSize=100')) {
+        return jsonResponse({
+          models: [
+            { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-2.0-flash', supportedGenerationMethods: ['generateContent'] },
+          ],
+        });
+      }
+      if (url.includes('gemini-2.5-flash:generateContent')) {
+        return new Response('retired model', { status: 404 });
+      }
+      if (url.includes('gemini-2.0-flash:generateContent')) {
+        return jsonResponse(geminiEnvelope);
+      }
+      return new Response('unexpected', { status: 500 });
+    });
+
+    const result = await requestJsonCompletion({
+      provider: 'gemini',
+      apiKey: 'AIzaSyFallback404Test99',
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+      discoverModels: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.model).toBe('gemini-2.0-flash');
+  });
+});
+

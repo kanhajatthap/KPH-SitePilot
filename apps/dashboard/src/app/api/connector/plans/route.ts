@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authenticateApiRequest } from '../../../../lib/auth/api';
-import { planFromPrompt, type PlannerResult } from '../../../../lib/connector/planner';
+import { planFromPrompt, type PlanStep, type PlannerResult, type Risk } from '../../../../lib/connector/planner';
 import { PLANNER_TIMEOUT_MS } from '@wp-agent/model-adapters';
-import { planWithModel, toPlannerResult } from '../../../../lib/connector/model-planner';
+import { planWithModel, sanitizeStep, toPlannerResult } from '../../../../lib/connector/model-planner';
 import { createPlan } from '../../../../lib/connector/plans';
 import { sanitizeSettingsValues } from '../../../../lib/connector/undo';
 import {
@@ -16,11 +16,22 @@ import { createSupabaseAdminClient } from '../../../../lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+const StructuredStepInputSchema = z.object({
+  tool: z.string().min(3).max(40),
+  args: z.record(z.unknown()).optional(),
+  risk: z.enum(['R0', 'R1', 'R2', 'R3']).optional(),
+  summary: z.string().max(200).optional(),
+});
+
 const CreatePlanSchema = z.object({
   siteId: z.string().uuid(),
   prompt: z.string().min(4).max(4000).optional(),
   settingsValues: z.record(z.unknown()).optional(),
+  structuredSteps: z.array(StructuredStepInputSchema).min(1).max(5).optional(),
+  summary: z.string().min(3).max(200).optional(),
 });
+
+const RISK_ORDER: Risk[] = ['R0', 'R1', 'R2', 'R3'];
 
 function json(body: unknown, status: number) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -47,8 +58,17 @@ export async function POST(req: Request) {
   }
 
   const parsed = CreatePlanSchema.safeParse(payload);
-  if (!parsed.success || (!parsed.data.prompt && !parsed.data.settingsValues)) {
-    return json({ error: 'VALIDATION_FAILED', message: 'A siteId and prompt (or settingsValues) are required.' }, 400);
+  if (
+    !parsed.success ||
+    (!parsed.data.prompt && !parsed.data.settingsValues && !parsed.data.structuredSteps)
+  ) {
+    return json(
+      {
+        error: 'VALIDATION_FAILED',
+        message: 'A siteId and prompt (or settingsValues / structuredSteps) are required.',
+      },
+      400
+    );
   }
 
   let prevalidatedSettings: Record<string, string | number> | null = null;
@@ -66,6 +86,25 @@ export async function POST(req: Request) {
     }
   }
 
+  let prevalidatedSteps: PlanStep[] | null = null;
+  if (parsed.data.structuredSteps !== undefined) {
+    const cleanedSteps: PlanStep[] = [];
+    for (const raw of parsed.data.structuredSteps) {
+      const sanitized = sanitizeStep(raw);
+      if (!sanitized) {
+        return json(
+          {
+            error: 'VALIDATION_FAILED',
+            message: `Structured step "${raw.tool}" is not allowed or has invalid arguments.`,
+          },
+          400
+        );
+      }
+      cleanedSteps.push(sanitized);
+    }
+    prevalidatedSteps = cleanedSteps;
+  }
+
   if (!(await siteBelongsToUser(parsed.data.siteId, auth.context.user.id))) {
     return json({ error: 'SITE_NOT_FOUND', message: 'No such site for your account.' }, 404);
   }
@@ -79,7 +118,21 @@ export async function POST(req: Request) {
   let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode: 'structured' };
   let effectivePrompt = parsed.data.prompt ?? '';
 
-  if (prevalidatedSettings) {
+  if (prevalidatedSteps) {
+    const worstRisk = prevalidatedSteps.reduce<Risk>(
+      (worst, step) => (RISK_ORDER.indexOf(step.risk) > RISK_ORDER.indexOf(worst) ? step.risk : worst),
+      'R0'
+    );
+    const summary =
+      parsed.data.summary?.trim() || prevalidatedSteps.map((s) => s.summary).join(' · ').slice(0, 200);
+    effectivePrompt = effectivePrompt || `Structured canvas plan: ${summary}`;
+    planned = {
+      ok: true,
+      summary,
+      risk: worstRisk,
+      steps: prevalidatedSteps,
+    };
+  } else if (prevalidatedSettings) {
     const keys = Object.keys(prevalidatedSettings);
     const summary = `Update site settings (${keys.join(', ')})`;
     effectivePrompt = effectivePrompt || `Structured settings update: ${keys.join(', ')}`;

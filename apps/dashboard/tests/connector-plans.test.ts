@@ -185,6 +185,23 @@ describe('planner', () => {
     const vague = planFromPrompt('Make the site better');
     expect(vague.ok).toBe(false);
   });
+
+  it('builds a multi-section Gutenberg draft page for homepage / Elementor design prompts and uses limit on content.list', () => {
+    const homepage = planFromPrompt('Design a modern Elementor homepage for My Tech Hub');
+    expect(homepage.ok).toBe(true);
+    if (!homepage.ok) return;
+    expect(homepage.steps[0].tool).toBe('content.create');
+    expect(homepage.steps[0].args.type).toBe('page');
+    expect(homepage.steps[0].args.status).toBe('draft');
+    expect(String(homepage.steps[0].args.content)).toContain('<!-- wp:group');
+    expect(String(homepage.steps[0].args.content)).toContain('<!-- wp:columns');
+
+    const listing = planFromPrompt('List recent posts');
+    expect(listing.ok).toBe(true);
+    if (!listing.ok) return;
+    expect(listing.steps[0].tool).toBe('content.list');
+    expect(listing.steps[0].args).toEqual({ limit: 10 });
+  });
 });
 
 describe('plan lifecycle', () => {
@@ -195,6 +212,44 @@ describe('plan lifecycle', () => {
     if (!created.ok) return;
     expect(created.plan.status).toBe('proposed');
     expect(created.plan.hash).toBe(hashPlan({ siteId: SITE_ID, steps: created.plan.steps }));
+  });
+
+  it('preserves hash and approves cleanly when Postgres JSONB reorders step and args keys', async () => {
+    const created = await createPlan(
+      {
+        ...seed('R1'),
+        prompt: 'Create a page called "Home"',
+        summary: 'Create page "Home"',
+        steps: [
+          {
+            tool: 'content.create',
+            args: { title: 'Home', type: 'page', status: 'draft', content: '<p>Hello</p>' },
+            risk: 'R1',
+            summary: 'Create draft page Home',
+          },
+        ],
+      },
+      { store }
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    // Simulate Postgres JSONB key sorting (length-then-alpha / arbitrary key order)
+    store.plans[0].steps = [
+      JSON.parse(
+        JSON.stringify({
+          args: { content: '<p>Hello</p>', status: 'draft', title: 'Home', type: 'page' },
+          risk: 'R1',
+          tool: 'content.create',
+          summary: 'Create draft page Home',
+        })
+      ),
+    ];
+
+    const approved = await approvePlan({ planId: created.plan.id, approvedBy: USER_ID }, { store });
+    expect(approved.ok).toBe(true);
+    if (!approved.ok) return;
+    expect(approved.plan.status).toBe('approved');
   });
 
   it('rejects an approval when the plan changed after it was shown', async () => {

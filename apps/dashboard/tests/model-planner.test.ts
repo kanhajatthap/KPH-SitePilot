@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PLANNER_SYSTEM_PROMPT,
   buildPlannerUserPrompt,
   parseModelPlan,
   planWithModel,
   sanitizeStep,
   toPlannerResult,
 } from '../src/lib/connector/model-planner';
+import { isUuid } from '../src/lib/connector-canvas-bridge';
 
 const site = { url: 'https://shop.example.com', name: 'Shop', capabilities: null };
 
@@ -95,9 +97,24 @@ describe('parseModelPlan', () => {
     expect(sanitizeStep({ tool: 'content.update', args: { id: 12, status: 'trash' } })).toBeNull();
   });
 
-  it('defaults a create to a draft page', () => {
+  it('defaults a create to a draft page and coerces private status + cleans slug for PHP connector compatibility', () => {
     const step = sanitizeStep({ tool: 'content.create', args: { title: 'Careers' } });
     expect(step?.args).toMatchObject({ title: 'Careers', type: 'page', status: 'draft' });
+
+    const privateCoerced = sanitizeStep({
+      tool: 'content.create',
+      args: { title: 'Modern Home', type: 'page', status: 'private', slug: 'Modern Home!!' },
+    });
+    expect(privateCoerced?.args).toEqual({
+      title: 'Modern Home',
+      type: 'page',
+      status: 'draft',
+      slug: 'modern-home',
+    });
+
+    expect(PLANNER_SYSTEM_PROMPT).toContain('Elementor layout');
+    expect(isUuid('3b1c9e66-3e4a-40f9-bbb7-3979b988b572')).toBe(true);
+    expect(isUuid('plan_1730000000')).toBe(false);
   });
 
   it('accepts a publish step and keeps it at R2', () => {

@@ -56,9 +56,31 @@ export interface PlanStore {
   markJobSuperseded?(jobId: string): Promise<void>;
 }
 
+/**
+ * Recursively sorts plain-object keys so `hashPlan()` produces the exact same
+ * SHA-256 digest before and after Postgres `JSONB` key re-ordering.
+ */
+function canonicalizeForHash(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeForHash(item));
+  }
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    const entry = record[key];
+    if (entry !== undefined) {
+      sorted[key] = canonicalizeForHash(entry);
+    }
+  }
+  return sorted;
+}
+
 export function hashPlan(input: { siteId: string; steps: PlanStep[] }): string {
   return createHash('sha256')
-    .update(JSON.stringify({ siteId: input.siteId, steps: input.steps }), 'utf8')
+    .update(JSON.stringify(canonicalizeForHash({ siteId: input.siteId, steps: input.steps })), 'utf8')
     .digest('hex');
 }
 

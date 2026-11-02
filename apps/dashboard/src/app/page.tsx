@@ -51,6 +51,13 @@ import {
   applySectionEdit,
   listSitePages,
 } from '../lib/api-client';
+import {
+  fetchConnectedWorkspaceSites,
+  stageConnectorCanvasPlan,
+  executeConnectorCanvasPlan,
+  isUuid,
+  type ConnectedWorkspaceSite,
+} from '../lib/connector-canvas-bridge';
 
 const AVAILABLE_SITES: AvailableSite[] = [
   {
@@ -72,6 +79,7 @@ export default function DashboardPage() {
   const showSignOut = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
+  const [connectedSites, setConnectedSites] = useState<ConnectedWorkspaceSite[]>([]);
   const [selectedSite, setSelectedSite] = useState<string>(AVAILABLE_SITES[0].url);
   const [agentMode, setAgentMode] = useState<AgentMode>('agent');
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
@@ -107,6 +115,47 @@ export default function DashboardPage() {
     activeView: 'welcome',
   });
 
+  // Load authenticated SaaS connected sites so the Workspace Canvas operates
+  // through the signed WordPress Connector queue rather than local php.exe.
+  useEffect(() => {
+    let active = true;
+    void fetchConnectedWorkspaceSites().then((list) => {
+      if (!active || list.length === 0) return;
+      setConnectedSites(list);
+      setSelectedSite((current) => {
+        const normalizedCurrent = current.replace(/\/+$/, '').toLowerCase();
+        const matchesExisting = list.some(
+          (site) => site.url.replace(/\/+$/, '').toLowerCase() === normalizedCurrent
+        );
+        return matchesExisting ? current : list[0].url;
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const availableSites: AvailableSite[] =
+    connectedSites.length > 0
+      ? connectedSites.map((site, idx) => ({
+          id: site.id,
+          name: site.name,
+          url: site.url,
+          description: `${site.environment} · Connected via SitePilot Connector`,
+          isDefault: idx === 0,
+        }))
+      : AVAILABLE_SITES;
+
+  const findConnectorSite = useCallback(
+    (siteUrl: string): ConnectedWorkspaceSite | undefined => {
+      const normalized = (siteUrl ?? '').replace(/\/+$/, '').toLowerCase();
+      return connectedSites.find(
+        (site) => site.url.replace(/\/+$/, '').toLowerCase() === normalized
+      );
+    },
+    [connectedSites]
+  );
+
   // Keep preview targetSite and viewport synced with selections
   useEffect(() => {
     setPreview((prev) => ({
@@ -130,6 +179,27 @@ export default function DashboardPage() {
 
   // Probe connected WordPress site for active builders and themes
   useEffect(() => {
+    const connected = findConnectorSite(selectedSite);
+    if (connected?.capabilities) {
+      const raw = connected.capabilities;
+      const builders = (raw.builders as Record<string, unknown> | undefined) ?? {};
+      const theme = (raw.theme as { name?: string; blockTheme?: boolean; type?: string } | undefined) ?? {};
+      const derivedCaps: BuilderCapabilities = {
+        gutenberg: true,
+        elementor: Boolean(builders.elementor),
+        acf: Boolean(builders.acf),
+        woocommerce: Boolean(builders.woocommerce),
+        theme: {
+          name: typeof theme.name === 'string' && theme.name ? theme.name : 'WordPress Theme',
+          isBlockTheme: Boolean(theme.blockTheme || theme.type === 'block'),
+        },
+        supportedNamespaces: ['wp/v2', 'kph-sitepilot/v1'],
+      };
+      setCapabilities(derivedCaps);
+      setPreview((prev) => ({ ...prev, capabilities: derivedCaps }));
+      return;
+    }
+
     let isMounted = true;
     detectBuilderCapabilities(selectedSite)
       .then((caps) => {
@@ -144,7 +214,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedSite]);
+  }, [selectedSite, findConnectorSite]);
 
   const handleStopTask = () => {
     if (abortControllerRef.current) {
@@ -183,6 +253,68 @@ export default function DashboardPage() {
     setIsLoading(true);
     setPreview((prev) => ({ ...prev, isLoading: true }));
     try {
+      const connectorSite = findConnectorSite(proposal.targetSite);
+      if (isUuid(proposal.planId) || connectorSite) {
+        let planId = proposal.planId;
+        if (!isUuid(planId) && connectorSite) {
+          const staged = await stageConnectorCanvasPlan({
+            siteId: connectorSite.id,
+            summary: proposal.summary || `Create draft "${proposal.post.title}"`,
+            steps: [
+              {
+                tool: 'content.create',
+                args: {
+                  title: proposal.post.title,
+                  content: proposal.post.content,
+                  type: 'post',
+                  status: 'draft',
+                },
+                risk: 'R1',
+                summary: `Create draft "${proposal.post.title}"`,
+              },
+            ],
+          });
+          planId = staged.planId;
+        }
+
+        const outcome = await executeConnectorCanvasPlan({
+          planId,
+          siteUrl: proposal.targetSite,
+          fallbackTitle: proposal.post.title,
+        });
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.proposal?.planId === proposal.planId
+              ? { ...m, proposal: { ...m.proposal, isApplied: true } }
+              : m
+          )
+        );
+
+        const successMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content:
+            outcome.state === 'applied' && outcome.postOutcome
+              ? `✅ Draft "${outcome.postOutcome.title}" created & verified on ${proposal.targetSite} (ID #${outcome.postOutcome.id}).\n\n• **Preview:** [${outcome.postOutcome.link}](${outcome.postOutcome.link})\n• **Edit in WP Admin:** [Open Editor ↗](${outcome.postOutcome.editUrl})`
+              : `⏳ Approved & queued in WordPress Connector (Plan \`${outcome.planId.slice(0, 8)}\`)!\n\nOpen [Wake WordPress Worker ↗](${outcome.wakeUrl}) or visit your WordPress site so WP-Cron executes the queued job.`,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        };
+        setMessages((prev) => [...prev, successMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: 'welcome',
+          proposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        setActiveTask((prev) =>
+          prev ? { ...prev, status: 'completed', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) } : undefined
+        );
+        return;
+      }
+
       const applied = await applyDraftPost({
         planId: proposal.planId,
         integrityHash: proposal.integrityHash,
@@ -351,6 +483,46 @@ export default function DashboardPage() {
   const handlePublishNow = async (postId: number) => {
     setIsLoading(true);
     try {
+      const connectorSite = findConnectorSite(selectedSite);
+      if (connectorSite) {
+        const staged = await stageConnectorCanvasPlan({
+          siteId: connectorSite.id,
+          summary: `Publish item #${postId}`,
+          steps: [
+            {
+              tool: 'content.publish',
+              args: { id: postId },
+              risk: 'R2',
+              summary: `Publish item #${postId}`,
+            },
+          ],
+        });
+        const cleanUrl = selectedSite.replace(/\/+$/, '');
+        setActivePublishProposal({
+          status: 'proposed',
+          planId: staged.planId,
+          integrityHash: staged.integrityHash,
+          targetSite: selectedSite,
+          post: {
+            id: postId,
+            title: `Item #${postId}`,
+            slug: `item-${postId}`,
+            type: 'post',
+            status: 'draft',
+            content: '',
+            editLink: `${cleanUrl}/wp-admin/post.php?post=${postId}&action=edit`,
+            targetSite: selectedSite,
+            lastVerifiedAt: new Date().toISOString(),
+            isLivePublished: false,
+          },
+          intendedStatus: 'publish',
+          warning: 'Publishing makes this item publicly visible on your WordPress site.',
+          summary: staged.summary,
+          createdAt: new Date().toISOString(),
+        });
+        return;
+      }
+
       const proposal = await proposePublish(selectedSite, postId);
       setActivePublishProposal(proposal);
     } catch (err) {
@@ -374,6 +546,29 @@ export default function DashboardPage() {
   const handleApprovePublish = async (proposal: PublishProposalResponse) => {
     setIsPublishing(true);
     try {
+      if (isUuid(proposal.planId) && findConnectorSite(proposal.targetSite)) {
+        const outcome = await executeConnectorCanvasPlan({
+          planId: proposal.planId,
+          siteUrl: proposal.targetSite,
+          fallbackTitle: proposal.post.title,
+        });
+        setActivePublishProposal(null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg_asst_${Date.now()}`,
+            role: 'assistant',
+            content:
+              outcome.state === 'applied'
+                ? `🎉 Item #${proposal.post.id} has been published live on ${proposal.targetSite}!`
+                : `⏳ Publish job queued in WordPress Connector (Plan \`${outcome.planId.slice(0, 8)}\`). Open [Wake WordPress Worker ↗](${outcome.wakeUrl}) to apply immediately.`,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+          },
+        ]);
+        return;
+      }
+
       const result = await applyPublish({
         planId: proposal.planId,
         integrityHash: proposal.integrityHash,
@@ -496,6 +691,163 @@ export default function DashboardPage() {
     setIsLoading(true);
     setPreview((prev) => ({ ...prev, isLoading: true }));
     try {
+      // ── SAAS CONNECTOR QUEUE INTERCEPTOR (No local php.exe on Vercel) ────
+      const connectorSite = findConnectorSite(proposal.targetSite);
+      if (connectorSite) {
+        const cleanBase = proposal.targetSite.replace(/\/+$/, '');
+
+        if (proposal.operationType === 'plugin' || proposal.operationType === 'code') {
+          if (!isUuid(proposal.planId)) {
+            const adminUrl =
+              proposal.operationType === 'plugin'
+                ? `${cleanBase}/wp-admin/plugins.php`
+                : `${cleanBase}/wp-admin/customize.php`;
+            const guardMsg: ChatMessage = {
+              id: `msg_asst_${Date.now()}`,
+              role: 'assistant',
+              content:
+                proposal.operationType === 'plugin'
+                  ? `ℹ️ Remote plugin installation/activation is disabled in the SitePilot SaaS Connector security allowlist (V1).\n\nOpen [WP Admin → Plugins ↗](${adminUrl}) on **${connectorSite.name}** to install or toggle \`${proposal.pluginSlug ?? 'the plugin'}\` directly.`
+                  : `ℹ️ Raw header/footer script injection is blocked in the SitePilot SaaS Connector security allowlist to prevent remote XSS.\n\nCopy the snippet above and paste it in [WP Admin → Customize ↗](${adminUrl}).`,
+              timestamp: new Date().toISOString(),
+              status: 'denied',
+            };
+            setMessages((prev) => [...prev, guardMsg]);
+            setPreview((prev) => ({ ...prev, isLoading: false, builderProposal: undefined }));
+            setActiveTask((prev) => (prev ? { ...prev, status: 'completed' } : undefined));
+            return;
+          }
+        }
+
+        let planId = proposal.planId;
+        if (!isUuid(planId)) {
+          if (proposal.operationType === 'settings') {
+            let parsedSettings: Record<string, unknown> = {};
+            try {
+              parsedSettings =
+                typeof proposal.diff.after === 'string'
+                  ? JSON.parse(proposal.diff.after)
+                  : ((proposal.diff.after as Record<string, unknown>) ?? {});
+            } catch {
+              parsedSettings = {};
+            }
+            const staged = await stageConnectorCanvasPlan({
+              siteId: connectorSite.id,
+              summary: proposal.summary || 'Update site settings',
+              settingsValues: parsedSettings,
+            });
+            planId = staged.planId;
+          } else if (proposal.operationType === 'section' && proposal.sectionDetails) {
+            const afterHtml =
+              typeof proposal.diff.after === 'string'
+                ? proposal.diff.after
+                : proposal.renderedPreviewHtml;
+            const staged = await stageConnectorCanvasPlan({
+              siteId: connectorSite.id,
+              summary: proposal.summary || `Update page #${proposal.sectionDetails.pageId}`,
+              steps: [
+                {
+                  tool: 'content.update',
+                  args: { id: proposal.sectionDetails.pageId, content: afterHtml },
+                  risk: 'R1',
+                  summary: `Update section on page #${proposal.sectionDetails.pageId}`,
+                },
+              ],
+            });
+            planId = staged.planId;
+          } else {
+            const isPage = proposal.operationType === 'page';
+            const bodyHtml =
+              typeof proposal.diff.after === 'string'
+                ? proposal.diff.after
+                : proposal.renderedPreviewHtml || '';
+            const desiredStatus =
+              isPage && proposal.pageDetails?.postStatus === 'publish' ? 'publish' : 'draft';
+            const staged = await stageConnectorCanvasPlan({
+              siteId: connectorSite.id,
+              summary: proposal.summary || `Create ${isPage ? 'page' : 'post'} "${proposal.title}"`,
+              steps: [
+                {
+                  tool: 'content.create',
+                  args: {
+                    title: proposal.title,
+                    type: isPage ? 'page' : 'post',
+                    status: desiredStatus,
+                    ...(proposal.pageDetails?.slug ? { slug: proposal.pageDetails.slug } : {}),
+                    content: bodyHtml,
+                  },
+                  risk: desiredStatus === 'publish' ? 'R2' : 'R1',
+                  summary: `Create ${isPage ? 'page' : 'post'} "${proposal.title}"`,
+                },
+              ],
+            });
+            planId = staged.planId;
+          }
+        }
+
+        const outcome = await executeConnectorCanvasPlan({
+          planId,
+          siteUrl: proposal.targetSite,
+          fallbackTitle: proposal.title,
+        });
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.builderProposal?.planId === proposal.planId
+              ? { ...m, builderProposal: { ...m.builderProposal, isApplied: true } }
+              : m
+          )
+        );
+
+        let resultMarkdown: string;
+        if (outcome.state === 'applied') {
+          if (outcome.postOutcome) {
+            resultMarkdown = `🎉 **${proposal.operationType === 'page' ? 'Page' : 'Post'} Applied via SitePilot Connector!**\n\n• **Title:** ${outcome.postOutcome.title}\n• **WordPress ID:** #${outcome.postOutcome.id}\n• **Status:** \`${outcome.postOutcome.status}\`\n• **View in WordPress:** [${outcome.postOutcome.link}](${outcome.postOutcome.link})\n• **Edit in WP Admin:** [Open Editor ↗](${outcome.postOutcome.editUrl})`;
+          } else if (outcome.updatedSettingsKeys?.length) {
+            resultMarkdown = `✅ **Site settings updated on ${connectorSite.name}!**\n\n${outcome.updatedSettingsKeys.map((k) => `• \`${k}\``).join('\n')}`;
+          } else {
+            resultMarkdown = `✅ **Change verified on ${connectorSite.name}** (Plan \`${outcome.planId.slice(0, 8)}\`).`;
+          }
+        } else {
+          resultMarkdown = `⏳ **Approved & Queued for ${connectorSite.name}** (Plan \`${outcome.planId.slice(0, 8)}\`)\n\nYour signed job is waiting in the SitePilot Connector queue. Because \`${proposal.targetSite}\` runs local WP-Cron on page load, click **[Wake WordPress Worker ↗](${outcome.wakeUrl})** (or visit [Studio](/studio)) so WordPress claims and executes it immediately.`;
+        }
+
+        const appliedDraft = outcome.postOutcome
+          ? {
+              id: outcome.postOutcome.id,
+              slug: proposal.pageDetails?.slug ?? `item-${outcome.postOutcome.id}`,
+              title: outcome.postOutcome.title,
+              status: (outcome.postOutcome.status === 'publish' ? 'publish' : 'draft') as 'draft' | 'publish',
+              editLink: outcome.postOutcome.editUrl ?? `${cleanBase}/wp-admin/post.php?post=${outcome.postOutcome.id}&action=edit`,
+              verified: true,
+            }
+          : undefined;
+
+        const successMessage: ChatMessage = {
+          id: `msg_asst_${Date.now()}`,
+          role: 'assistant',
+          content: resultMarkdown,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+          appliedPost: appliedDraft,
+        };
+        setMessages((prev) => [...prev, successMessage]);
+        setPreview((prev) => ({
+          ...prev,
+          isLoading: false,
+          activeView: appliedDraft ? 'applied' : 'builder',
+          appliedPost: appliedDraft ?? prev.appliedPost,
+          builderProposal: undefined,
+          lastUpdated: new Date().toISOString(),
+        }));
+        if (activeTask) {
+          setActiveTask((prev) =>
+            prev ? { ...prev, status: 'completed', steps: prev.steps.map((s) => ({ ...s, status: 'completed' })) } : undefined
+          );
+        }
+        return;
+      }
+
       // ── ROUTE: Plugin Operation ──────────────────────────────────────────
       if (proposal.operationType === 'plugin') {
         const result = await applyPluginOperation({
@@ -1217,16 +1569,38 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         };
 
         if (Object.keys(settingsMap).length > 0) {
+          const connectorSite = findConnectorSite(currentSite);
           try {
-            const proposal = await proposeSiteSettings({ targetSite: currentSite, settings: settingsMap });
-            bProposal = {
-              ...bProposal,
-              planId: proposal.planId,
-              integrityHash: proposal.integrityHash,
-              summary: proposal.summary,
-              createdAt: proposal.createdAt,
-              operationType: 'settings',
-            };
+            if (connectorSite) {
+              const allowlistedOnly: Record<string, string> = {};
+              if (settingsMap.blogname) allowlistedOnly.blogname = settingsMap.blogname;
+              if (settingsMap.blogdescription) allowlistedOnly.blogdescription = settingsMap.blogdescription;
+              if (Object.keys(allowlistedOnly).length > 0) {
+                const staged = await stageConnectorCanvasPlan({
+                  siteId: connectorSite.id,
+                  prompt,
+                  settingsValues: allowlistedOnly,
+                });
+                bProposal = {
+                  ...bProposal,
+                  planId: staged.planId,
+                  integrityHash: staged.integrityHash,
+                  summary: staged.summary,
+                  createdAt: new Date().toISOString(),
+                  operationType: 'settings',
+                };
+              }
+            } else {
+              const proposal = await proposeSiteSettings({ targetSite: currentSite, settings: settingsMap });
+              bProposal = {
+                ...bProposal,
+                planId: proposal.planId,
+                integrityHash: proposal.integrityHash,
+                summary: proposal.summary,
+                createdAt: proposal.createdAt,
+                operationType: 'settings',
+              };
+            }
           } catch { /* fallback to preview-only */ }
         }
 
@@ -1320,20 +1694,46 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         let integrityHash = Math.random().toString(16).substring(2).padEnd(64, '0');
 
         if (isPageOrHomeRequest) {
-          // Dedicated Page Creation Workflow. If staging fails, stop honestly:
-          // never fabricate a plan id/hash that can only fail at approval time.
+          // Dedicated Page Creation Workflow. In SaaS mode with a connected site,
+          // stage directly in Supabase `public.plans`; in local dev, use local staging.
+          const pageSlug = isFrontPage ? 'home' : synth.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const connectorSite = findConnectorSite(currentSite);
           try {
-            const pageProp = await proposePageCreation({
-              targetSite: currentSite,
-              title: synth.title,
-              content: synth.gutenbergBlocksHtml,
-              slug: isFrontPage ? 'home' : synth.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-              status: 'publish',
-              isFrontPage,
-              builder: 'gutenberg',
-            });
-            planId = pageProp.planId;
-            integrityHash = pageProp.integrityHash;
+            if (connectorSite) {
+              const staged = await stageConnectorCanvasPlan({
+                siteId: connectorSite.id,
+                prompt,
+                summary: `Create WordPress ${isFrontPage ? 'Homepage' : 'Page'} draft "${synth.title}"`,
+                steps: [
+                  {
+                    tool: 'content.create',
+                    args: {
+                      title: synth.title,
+                      type: 'page',
+                      status: 'draft',
+                      slug: pageSlug,
+                      content: synth.gutenbergBlocksHtml,
+                    },
+                    risk: 'R1',
+                    summary: `Create draft page "${synth.title}"`,
+                  },
+                ],
+              });
+              planId = staged.planId;
+              integrityHash = staged.integrityHash;
+            } else {
+              const pageProp = await proposePageCreation({
+                targetSite: currentSite,
+                title: synth.title,
+                content: synth.gutenbergBlocksHtml,
+                slug: pageSlug,
+                status: 'publish',
+                isFrontPage,
+                builder: 'gutenberg',
+              });
+              planId = pageProp.planId;
+              integrityHash = pageProp.integrityHash;
+            }
           } catch (err) {
             const errorMsg = (err as Error).message || 'Failed to stage the page proposal';
             setMessages((prev) => [
@@ -1449,15 +1849,39 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
 
         // Standard Post / Blog Staging Fallback. Do not invent a plan id when
         // staging fails; that only moves the failure to the approval step.
+        const connectorSite = findConnectorSite(currentSite);
         try {
-          const apiProposal = await proposeBuilderContent({
-            targetSite: currentSite,
-            builderType: synth.type === 'products' ? 'woocommerce' : synth.type === 'hero' ? 'elementor' : 'gutenberg',
-            prompt,
-            title: synth.title,
-          });
-          planId = apiProposal.planId;
-          integrityHash = apiProposal.integrityHash;
+          if (connectorSite) {
+            const staged = await stageConnectorCanvasPlan({
+              siteId: connectorSite.id,
+              prompt,
+              summary: synth.summary || `Create draft post "${synth.title}"`,
+              steps: [
+                {
+                  tool: 'content.create',
+                  args: {
+                    title: synth.title,
+                    type: 'post',
+                    status: 'draft',
+                    content: synth.gutenbergBlocksHtml,
+                  },
+                  risk: 'R1',
+                  summary: `Create draft post "${synth.title}"`,
+                },
+              ],
+            });
+            planId = staged.planId;
+            integrityHash = staged.integrityHash;
+          } else {
+            const apiProposal = await proposeBuilderContent({
+              targetSite: currentSite,
+              builderType: synth.type === 'products' ? 'woocommerce' : synth.type === 'hero' ? 'elementor' : 'gutenberg',
+              prompt,
+              title: synth.title,
+            });
+            planId = apiProposal.planId;
+            integrityHash = apiProposal.integrityHash;
+          }
         } catch (err) {
           const errorMsg = (err as Error).message || 'Failed to stage the content proposal';
           setMessages((prev) => [
@@ -1822,7 +2246,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
       <Header
         selectedSite={selectedSite}
         onSelectSite={setSelectedSite}
-        availableSites={AVAILABLE_SITES}
+        availableSites={availableSites}
         viewport={viewport}
         onViewportChange={setViewport}
         apiConnected={apiConnected}
@@ -1850,7 +2274,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           onClearChat={handleClearChat}
           selectedSite={selectedSite}
           onSelectSite={setSelectedSite}
-          availableSites={AVAILABLE_SITES}
+          availableSites={availableSites}
           agentMode={agentMode}
           onAgentModeChange={setAgentMode}
           onStopTask={handleStopTask}

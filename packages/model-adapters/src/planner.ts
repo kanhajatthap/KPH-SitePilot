@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * JSON-mode completions & lightweight key probes for structured tasks
  * (currently: prompt → plan and BYOK key verification).
@@ -34,6 +36,12 @@ export interface JsonCompletionInput {
   fetchImpl?: typeof fetch;
   /** Injected for tests; defaults to the provider's public base URL. */
   baseUrlOverride?: string;
+  /**
+   * Controls dynamic `/v1beta/models` discovery for Gemini.
+   * Defaults to `true` in production (`!fetchImpl`) and `false` when a unit
+   * test injects a single-shot `fetchImpl`, unless explicitly set to `true`.
+   */
+  discoverModels?: boolean;
 }
 
 export interface KeyVerifyInput {
@@ -56,7 +64,7 @@ export const MAX_RESPONSE_BYTES = 256 * 1024;
 
 const DEFAULT_MODELS: Record<PlannerProvider, string> = {
   gemini: 'gemini-3.8-flash',
-  openrouter: 'google/gemini-3.8-flash',
+  openrouter: 'openrouter/auto',
   groq: 'llama-3.3-70b-versatile',
 };
 
@@ -65,6 +73,34 @@ const BASE_URLS: Record<PlannerProvider, string> = {
   openrouter: 'https://openrouter.ai/api',
   groq: 'https://api.groq.com',
 };
+
+/**
+ * Priority order when selecting among live `generateContent`-capable Gemini
+ * models returned by `GET /v1beta/models` for a user's API key.
+ */
+const PREFERRED_GEMINI_ORDER: readonly string[] = [
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash-lite',
+  'gemini-flash-latest',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-2.5-pro',
+  'gemini-pro-latest',
+  'gemini-1.5-pro',
+];
+
+const NON_TEXT_GEMINI_PATTERN =
+  /(?:^|[-.])(tts|embedding|embeddings|imagen|image|audio|veo|lyria|aqa|bisheng|live|transcribe|robotics|computer-use|learnlm)(?:[-.]|$)/i;
+
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
+const geminiModelCache = new Map<string, { models: string[]; expiresAt: number }>();
 
 export function defaultPlannerModel(provider: PlannerProvider): string {
   return DEFAULT_MODELS[provider];
@@ -77,27 +113,114 @@ interface ProviderRequest {
 }
 
 /**
+ * Ranks a raw `/v1beta/models` payload into ordered `generateContent`-capable
+ * text/JSON Gemini model ids.
+ */
+export function rankGeminiGenerateModels(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const entries = (
+    payload as {
+      models?: Array<{
+        name?: unknown;
+        supportedGenerationMethods?: unknown;
+      }>;
+    }
+  ).models;
+  if (!Array.isArray(entries)) return [];
+
+  const available = new Set<string>();
+  for (const entry of entries) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    const id = entry.name.replace(/^models\//, '').trim();
+    if (!id || !id.toLowerCase().startsWith('gemini-')) continue;
+    if (NON_TEXT_GEMINI_PATTERN.test(id)) continue;
+
+    if (Array.isArray(entry.supportedGenerationMethods)) {
+      const methods = entry.supportedGenerationMethods.map((m) => String(m));
+      if (!methods.includes('generateContent')) continue;
+    }
+
+    available.add(id);
+  }
+
+  const ordered: string[] = [];
+  for (const preferred of PREFERRED_GEMINI_ORDER) {
+    if (available.has(preferred)) {
+      ordered.push(preferred);
+      available.delete(preferred);
+    }
+  }
+
+  // Remaining flash models next, then any other gemini generateContent models.
+  const rest = [...available];
+  const flashRest = rest.filter((id) => id.toLowerCase().includes('flash')).sort();
+  const otherRest = rest.filter((id) => !id.toLowerCase().includes('flash')).sort();
+  return [...ordered, ...flashRest, ...otherRest];
+}
+
+function hashKeyForCache(apiKey: string, base: string): string {
+  return createHash('sha256').update(`${base}|${apiKey}`, 'utf8').digest('hex');
+}
+
+async function discoverGeminiGenerateModels(
+  apiKey: string,
+  base: string,
+  doFetch: typeof fetch
+): Promise<string[]> {
+  const cacheKey = hashKeyForCache(apiKey, base);
+  const now = Date.now();
+  const cached = geminiModelCache.get(cacheKey);
+  if (cached && cached.expiresAt > now && cached.models.length > 0) {
+    return cached.models;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const res = await doFetch(`${base}/v1beta/models?pageSize=100`, {
+      method: 'GET',
+      headers: { 'x-goog-api-key': apiKey },
+      signal: controller.signal,
+    });
+    if (!res.ok) return [];
+    const raw = await res.text();
+    if (!raw || raw.length > MAX_RESPONSE_BYTES) return [];
+    const models = rankGeminiGenerateModels(JSON.parse(raw));
+    if (models.length > 0) {
+      if (geminiModelCache.size > 200) geminiModelCache.clear();
+      geminiModelCache.set(cacheKey, { models, expiresAt: now + MODEL_CACHE_TTL_MS });
+    }
+    return models;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * Gemini 2.5, 3.x, and 4.x models support `thinkingConfig.thinkingLevel`.
  * Gemini 3.5+ deprecated sampling parameters (`temperature`, `top_p`, `top_k`).
+ * When `minimalCompat` is true (fallback on HTTP 400), sends only `responseMimeType`
+ * so older/variant models never reject unfamiliar fields.
  */
 function buildGeminiGenerationConfig(
   model: string,
-  thinkingLevel?: GeminiThinkingLevel
+  thinkingLevel?: GeminiThinkingLevel,
+  minimalCompat = false
 ): Record<string, unknown> {
+  if (minimalCompat) {
+    return { responseMimeType: 'application/json' };
+  }
+
   const normalized = model.trim().toLowerCase();
-  const isGemini3OrNewer = /^gemini-(?:3|4)(?:[.-]|$)/.test(normalized);
   const supportsThinkingLevel = /^gemini-(?:2\.5|3|4)(?:[.-]|$)/.test(normalized);
 
   const generationConfig: Record<string, unknown> = {
     responseMimeType: 'application/json',
   };
 
-  if (!isGemini3OrNewer) {
-    generationConfig.temperature = 0.2;
-  }
-
   if (supportsThinkingLevel) {
-    // Note: gemini-3.8-flash supports low | medium | high (minimal returns 400).
     const safeLevel: GeminiThinkingLevel =
       thinkingLevel === 'minimal' && normalized.startsWith('gemini-3.8')
         ? 'low'
@@ -115,7 +238,8 @@ function buildRequest(
   systemPrompt: string,
   userPrompt: string,
   base: string,
-  thinkingLevel?: GeminiThinkingLevel
+  thinkingLevel?: GeminiThinkingLevel,
+  minimalGeminiCompat = false
 ): ProviderRequest {
   if (provider === 'gemini') {
     return {
@@ -124,7 +248,7 @@ function buildRequest(
       body: {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: buildGeminiGenerationConfig(model, thinkingLevel),
+        generationConfig: buildGeminiGenerationConfig(model, thinkingLevel, minimalGeminiCompat),
       },
     };
   }
@@ -243,18 +367,15 @@ export async function verifyProviderKey(input: KeyVerifyInput): Promise<JsonComp
     const raw = await response.text().catch(() => '');
     if (provider === 'gemini' && raw && raw.length <= MAX_RESPONSE_BYTES) {
       try {
-        const parsed = JSON.parse(raw) as { models?: Array<{ name?: string }> };
-        const names = (parsed.models ?? [])
-          .map((entry) => (typeof entry?.name === 'string' ? entry.name.replace(/^models\//, '') : ''))
-          .filter(Boolean);
-        const preferred = [
-          DEFAULT_MODELS.gemini,
-          'gemini-3.6-flash',
-          'gemini-2.5-flash',
-          'gemini-3.5-flash-lite',
-        ];
-        const match = preferred.find((candidate) => names.includes(candidate));
-        if (match) resolvedModel = match;
+        const ranked = rankGeminiGenerateModels(JSON.parse(raw));
+        if (ranked.length > 0) {
+          resolvedModel = ranked[0];
+          if (geminiModelCache.size > 200) geminiModelCache.clear();
+          geminiModelCache.set(hashKeyForCache(trimmedKey, base), {
+            models: ranked,
+            expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
+          });
+        }
       } catch {
         // Ignore non-JSON body if status was 2xx; default model label remains safe.
       }
@@ -278,12 +399,88 @@ export async function verifyProviderKey(input: KeyVerifyInput): Promise<JsonComp
   }
 }
 
+async function runSingleCompletionAttempt(input: {
+  provider: PlannerProvider;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  base: string;
+  doFetch: typeof fetch;
+  timeoutMs: number;
+  thinkingLevel?: GeminiThinkingLevel;
+  minimalGeminiCompat?: boolean;
+}): Promise<
+  | { ok: true; text: string; provider: PlannerProvider; model: string }
+  | { ok: false; reason: string; status?: number }
+> {
+  const request = buildRequest(
+    input.provider,
+    input.apiKey,
+    input.model,
+    input.systemPrompt,
+    input.userPrompt,
+    input.base,
+    input.thinkingLevel,
+    input.minimalGeminiCompat ?? false
+  );
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+
+  try {
+    const response = await input.doFetch(request.url, {
+      method: 'POST',
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: describeHttpFailure(input.provider, response.status),
+      };
+    }
+
+    const raw = await response.text();
+    if (raw.length > MAX_RESPONSE_BYTES) {
+      return { ok: false, reason: `${input.provider} returned an oversized response.` };
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return { ok: false, reason: `${input.provider} returned a non-JSON envelope.` };
+    }
+
+    const text = extractText(input.provider, payload);
+    if (!text) {
+      return { ok: false, reason: `${input.provider} returned no text content.` };
+    }
+
+    return { ok: true, text, provider: input.provider, model: input.model };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: isAbortLikeError(error)
+        ? `${input.provider} timed out.`
+        : `${input.provider} could not be reached.`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /**
  * Asks the provider for a single JSON object.
  *
- * Anything other than a clean 2xx with text comes back as `{ ok: false }` with
- * a reason safe to show a user ("groq returned HTTP 429"), so the caller can
- * fall back to the deterministic planner instead of failing the request.
+ * When calling live Gemini (`!input.fetchImpl` and default model), dynamically
+ * discovers which `generateContent` models the caller's API key actually has
+ * access to via `GET /v1beta/models` and falls back across live Flash models
+ * on 404/429/503 or parameter compatibility 400s.
  */
 export async function requestJsonCompletion(input: JsonCompletionInput): Promise<JsonCompletionResult> {
   const { provider, apiKey, systemPrompt, userPrompt } = input;
@@ -292,60 +489,99 @@ export async function requestJsonCompletion(input: JsonCompletionInput): Promise
     return { ok: false, reason: 'No usable model key was provided.' };
   }
 
-  const model = input.model?.trim() || DEFAULT_MODELS[provider];
+  const trimmedKey = apiKey.trim();
+  const explicitModel = input.model?.trim() || '';
   const base = (input.baseUrlOverride || BASE_URLS[provider]).replace(/\/+$/, '');
   const doFetch = input.fetchImpl ?? fetch;
-  const request = buildRequest(
-    provider,
-    apiKey.trim(),
-    model,
-    systemPrompt,
-    userPrompt,
-    base,
-    input.thinkingLevel
-  );
+  const timeoutMs = input.timeoutMs ?? PLANNER_TIMEOUT_MS;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? PLANNER_TIMEOUT_MS);
+  // Unit tests inject `fetchImpl` expecting exact 1-to-1 request assertions
+  // unless `discoverModels: true` is opted into explicitly.
+  const shouldDiscover = provider === 'gemini' && (input.discoverModels ?? !input.fetchImpl);
+  if (!shouldDiscover) {
+    const model = explicitModel || DEFAULT_MODELS[provider];
+    const attempt = await runSingleCompletionAttempt({
+      provider,
+      apiKey: trimmedKey,
+      model,
+      systemPrompt,
+      userPrompt,
+      base,
+      doFetch,
+      timeoutMs,
+      thinkingLevel: input.thinkingLevel,
+    });
+    return attempt.ok ? attempt : { ok: false, reason: attempt.reason };
+  }
 
-  try {
-    const response = await doFetch(request.url, {
-      method: 'POST',
-      headers: request.headers,
-      body: JSON.stringify(request.body),
-      signal: controller.signal,
+  // Live Gemini execution: query `/v1beta/models` (cached 10m per key) so we
+  // never hit 404 from retired or region-unavailable model IDs.
+  const discovered = await discoverGeminiGenerateModels(trimmedKey, base, doFetch);
+  const candidates: string[] = [];
+
+  if (explicitModel && explicitModel !== DEFAULT_MODELS.gemini) {
+    if (discovered.length === 0 || discovered.includes(explicitModel)) {
+      candidates.push(explicitModel);
+    }
+  }
+  for (const m of discovered) {
+    if (!candidates.includes(m)) candidates.push(m);
+  }
+  if (candidates.length === 0) {
+    for (const fallback of [
+      explicitModel || DEFAULT_MODELS.gemini,
+      'gemini-2.0-flash',
+      'gemini-flash-latest',
+      'gemini-1.5-flash',
+    ]) {
+      if (fallback && !candidates.includes(fallback)) candidates.push(fallback);
+    }
+  }
+
+  let lastReason = 'gemini could not be reached.';
+  const modelsToTry = candidates.slice(0, 3);
+
+  for (const candidateModel of modelsToTry) {
+    let attempt = await runSingleCompletionAttempt({
+      provider: 'gemini',
+      apiKey: trimmedKey,
+      model: candidateModel,
+      systemPrompt,
+      userPrompt,
+      base,
+      doFetch,
+      timeoutMs,
+      thinkingLevel: input.thinkingLevel,
     });
 
-    if (!response.ok) {
-      return { ok: false, reason: describeHttpFailure(provider, response.status) };
+    if (attempt.ok) return attempt;
+
+    // If a model rejected `thinkingConfig` or `temperature` with HTTP 400,
+    // retry once with minimal `{ responseMimeType: 'application/json' }`
+    // before concluding the key itself is invalid.
+    if (attempt.status === 400) {
+      const compatAttempt = await runSingleCompletionAttempt({
+        provider: 'gemini',
+        apiKey: trimmedKey,
+        model: candidateModel,
+        systemPrompt,
+        userPrompt,
+        base,
+        doFetch,
+        timeoutMs,
+        minimalGeminiCompat: true,
+      });
+      if (compatAttempt.ok) return compatAttempt;
+      attempt = compatAttempt;
     }
 
-    const raw = await response.text();
-    if (raw.length > MAX_RESPONSE_BYTES) {
-      return { ok: false, reason: `${provider} returned an oversized response.` };
-    }
+    lastReason = attempt.reason;
 
-    let payload: unknown;
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return { ok: false, reason: `${provider} returned a non-JSON envelope.` };
+    // Auth errors (401/403) won't succeed on another model; stop immediately.
+    if (attempt.status === 401 || attempt.status === 403) {
+      break;
     }
-
-    const text = extractText(provider, payload);
-    if (!text) {
-      return { ok: false, reason: `${provider} returned no text content.` };
-    }
-
-    return { ok: true, text, provider, model };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: isAbortLikeError(error)
-        ? `${provider} timed out.`
-        : `${provider} could not be reached.`,
-    };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return { ok: false, reason: lastReason };
 }
