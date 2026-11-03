@@ -18,7 +18,7 @@ describe('E11-09 executable release checklist', () => {
   it('covers the four gates plus the two audits and diff check, once each', () => {
     const ids = RELEASE_CHECKS.map((check) => check.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const id of ['typecheck', 'lint', 'test', 'build', 'governance-audit', 'secret-audit', 'diff-check']) {
+    for (const id of ['typecheck', 'lint', 'test', 'build', 'abuse-load', 'governance-audit', 'secret-audit', 'diff-check']) {
       expect(ids).toContain(id);
     }
     for (const check of RELEASE_CHECKS) {

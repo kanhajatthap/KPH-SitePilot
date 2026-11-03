@@ -18,6 +18,7 @@ export const RELEASE_CHECKS = [
   { id: 'lint', label: 'Lint + PHP + governance + secret audits', command: 'pnpm', args: ['lint'] },
   { id: 'test', label: 'Unit & security tests (mock, zero quota)', command: 'pnpm', args: ['test', '--force'] },
   { id: 'build', label: 'Production build (Turborepo)', command: 'pnpm', args: ['build'] },
+  { id: 'abuse-load', label: 'Deterministic abuse load simulation', command: 'pnpm', args: ['abuse:load'] },
   { id: 'governance-audit', label: 'Product-phase governance audit', command: 'node', args: ['scripts/governance-audit.mjs'] },
   { id: 'secret-audit', label: 'Credential-shaped literal audit', command: 'node', args: ['scripts/secret-audit.mjs'] },
   { id: 'diff-check', label: 'Whitespace / conflict-marker diff check', command: 'git', args: ['diff', '--check'] },

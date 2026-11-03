@@ -289,6 +289,32 @@ export {
 } from './quota.js';
 export type { QuotaDecision, QuotaExceededBody, QuotaKind, QuotaLimit } from './quota.js';
 
+// E11-02 per-IP / per-site / per-user burst abuse limits (pure + injectable).
+export {
+  ABUSE_ACTIONS,
+  ABUSE_ENV_KEYS,
+  DEFAULT_ABUSE_LIMITS,
+  abuseExceededBody,
+  abuseHeaders,
+  abuseKey,
+  createMemoryAbuseStore,
+  decideAbuse,
+  enforceAbuse,
+  resolveAbuseLimits,
+} from './abuse.js';
+export type {
+  AbuseAction,
+  AbuseConsumeInput,
+  AbuseDecision,
+  AbuseDimension,
+  AbuseExceededBody,
+  AbuseLimit,
+  AbuseStore,
+  DecideAbuseInput,
+  EnforceAbuseInput,
+  EnforceAbuseOptions,
+} from './abuse.js';
+
 /**
  * Sends a structured JSON response with security headers and correlation ID.
  */
