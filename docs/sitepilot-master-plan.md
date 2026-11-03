@@ -1,7 +1,7 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
 > **Status:** executing · **2026-11-03** · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 ✅ (pairing + signed job pipeline live) · M3 ✅ (plan → approve → execute → read-back → undo shipped) · M4/M5 ✅ (34 connector tools, SEO/media/menus/settings + full undo, Studio, `/activity`) · M6 🚧 (onboarding wizard ✅ + error surfaces ✅; docs hub, landing page, automations, beta hardening still open)
-> **Live:** `main` @ `142d2c9` = PR #21 merged + explicit production deploy · Vercel prod `kph-sitepilot.vercel.app` READY · 613 tests green · CI green · [fresh audit](./status-2026-11-03.md)
+> **Live:** `main` @ `1cb6753` = PR #22 (onboarding wizard) merged + explicit production deploy `dpl_GK9Ya2qcFYsL8BeoRmxEbUR1PrCu` · Vercel prod `kph-sitepilot.vercel.app` READY/PROMOTED · 613 tests green · CI green · [fresh audit](./status-2026-11-03.md)
 > **Blocked on the owner:** Supabase integration scoped to the wrong org/project, a verified Resend sending domain, one real end-to-end signup + site, and re-enabling Vercel Git auto-deploy — see [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 and [`docs/email-deliverability.md`](./email-deliverability.md)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
