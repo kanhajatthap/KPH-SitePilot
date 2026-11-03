@@ -321,7 +321,7 @@ export function Header({
           type="button"
           onClick={onPublish}
           disabled={!canPublish || activePublishProposal}
-          className="focus-ring flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-stone-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:px-3.5"
+          className="focus-ring flex min-h-touch items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition hover:bg-stone-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-3.5"
           title="Publish to WordPress"
         >
           {activePublishProposal ? (

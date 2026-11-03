@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Header } from '../components/Header';
 import { ChatPanel } from '../components/ChatPanel';
 import { PreviewCanvas } from '../components/PreviewCanvas';
+import { WorkspaceMobileTabs } from '../components/WorkspaceMobileTabs';
+import { DEFAULT_MOBILE_PANE, type MobilePane } from '../lib/design-tokens';
 import {
   AgentMode,
   ChatMessage,
@@ -93,6 +95,8 @@ export default function WorkspaceClient() {
     useState<PublishProposalResponse | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeCanvasTab, setActiveCanvasTab] = useState<'preview' | 'live' | 'code'>('preview');
+  /** E9-16: phone-only pane switch, chat-first. Ignored at md and above. */
+  const [mobilePane, setMobilePane] = useState<MobilePane>(DEFAULT_MOBILE_PANE);
   const [currentRoute, setCurrentRoute] = useState<string>('/');
   const [sitePages, setSitePages] = useState<SitePageSummary[]>([]);
 
@@ -2254,7 +2258,11 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
   };
 
   return (
-    <div data-session-watch="true" className="flex h-dvh w-full flex-col overflow-hidden bg-paper text-ink">
+    <div
+      data-session-watch="true"
+      data-mobile-readable="true"
+      className="flex h-dvh w-full flex-col overflow-hidden bg-paper text-ink"
+    >
       {/* Top Header — Lovable-style slim bar */}
       <Header
         selectedSite={selectedSite}
@@ -2274,6 +2282,10 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         currentRoute={currentRoute}
         canPublish={true}
       />
+
+      {/* E9-16: chat-first on phones; both panes stay mounted and the sticky
+          composer keeps its draft when switching to the canvas tab. */}
+      <WorkspaceMobileTabs active={mobilePane} onChange={setMobilePane} />
 
       {/* Main Split-Screen Workspace — Lovable-style flex-row */}
       <div className="flex-1 flex flex-row overflow-hidden">
@@ -2305,6 +2317,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           onCancelPublish={handleCancelPublish}
           isPublishing={isPublishing}
           siteContext={composerSiteContext}
+          mobileVisible={mobilePane === 'chat'}
         />
 
         {/* Right: Preview canvas — flex-1 fills remaining space */}
@@ -2337,6 +2350,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           selectedSectionId={selectedSectionId}
           onSelectSection={handleSelectSection}
           availableSections={availableSections}
+          mobileVisible={mobilePane === 'canvas'}
         />
       </div>
     </div>

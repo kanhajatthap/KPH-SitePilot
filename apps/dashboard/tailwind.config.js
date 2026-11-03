@@ -1,4 +1,10 @@
 /** @type {import('tailwindcss').Config} */
+/**
+ * E9-17: these hex values mirror the CSS custom properties in
+ * `src/app/globals.css` and `src/lib/design-tokens.ts`. The design-token test
+ * asserts all three are in sync. `ink.muted` is #6b645b (AA on paper), not the
+ * old #7c756c which was only 4.32:1.
+ */
 module.exports = {
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   darkMode: 'class',
@@ -13,7 +19,7 @@ module.exports = {
         ink: {
           DEFAULT: '#1b1917',
           soft: '#44403c',
-          muted: '#7c756c',
+          muted: '#6b645b',
         },
         line: {
           DEFAULT: '#e8e3da',
@@ -52,6 +58,18 @@ module.exports = {
       },
       borderRadius: {
         '4xl': '2rem',
+        card: '1rem',
+        control: '0.75rem',
+      },
+      /* E9-16: 44px minimum touch target for phone controls. */
+      minHeight: {
+        touch: '44px',
+      },
+      minWidth: {
+        touch: '44px',
+      },
+      spacing: {
+        touch: '44px',
       },
       boxShadow: {
         lift: '0 1px 2px rgba(27,25,23,.05), 0 20px 44px -26px rgba(27,25,23,.35)',

@@ -23,6 +23,8 @@ interface PreviewCanvasProps {
   availableSections?: Array<{ id: string; name: string }>;
   livePages?: SitePageSummary[];
   onRefreshPages?: () => void;
+  /** E9-16: show the canvas on phones when its tab is active. */
+  mobileVisible?: boolean;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -63,6 +65,7 @@ export function PreviewCanvas({
   ],
   livePages = [],
   onRefreshPages,
+  mobileVisible = false,
 }: PreviewCanvasProps) {
   const {
     targetSite,
@@ -186,7 +189,10 @@ export function PreviewCanvas({
   const canEdit = Boolean(res || proposal || builderProposal);
 
   return (
-    <main className="hidden h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f1ea] md:flex">
+    <main
+      id="workspace-canvas-panel"
+      className={`${mobileVisible ? 'flex' : 'hidden'} h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f1ea] md:flex`}
+    >
       {/* Browser chrome */}
       <div className="glass z-10 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">

@@ -2,21 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Design tokens (E9-17). The hex values, type scale, spacing, focus and touch
+ * constants are mirrored in `src/lib/design-tokens.ts` and `tailwind.config.js`;
+ * `tests/design-and-mobile.test.ts` asserts all three stay in sync.
+ */
 :root {
+  /* Colour ──────────────────────────────────────────────────────────── */
   --paper: #faf9f6;
   --paper-deep: #f3f0ea;
   --card: #ffffff;
   --ink: #1b1917;
   --ink-soft: #44403c;
-  --muted: #7c756c;
+  /* Was #7c756c: only 4.32:1 on paper and 4.00:1 on paper-deep (AA fail). */
+  --muted: #6b645b;
   --line: #e8e3da;
   --line-strong: #d9d2c7;
   --brand-1: #ff8a5b;
   --brand-2: #ff4d8d;
   --brand-3: #a855f7;
-  --ok: #16a34a;
-  --warn: #d97706;
-  --danger: #e11d48;
+  /* Darkened so status/danger text clears WCAG AA on paper as well as white. */
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #be123c;
+
+  /* Type scale ──────────────────────────────────────────────────────── */
+  --text-micro: 0.75rem; /* 12px — smallest secondary text on touch screens */
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* Spacing ─────────────────────────────────────────────────────────── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Shape, focus & touch ────────────────────────────────────────────── */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --focus-ring-color: var(--danger);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --touch-min: 44px;
 }
 
 * {
@@ -42,6 +76,18 @@ body {
 
 ::selection {
   background: rgba(255, 77, 141, 0.16);
+}
+
+/**
+ * Global keyboard focus fallback (E9-17). `:where()` keeps specificity at zero
+ * so an intentional `focus:outline-none` or the `.focus-ring` component class
+ * still wins, while any unstyled interactive control gets a visible 2px ring.
+ */
+@layer base {
+  :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
 }
 
 /* Quiet scrollbars */
@@ -111,6 +157,63 @@ body {
   .composer-shell:focus-within {
     border-color: rgba(255, 77, 141, 0.45);
     box-shadow: 0 0 0 4px rgba(255, 77, 141, 0.09), 0 22px 48px -30px rgba(27, 25, 23, 0.4);
+  }
+
+  /* E9-16: the composer stays pinned above the phone's home indicator. */
+  .composer-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    padding: var(--space-3);
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  @media (min-width: 640px) {
+    .composer-dock {
+      padding: var(--space-4);
+      padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
+
+@layer utilities {
+  /* Safe-area padding for notched phones (viewport-fit=cover in layout.tsx). */
+  .pb-safe {
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  }
+  .pt-safe {
+    padding-top: calc(var(--space-3) + env(safe-area-inset-top, 0px));
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .min-touch {
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+  }
+  .text-micro {
+    font-size: var(--text-micro);
+    line-height: 1.4;
+  }
+}
+
+/**
+ * E9-16 readability pass. The legacy workspace packed some labels down to
+ * 7–10 px; on touch screens raise them to the 12px micro token. Scoped to the
+ * workspace root so the deliberately scaled-down landing-page product mock
+ * (which lives outside the root) is untouched. Unlayered so it wins over the
+ * generated Tailwind utilities regardless of stylesheet order.
+ */
+@media (max-width: 767px) {
+  [data-mobile-readable='true'] [class*='text-[7px]'],
+  [data-mobile-readable='true'] [class*='text-[8px]'],
+  [data-mobile-readable='true'] [class*='text-[9px]'],
+  [data-mobile-readable='true'] [class*='text-[9.5px]'],
+  [data-mobile-readable='true'] [class*='text-[10px]'] {
+    font-size: var(--text-micro);
   }
 }
 
@@ -185,5 +288,8 @@ body {
   .animate-soft-pulse,
   .shimmer-text {
     animation: none !important;
+  }
+  .composer-shell {
+    transition: none;
   }
 }

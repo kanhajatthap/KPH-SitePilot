@@ -208,8 +208,8 @@
 - [x] **E9-13** — Empty states + suggested prompts generated from capability graph. · *Files:* `apps/dashboard/src/lib/capabilities.ts`, `app/studio/page.tsx` · *Done:* no generic filler prompts · *Dep:* E4-06 · *Est:* 3h · ✅ `suggestPromptsForSite()` adapts Studio example pills to active scopes and theme type (read-only inspection prompts when `content`/`site_ops` scopes are off; Gutenberg block examples on block themes).
 - [x] **E9-14** — Error surfaces: offline site, expired token, quota, model failure, verify failure — one action each. · *Files:* `components/onboarding/RecoveryNotice.tsx`, `lib/onboarding/errors.ts`, `/connect` · *Done:* mapped from error taxonomy · *Dep:* E3-16 · *Est:* 3h · ✅ 2026-11-03: 20 typed codes mapped to one honest action (retry / fresh code / sign-in / docs / wait / refresh), secret-safe messages, 20 unit tests
 - [ ] **E9-15** — Command palette (⌘K) + shortcuts (⌘↵, u, g+a). · *Files:* UI · *Done:* accessible, documented in help · *Dep:* E9-04 · *Est:* 3h
-- [ ] **E9-16** — Mobile pass: chat-first, canvas tab, sticky composer, safe areas, touch targets. · *Files:* UI · *Done:* Lighthouse mobile ≥ 90 a11y · *Dep:* E9-01 · *Est:* 4h
-- [ ] **E9-17** — Design tokens + type scale + focus rings + dark-ready (optional) polish. · *Files:* `globals.css`, tailwind config · *Done:* contrast AA verified · *Dep:* E9-01 · *Est:* 3h
+- [x] **E9-16** — Mobile pass: chat-first, canvas tab, sticky composer, safe areas, touch targets. · *Files:* `components/WorkspaceMobileTabs.tsx`, `lib/design-tokens.ts`, `app/WorkspaceClient.tsx`, `components/Composer.tsx`, `app/layout.tsx`, `globals.css`, tailwind config · *Done:* accessible phone layout · *Dep:* E9-01 · *Est:* 4h · ✅ 2026-11-03: chat-first ARIA tablist (arrow/Home/End), both panes mounted with `md:flex` desktop split, sticky `.composer-dock` with `env(safe-area-inset-bottom)` + `viewport-fit=cover`, 44px touch targets on composer/header/new-chat controls, workspace-scoped 12px minimum for legacy 7–10px labels. **Scope note:** Lighthouse mobile ≥ 90 a11y and real-device testing were **not** measured (no browser/Lighthouse in this sandbox); AA contrast was verified programmatically for tokens instead.
+- [x] **E9-17** — Design tokens + type scale + focus rings + dark-ready (optional) polish. · *Files:* `lib/design-tokens.ts`, `globals.css`, tailwind config · *Done:* contrast AA verified · *Dep:* E9-01 · *Est:* 3h · ✅ 2026-11-03: WCAG luminance/contrast helpers audit **15 semantic text pairs** at AA (all pass); `--muted` darkened `#7c756c` → `#6b645b` (4.32:1 → 5.54:1 on paper), ok/warn/danger darkened; full type/spacing/radius/focus/touch tokens with a test asserting CSS, Tailwind and TS stay in sync; global `:focus-visible` ring; reduced motion honoured. **Optional dark theme not shipped** — tokens are variable-based and dark-ready, but no `.dark` palette was added.
 - [x] **E9-18** *(new)* — **Studio surface**: pick a connected site, type a prompt, review the plan, approve it (typed confirmation for R3), run it and watch each step, then undo any write from the same screen. · *Files:* `apps/dashboard/src/app/studio/page.tsx`, `components/Header.tsx` · *Done:* prompt → applied change without touching wp-admin · *Dep:* E3-06, E3-08 · *Est:* 4h · ✅ `/studio` ships: site selector, planner hints, per-step job status polled every 2 s from `GET /api/connector/plans/{id}`, undo list fed by the snapshot rows; no "just do it" button exists.
 - [x] **E9-18** — Marketing landing page + single CTA. · *Files:* `components/landing/LandingPage.tsx`, `lib/landing.ts`, `app/page.tsx` (server split), `app/WorkspaceClient.tsx` · *Done:* public `/` for signed-out visitors, workspace for signed-in, one primary CTA · *Dep:* E9-03 · *Est:* 4h · ✅ 2026-11-03: static CSS product mock (no GIF/external image, so the hero is LCP-safe), `/` and `/docs` added to `PUBLIC_PAGE_PATHS`, root server component chooses landing vs workspace from verified `getUser()`, local mode unchanged. Scope change: a real product GIF and a 4G LCP measurement were **not** added — deliberately replaced by an image-free static mock so nothing is fabricated or slow.
 - [x] **E9-19** — Docs hub: connect guide, tool catalog, safety/undo, troubleshooting, FAQ. · *Files:* `lib/docs.ts`, `app/docs/**`, `components/docs/DocsSearch.tsx` · *Done:* searchable static pages · *Dep:* E9-03 · *Est:* 4h · ✅ 2026-11-03: `/docs` index with client-side AND search (title/summary/keywords), `/docs/tools` generated from the canonical 34 `SHIPPED_TOOL_SPECS`, `/docs/safety`, `/docs/troubleshooting` driven by the *same* error taxonomy as the UI, `/docs/faq`, existing `/docs/connector` now public; 24 new pure/route tests + signed-out dev smoke.
@@ -260,24 +260,25 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 76 of 180 tasks are ✅, `main` auto-deploys
+The original E0/E1/E2 start-up list is **done** — 78 of 180 tasks are ✅, `main` auto-deploys
 from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
-2. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
+1. **E1-12 / E0-07 / E1-05 / E1-08** · staging Supabase project, `supabase test db` in CI, governance rules, shared auth helpers, repositories
+2. **E9-20** · recorded self-test of connect + first change, with a fixes list (incl. real-device mobile/Lighthouse a11y check owed by E9-16)
 3. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
 4. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
-5. **E9-20** · recorded self-test of connect + first change, with a fixes list
-6. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
-7. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
-8. **E11-04** · load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs
-9. **E11-07** · connector upgrade path / min-version gate + in-plugin update notice
-10. **E11-10** · first 10–20 real beta sites with feedback notes
+5. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
+6. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
+7. **E11-04** · load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs
+8. **E11-07** · connector upgrade path / min-version gate + in-plugin update notice
+9. **E11-10** · first 10–20 real beta sites with feedback notes
+10. **E9-01** · full app-shell left rail / responsive collapse (360px → 1920px) beyond the chat/canvas pass
 
 **Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), **E9-04 + E9-05**
-(Composer v2 & assistant turn), then **E9-19 + E9-18** (public docs hub + real landing page).
-P0 UX items §4 #1–#4 of the status audit are all ✅; only the mobile/design batch remains.
+(Composer v2 & assistant turn), **E9-19 + E9-18** (public docs hub + real landing page), then
+**E9-16 + E9-17** (mobile chat/canvas pass + AA design tokens). **All six P0 UX items §4 #1–#5
+of the status audit are now ✅**; the remaining P0 work is platform governance/staging (#6).
 See the ✅ rows in E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)

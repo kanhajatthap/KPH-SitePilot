@@ -47,7 +47,7 @@ Most AI website builders ask you to trust a black box. KPH SitePilot takes the o
 | **Providers** | Google Gemini · OpenRouter · Groq · Mock (BYOK on hosted; swap without touching business logic) |
 | **Persistence** | Supabase-backed hosted SaaS · local-only fallback when unconfigured |
 | **Writes** | Plan → human approval → snapshot → read-back verify → one-click undo (R0–R3 risk gated) |
-| **Tests** | **668 passing** across 12 workspace projects · zero-quota mock mode |
+| **Tests** | **695 passing** across 12 workspace projects · zero-quota mock mode |
 | **CI** | Typecheck → lint → secret scan → audit → tests → build |
 
 ---
@@ -404,7 +404,7 @@ Every stage is independent: a proposal can be rejected, a hash mismatch aborts t
 ```powershell
 pnpm typecheck     # strict TS across all packages + Edge Functions
 pnpm lint          # static analysis (zero-tolerance)
-pnpm test          # 668 tests, mock mode, zero quota, zero network
+pnpm test          # 695 tests, mock mode, zero quota, zero network
 pnpm build         # Turborepo build across the workspace
 ```
 
@@ -458,6 +458,7 @@ The same gates run in CI on every push and pull request to `main`.
 | [`tests/README.md`](./tests/README.md) | Tiered testing architecture |
 | **In-app docs (`/docs`)** | Public, searchable hub: connect guide, 34-tool catalog, safety/undo, troubleshooting (error codes → one action), FAQ |
 | **Public landing (`/`)** | Signed-out visitors get a static, image-free marketing page; signed-in users get the workspace at the same URL |
+| [`apps/dashboard/src/lib/design-tokens.ts`](./apps/dashboard/src/lib/design-tokens.ts) | Design tokens + WCAG contrast audit + mobile pane rules; `globals.css`, Tailwind config and tests assert they stay in sync |
 
 ---
 
