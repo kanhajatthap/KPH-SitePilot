@@ -26,8 +26,22 @@ function injected(message: string): RepositoryError {
   return { code: 'INJECTED_FAILURE', message };
 }
 
+/** A thrown transport error must never echo a URL, credential or stack frame. */
+function safeMessage(text: string): string {
+  const firstLine = text.split(/\r?\n/)[0].replace(/\s+at\s+.+$/, '');
+  const scrubbed = firstLine
+    .replace(/(?:postgres|mysql|https?):\/\/[^\s"']+/gi, '[redacted-url]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/sk-[A-Za-z0-9_-]{16,}/gi, '[redacted]')
+    .replace(/\/home\/[^\s"']+/g, '[redacted-path]')
+    .trim()
+    .slice(0, 160);
+  return scrubbed.length > 0 ? scrubbed : 'Unexpected repository error.';
+}
+
 function unexpected(error: unknown): RepositoryError {
-  return { code: 'REPOSITORY_ERROR', message: error instanceof Error ? error.message : 'Unexpected repository error.' };
+  const text = error instanceof Error ? error.message : String(error ?? '');
+  return { code: 'REPOSITORY_ERROR', message: safeMessage(text) };
 }
 
 function project(row: RepoRow, columns?: readonly string[]): RepoRow {
@@ -167,7 +181,7 @@ export interface SupabaseLike {
 }
 
 function toError(error: { message: string; code?: string }): RepositoryError {
-  return { code: error.code ?? 'SUPABASE_ERROR', message: error.message };
+  return { code: error.code ?? 'SUPABASE_ERROR', message: safeMessage(error.message) };
 }
 
 function columnsOf(columns?: readonly string[]): string {

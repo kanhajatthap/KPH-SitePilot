@@ -61,6 +61,15 @@ export const DOCS_ENTRIES: readonly DocEntry[] = [
     readingMinutes: 8,
   },
   {
+    href: '/docs/shortcuts',
+    title: 'Keyboard shortcuts & command palette',
+    navLabel: 'Shortcuts',
+    summary: '⌘K / Ctrl+K palette, composer submit, activity navigation and accessible keyboard behaviour.',
+    section: 'Reference',
+    keywords: ['keyboard', 'shortcut', 'palette', 'cmd', 'ctrl', 'k', 'arrow', 'accessibility', 'ime'],
+    readingMinutes: 3,
+  },
+  {
     href: '/docs/safety',
     title: 'Safety, snapshots & one-click undo',
     navLabel: 'Safety',

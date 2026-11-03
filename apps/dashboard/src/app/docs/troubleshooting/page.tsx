@@ -6,6 +6,7 @@ import {
   type OnboardingIssue,
 } from '../../../lib/onboarding/errors';
 import { describeTurnError, type TurnError } from '../../../lib/assistant-turn';
+import { FAILURE_SCENARIOS, guidanceFor } from '../../../lib/failure-guidance';
 
 export const metadata: Metadata = {
   title: 'Troubleshooting & error codes — KPH SitePilot Docs',
@@ -101,6 +102,32 @@ export default function TroubleshootingDocsPage() {
           </section>
         ))}
       </div>
+
+      <section className="mt-10">
+        <h2 className="text-sm font-semibold">Injected failures (E11-03)</h2>
+        <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-ink-muted">
+          These six failures are exercised by the failure-injection suite. Each resolves to one typed
+          code and one next action; raw transport details are scrubbed before they are ever shown.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {FAILURE_SCENARIOS.map((kind) => {
+            const outcome = guidanceFor(kind);
+            return (
+              <div key={kind} className="rounded-xl border border-line bg-white p-3">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-semibold text-ink">{outcome.message}</span>
+                  <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[9px] text-ink-muted">
+                    {outcome.code}
+                  </code>
+                </span>
+                <span className="mt-1.5 block text-[11px] leading-relaxed text-ink-muted">
+                  Next action: {outcome.action}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="mt-8 rounded-2xl border border-line bg-white p-5">
         <h2 className="text-sm font-semibold">Still stuck?</h2>
