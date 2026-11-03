@@ -5,6 +5,16 @@ import { Header } from '../components/Header';
 import { ChatPanel } from '../components/ChatPanel';
 import { PreviewCanvas } from '../components/PreviewCanvas';
 import { WorkspaceMobileTabs } from '../components/WorkspaceMobileTabs';
+import { CommandPalette } from '../components/CommandPalette';
+import {
+  appendSequenceKey,
+  detectPlatform,
+  isEditableTarget,
+  isPaletteShortcut,
+  matchSequence,
+  matchSingleKey,
+  shortcutLabel,
+} from '../lib/command-palette';
 import { DEFAULT_MOBILE_PANE, type MobilePane } from '../lib/design-tokens';
 import {
   AgentMode,
@@ -108,6 +118,61 @@ export default function WorkspaceClient() {
     { id: 'metrics', name: 'Metrics Bar' },
   ]);
   const [targetPageId, setTargetPageId] = useState<number>(32); // Default page ID (modern-tech-home)
+
+  /** E9-15: command palette + keyboard sequences. */
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const sequenceRef = useRef<string[]>([]);
+  const platform = detectPlatform(typeof navigator === 'undefined' ? {} : navigator);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const keyEvent = {
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        isComposing: event.isComposing,
+        repeat: event.repeat,
+        targetIsEditable: isEditableTarget(target?.tagName, target?.isContentEditable),
+      };
+
+      if (isPaletteShortcut(keyEvent)) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (
+        paletteOpen ||
+        keyEvent.targetIsEditable ||
+        keyEvent.isComposing ||
+        keyEvent.metaKey ||
+        keyEvent.ctrlKey ||
+        keyEvent.altKey
+      ) {
+        sequenceRef.current = [];
+        return;
+      }
+
+      sequenceRef.current = appendSequenceKey(sequenceRef.current, event.key);
+      const sequence = matchSequence(sequenceRef.current);
+      if (sequence) {
+        event.preventDefault();
+        sequenceRef.current = [];
+        window.location.assign(sequence.href);
+        return;
+      }
+      const single = matchSingleKey(keyEvent);
+      if (single) {
+        event.preventDefault();
+        sequenceRef.current = [];
+        window.location.assign(single.href);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [paletteOpen]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const approvalInFlightRef = useRef(false);
@@ -2281,6 +2346,26 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
         onCanvasTabChange={setActiveCanvasTab}
         currentRoute={currentRoute}
         canPublish={true}
+      />
+
+      {/* E9-15: discoverable trigger for the ⌘K command palette. */}
+      <button
+        type="button"
+        data-command-palette-trigger="true"
+        aria-label={`Open command palette (${shortcutLabel(platform)})`}
+        onClick={() => setPaletteOpen(true)}
+        className="fixed bottom-4 left-4 z-40 hidden min-h-touch items-center gap-2 rounded-full border border-line bg-white px-3 text-[11px] font-medium text-ink shadow-sm hover:border-pink-300 md:inline-flex"
+      >
+        Commands
+        <kbd className="rounded border border-line bg-paper px-1.5 py-0.5 text-[10px] text-ink-muted">
+          {shortcutLabel(platform)}
+        </kbd>
+      </button>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={(href) => window.location.assign(href)}
+        platform={platform}
       />
 
       {/* E9-16: chat-first on phones; both panes stay mounted and the sticky

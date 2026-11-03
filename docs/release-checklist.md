@@ -11,11 +11,22 @@ Every item in this section must pass in automated CI before any production relea
 | Gate | Verification Command | Required Outcome | Status |
 |---|---|---|---|
 | **TypeScript Typecheck** | `pnpm typecheck` | 0 errors across all 12 workspace packages & Supabase Edge Functions (22/22 tasks) | **PASS** |
-| **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors (12/12 tasks + 15 PHP files via php-parser + product-phase governance audit; real `php -l` in CI) | **PASS** |
-| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**750 tests**, 22/22 tasks, dashboard 408/408) | **PASS** |
+| **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors (12/12 tasks + 15 PHP files via php-parser + product-phase governance audit 35/35 + credential-literal audit 301 files/0 findings; real `php -l` in CI) | **PASS** |
+| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**800 tests**, 22/22 tasks, dashboard 451/451) | **PASS** |
 | **Production Build** | `pnpm build` | Clean Next.js 15 App Router production bundle (`.next`) and compiled API (`dist/`) | **PASS** |
 | **Dependency Licensing** | `pnpm licenses list` | 100% permissive licenses (MIT, Apache-2.0, BSD-3-Clause, ISC); zero GPL or restricted copyleft | **PASS** |
 | **Secret Leak Check** | `git ls-files \| grep -E "^\.env(\.local)?$"` | Zero `.env` files tracked in git; all credentials confined to `.env.local` | **PASS** |
+
+### 1.1 One-command execution (E11-09)
+
+The checklist above is executable by one person, in order, with no manual interpretation:
+
+```bash
+pnpm release:plan     # prints the 7 gates below and the exact commands
+pnpm release:check    # runs all 7 gates and exits 1 if any gate fails
+```
+
+`scripts/release-check.mjs` is fail-closed: a missing result counts as a failure, and a nonzero exit cannot be masked by an `ok` flag. The seven gates are `pnpm typecheck`, `pnpm lint` (which now also runs `scripts/governance-audit.mjs` and `scripts/secret-audit.mjs`), `pnpm test --force`, `pnpm build`, the standalone governance audit, the standalone credential-literal audit, and `git diff --check`. `--json` emits a machine-readable verdict for automation. Release notes are written from [`docs/release-notes-template.md`](./release-notes-template.md); `main` auto-deploys, so there is no manual redeploy step.
 
 ---
 

@@ -515,6 +515,18 @@ describe('E1-05 Supabase adapter', () => {
     expect(result.error).toEqual({ code: 'REPOSITORY_ERROR', message: 'connection refused' });
   });
 
+  it('scrubs credentials out of a thrown transport error', async () => {
+    class LeakySupabase implements SupabaseLike {
+      from(): SupabaseTable {
+        throw new Error('postgres://admin:hunter2@db.internal:5432/sitepilot connection refused');
+      }
+    }
+    const result = await createSupabaseRepositoryClient(new LeakySupabase()).read({ table: 'plans' });
+    expect(result.error?.code).toBe('REPOSITORY_ERROR');
+    expect(result.error?.message).toBe('[redacted-url] connection refused');
+    expect(JSON.stringify(result)).not.toContain('hunter2');
+  });
+
   it('keeps repositories working through the adapter', async () => {
     const fake = new FakeSupabase({ data: [], error: null });
     const repos = createRepositories(createSupabaseRepositoryClient(fake), { now: CLOCK });
