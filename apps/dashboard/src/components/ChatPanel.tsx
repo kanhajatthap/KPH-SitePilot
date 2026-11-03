@@ -11,6 +11,10 @@ import {
   QueuedTask,
   PublishProposalResponse,
 } from '../lib/types';
+import { Composer } from './Composer';
+import { AssistantTurn } from './AssistantTurn';
+import { buildComposerSuggestions, type ComposerSiteContext } from '../lib/composer';
+import { describeTurnError, formatDuration, stepDurationMs } from '../lib/assistant-turn';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -38,6 +42,8 @@ interface ChatPanelProps {
   onApprovePublish?: (proposal: PublishProposalResponse) => void;
   onCancelPublish?: () => void;
   isPublishing?: boolean;
+  /** Capability graph of the currently selected connector site (E9-04). */
+  siteContext?: ComposerSiteContext | null;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -167,24 +173,6 @@ function RichText({ content }: { content: string }) {
   return <div className="space-y-1">{blocks}</div>;
 }
 
-const MODE_META: Record<AgentMode, { label: string; icon: string; hint: string }> = {
-  agent: {
-    label: 'Agent',
-    icon: 'M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6l7-3z',
-    hint: 'Read-only inspection and planning',
-  },
-  writes: {
-    label: 'Writes',
-    icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z',
-    hint: 'Stage changes with human approval',
-  },
-  chat: {
-    label: 'Chat',
-    icon: 'M21 12a8 8 0 01-8 8H5l-2 2V12a8 8 0 018-8h2a8 8 0 018 8z',
-    hint: 'Direct model conversation, no tools',
-  },
-};
-
 function ToolActivityCard({
   tool,
   open,
@@ -196,6 +184,19 @@ function ToolActivityCard({
 }) {
   const denied = tool.status === 'denied';
   const failed = tool.status === 'error';
+  const friendlyError = tool.error ? describeTurnError(tool.error) : null;
+  const durationLabel = tool.startedAt
+    ? formatDuration(
+        stepDurationMs(
+          {
+            startedAt: tool.startedAt,
+            finishedAt: tool.finishedAt,
+            status: tool.finishedAt ? 'completed' : 'running',
+          },
+          Date.now()
+        )
+      )
+    : null;
   const tone = denied
     ? 'border-rose-200 bg-rose-50/70 text-rose-700'
     : failed
@@ -220,6 +221,14 @@ function ToolActivityCard({
           <span className="rounded-md bg-paper-deep px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted">
             {denied ? 'blocked' : failed ? 'failed' : 'read'}
           </span>
+          {tool.attempt && tool.attempt > 1 ? (
+            <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-800">
+              retry {tool.attempt}
+            </span>
+          ) : null}
+          {durationLabel ? (
+            <span className="font-mono text-[9px] text-ink-muted">{durationLabel}</span>
+          ) : null}
         </span>
         <Icon d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} className="h-3 w-3 shrink-0 text-ink-muted" />
       </button>
@@ -231,9 +240,13 @@ function ToolActivityCard({
               <span className="break-all text-ink-soft">{JSON.stringify(tool.arguments)}</span>
             </div>
           ) : null}
-          {tool.error ? (
-            <div className="text-rose-600">
-              {tool.error.code}: {tool.error.message}
+          {friendlyError ? (
+            <div className="space-y-0.5 text-rose-700">
+              <div className="font-semibold">{friendlyError.title}</div>
+              <div className="text-rose-600">{friendlyError.detail}</div>
+              <a href={friendlyError.href} className="inline-block text-rose-700 underline underline-offset-2">
+                {friendlyError.actionLabel}
+              </a>
             </div>
           ) : null}
           {tool.output !== undefined && !tool.error ? (
@@ -405,6 +418,7 @@ export function ChatPanel({
   onApprovePublish,
   onCancelPublish,
   isPublishing,
+  siteContext,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
@@ -420,13 +434,6 @@ export function ChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, isLoading, activeTask]);
-
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
-  }, [input]);
 
   const siteLabel = selectedSite.replace(/https?:\/\//, '').replace(/\/$/, '');
 
@@ -460,18 +467,10 @@ export function ChatPanel({
     return null;
   }, [input, agentMode]);
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!input.trim()) return;
-    onSendMessage(input.trim());
+  const handleComposerSubmit = (prompt: string) => {
+    if (!prompt.trim()) return;
+    onSendMessage(prompt);
     setInput('');
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit(event);
-    }
   };
 
   const toggleTool = (key: string) => {
@@ -487,48 +486,10 @@ export function ChatPanel({
     }
   };
 
-  const suggestions = [
-    {
-      label: 'Build a landing page',
-      hint: 'Hero, products, testimonials, contact',
-      icon: 'M3 5h18v14H3z M3 9h18 M7 13h4',
-      prompt:
-        'Create a modern landing page for a local ceramics studio with a hero, product collection, testimonials and contact section. Show me a preview before saving anything.',
-    },
-    {
-      label: 'Draft a blog post',
-      hint: 'SEO summary, duplicate check, approval',
-      icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z',
-      prompt:
-        'Draft a WordPress post titled "How to Make a Simple Website Using AI" with beginner-friendly steps. Check for duplicates first and show me the content for approval.',
-    },
-    {
-      label: 'Inspect my site',
-      hint: 'WP version, theme, active builders',
-      icon: 'M12 21a9 9 0 100-18 9 9 0 000 18z M3.5 9h17M3.5 15h17',
-      prompt: `Inspect ${siteLabel} and report the WordPress version, active theme and available page builders.`,
-    },
-    {
-      label: 'Improve this page',
-      hint: 'Rewrite copy, then stage a preview',
-      icon: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z',
-      prompt:
-        'Improve the hero section copy and layout of the current page. Keep the brand tone, then show a staged preview before saving.',
-    },
-  ];
-
-  const statusLabel =
-    activeTask?.status === 'planning'
-      ? 'Planning'
-      : activeTask?.status === 'running'
-      ? 'Working'
-      : activeTask?.status === 'waiting_for_approval'
-      ? 'Waiting for approval'
-      : activeTask?.status === 'completed'
-      ? 'Completed'
-      : activeTask?.status === 'cancelled'
-      ? 'Stopped'
-      : 'Thinking';
+  const suggestions = useMemo(
+    () => buildComposerSuggestions({ mode: agentMode, site: siteContext, siteLabel }),
+    [agentMode, siteContext, siteLabel]
+  );
 
   return (
     <aside className="flex h-full w-full shrink-0 flex-col border-r border-line bg-white/60 md:w-[420px] lg:w-[460px]">
@@ -582,6 +543,7 @@ export function ChatPanel({
                     setInput(item.prompt);
                     textareaRef.current?.focus();
                   }}
+                  title={item.hint}
                   className="group rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500/30"
                 >
                   <span className="flex items-center gap-2 text-[12px] font-medium text-ink">
@@ -808,71 +770,8 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* Thinking timeline */}
-        {activeTask ? (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
-            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
-              <span className="flex items-center gap-2 text-[11px] font-semibold text-ink">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-pink-400 opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-pink-500" />
-                </span>
-                {statusLabel}
-                <span className="rounded-md bg-paper-deep px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-ink-muted">
-                  {activeTask.mode}
-                </span>
-              </span>
-              {activeTask.status === 'running' || activeTask.status === 'planning' ? (
-                <button
-                  type="button"
-                  onClick={onStopTask}
-                  className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink-muted transition hover:bg-rose-50 hover:text-rose-600"
-                >
-                  Stop
-                </button>
-              ) : null}
-            </div>
-            {activeTask.steps?.length ? (
-              <div className="space-y-1 px-3 py-2.5">
-                {activeTask.steps.map((step, index) => (
-                  <div key={step.id || index} className="flex items-center justify-between gap-2 text-[11px]">
-                    <span className="flex min-w-0 items-center gap-2">
-                      {step.status === 'completed' ? (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                          <Icon d="M20 6L9 17l-5-5" className="h-2.5 w-2.5" />
-                        </span>
-                      ) : step.status === 'running' ? (
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-pink-500 border-t-transparent" />
-                      ) : step.status === 'failed' ? (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-                          <Icon d="M6 6l12 12M18 6L6 18" className="h-2.5 w-2.5" />
-                        </span>
-                      ) : (
-                        <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
-                      )}
-                      <span
-                        className={`truncate ${
-                          step.status === 'running'
-                            ? 'font-medium text-ink'
-                            : step.status === 'completed'
-                            ? 'text-ink-soft'
-                            : 'text-ink-muted'
-                        }`}
-                      >
-                        {step.name}
-                      </span>
-                    </span>
-                    {step.toolName ? (
-                      <span className="shrink-0 rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[9px] text-ink-muted">
-                        {step.toolName}
-                      </span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Assistant turn — reasoning timeline, durations, retries, honest errors */}
+        {activeTask ? <AssistantTurn task={activeTask} onStop={onStopTask} /> : null}
 
         {/* Loading */}
         {isLoading && !activeTask ? (
@@ -930,99 +829,22 @@ export function ChatPanel({
         </div>
       ) : null}
 
-      {/* Composer */}
-      <form onSubmit={handleSubmit} className="shrink-0 border-t border-line bg-white/70 p-3 sm:p-4">
-        <div className="composer-shell rounded-2xl">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            placeholder={
-              agentMode === 'writes'
-                ? `Describe the change to stage on ${siteLabel}…`
-                : agentMode === 'agent'
-                ? `Ask anything about ${siteLabel}…`
-                : 'Ask the model anything…'
-            }
-            aria-label="Agent prompt"
-            className="block max-h-[168px] min-h-[54px] w-full resize-none bg-transparent px-4 pt-3.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
-          />
-
-          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <div className="flex items-center gap-0.5 rounded-lg bg-paper p-0.5" role="group" aria-label="Agent mode">
-                {(Object.keys(MODE_META) as AgentMode[]).map((mode) => {
-                  const meta = MODE_META[mode];
-                  const active = agentMode === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => onAgentModeChange(mode)}
-                      title={meta.hint}
-                      aria-pressed={active}
-                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
-                        active ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
-                      }`}
-                    >
-                      <Icon d={meta.icon} className="h-3 w-3" />
-                      {meta.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <select
-                value={selectedSite}
-                onChange={(event) => onSelectSite(event.target.value)}
-                aria-label="Target site"
-                className="max-w-[120px] cursor-pointer truncate rounded-lg bg-transparent px-1.5 py-1 text-[10px] font-medium text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-500/30"
-              >
-                {availableSites.map((site) => (
-                  <option key={site.id} value={site.url}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {isLoading ? (
-                <button
-                  type="button"
-                  onClick={onStopTask}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition hover:bg-rose-100"
-                  aria-label="Stop task"
-                  title="Stop"
-                >
-                  <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
-                </button>
-              ) : null}
-              <button
-                type="submit"
-                disabled={!input.trim()}
-                className="brand-gradient focus-ring flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
-                aria-label="Send prompt"
-                title="Send (Enter)"
-              >
-                <Icon d="M12 19V5M6 11l6-6 6 6" className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-1.5 flex items-center justify-between px-1 text-[9.5px] text-ink-muted">
-          <span>
-            <kbd className="rounded border border-line bg-white px-1 py-0.5 font-sans">Enter</kbd> to send ·{' '}
-            <kbd className="rounded border border-line bg-white px-1 py-0.5 font-sans">Shift</kbd> + Enter for a new line
-          </span>
-          <span className="font-medium">
-            {agentMode === 'writes' ? 'Approval required' : agentMode === 'agent' ? 'Read-only' : 'No tools'}
-          </span>
-        </div>
-      </form>
+      {/* Composer v2 */}
+      <Composer
+        value={input}
+        onChange={setInput}
+        onSubmit={handleComposerSubmit}
+        isLoading={isLoading}
+        onStop={onStopTask}
+        agentMode={agentMode}
+        onAgentModeChange={onAgentModeChange}
+        selectedSite={selectedSite}
+        onSelectSite={onSelectSite}
+        availableSites={availableSites}
+        siteContext={siteContext}
+        suggestions={suggestions}
+        inputRef={textareaRef}
+      />
 
       {/* Publish confirmation */}
       {activePublishProposal ? (

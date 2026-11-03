@@ -196,8 +196,8 @@
 - [ ] **E9-01** — App shell: left rail (projects, sites, activity, automations, settings), chat + canvas panes, responsive collapse. · *Files:* `apps/dashboard/src/app/(app)/**` · *Done:* works 360 px → 1920 px · *Dep:* E1-12 · *Est:* 6h
 - [x] **E9-02** — Projects CRUD UI + switcher + per-project site binding + auto-default workspace provisioning. · *Files:* `supabase/migrations/20261102070000_auto_default_project.sql` (live `20261102063413`), `lib/connector/store.ts`, `app/api/connector/projects/route.ts`, `app/api/connector/pairing-codes/route.ts`, `app/connect/page.tsx` · *Done:* default `"My Sites"` auto-provisioned in DB trigger + server store; `/connect` supports switching & creating projects and minting project-scoped pairing codes · *Dep:* E9-01 · *Est:* 4h · ✅
 - [x] **E9-03** — Onboarding wizard (3 steps, plugin download, code, scan) with progress + failure recovery. · *Files:* `/onboarding` + `lib/onboarding/**` · *Done:* first-time user completes without docs · *Dep:* E2-19, E9-01 · *Est:* 6h · ✅ 2026-11-03: 3-step stepper, resumable step, live 3 s heartbeat poll, scan-grace + 3 min timeout, success CTA to Studio
-- [ ] **E9-04** — Composer v2: mode selector, site pill, attachments, ⌘↵, stop, suggestions from capabilities. · *Files:* `ChatPanel.tsx` · *Done:* keyboard + mobile tested · *Dep:* E9-01 · *Est:* 5h
-- [ ] **E9-05** — Assistant turn: reasoning timeline, tool cards with durations, retries, honest errors. · *Files:* UI · *Done:* snapshot tests for 6 states · *Dep:* E3-13 · *Est:* 5h
+- [x] **E9-04** — Composer v2: mode selector, site pill, attachments, ⌘↵, stop, suggestions from capabilities. · *Files:* `components/Composer.tsx`, `lib/composer.ts`, `components/ChatPanel.tsx` · *Done:* keyboard + mobile tested · *Dep:* E9-01 · *Est:* 5h · ✅ 2026-11-03: capability/scope-aware suggestions, status-dot site pill, local text attachments (no upload endpoint, hard prompt budget), Enter + ⌘/Ctrl+↵ with IME safety, Stop, honest mode hints, 31 new pure tests
+- [x] **E9-05** — Assistant turn: reasoning timeline, tool cards with durations, retries, honest errors. · *Files:* `components/AssistantTurn.tsx`, `lib/assistant-turn.ts`, `components/ChatPanel.tsx` · *Done:* snapshot tests for 6 states · *Dep:* E3-13 · *Est:* 5h · ✅ 2026-11-03: testable view model asserts all 6 states (planning/running/waiting/completed/failed/cancelled), real `startedAt`/`finishedAt` durations, derived retry counts, 14 typed error codes → one action, secret-safe messages
 - [x] **E9-06** — Plan card v2: risk badge, staging advice, step list, visual layout/SEO/menu preview, SHA-256 hash, approve/execute. · *Files:* `apps/dashboard/src/app/studio/page.tsx`, `apps/dashboard/src/components/StepVisualPreview.tsx` · *Done:* approve triggers jobs; edited plan invalidates; production R2/R3 plans display staging advice · *Dep:* E3-05 · *Est:* 6h · ✅
 - [x] **E9-07** — Diff & visual preview viewer: Gutenberg block structure + copy atoms, Google SERP snippet card, menu items, and before/after snapshot diffs (no `dangerouslySetInnerHTML`). · *Files:* `apps/dashboard/src/components/StepVisualPreview.tsx`, `apps/dashboard/src/app/activity/page.tsx` · *Done:* readable on mobile, raw HTML/JSON tucked inside collapsible `<details>` · *Dep:* E9-06 · *Est:* 5h · ✅
 - [ ] **E9-08** — Preview canvas v2: real page iframe, device frames, refresh, stale badge, open-in-new-tab. · *Files:* `PreviewCanvas.tsx` · *Done:* CORS-safe fallback message · *Dep:* E9-01 · *Est:* 5h
@@ -260,22 +260,23 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 72 of 180 tasks are ✅, `main` is at
-`142d2c9` (PR #21 merged, 34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
+The original E0/E1/E2 start-up list is **done** — 74 of 180 tasks are ✅, `main` auto-deploys
+from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E9-04** · Composer v2 (mode selector, site pill, attachments, ⌘↵, stop, suggestions)
-2. **E9-05** · assistant turn (reasoning timeline, tool cards, retries, honest errors)
-3. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
-4. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
-5. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
-6. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
-7. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
-8. **E9-20** · recorded self-test of connect + first change, with a fixes list
-9. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
-10. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
+1. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
+2. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
+3. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
+4. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
+5. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
+6. **E9-20** · recorded self-test of connect + first change, with a fixes list
+7. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
+8. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
+9. **E11-04** · load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs
+10. **E11-07** · connector upgrade path / min-version gate + in-plugin update notice
 
-**Shipped in this batch:** E9-03 + E9-14 (see the ✅ rows in E9 above).
+**Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), then **E9-04 + E9-05**
+(Composer v2 & assistant turn). See the ✅ rows in E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.

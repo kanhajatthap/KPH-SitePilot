@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Header } from '../components/Header';
 import { ChatPanel } from '../components/ChatPanel';
 import { PreviewCanvas } from '../components/PreviewCanvas';
@@ -155,6 +155,19 @@ export default function DashboardPage() {
     },
     [connectedSites]
   );
+
+  /** Capability graph handed to Composer v2 so suggestions match the real site. */
+  const composerSiteContext = useMemo(() => {
+    const site = findConnectorSite(selectedSite) ?? connectedSites[0];
+    if (!site) return null;
+    return {
+      name: site.name,
+      url: site.url,
+      status: site.status,
+      scopes: site.scopes,
+      capabilities: site.capabilities,
+    };
+  }, [connectedSites, findConnectorSite, selectedSite]);
 
   // Keep preview targetSite and viewport synced with selections
   useEffect(() => {
@@ -2291,6 +2304,7 @@ Review the diff in the Preview panel. Click **✓ Approve & Apply** to write cha
           onApprovePublish={handleApprovePublish}
           onCancelPublish={handleCancelPublish}
           isPublishing={isPublishing}
+          siteContext={composerSiteContext}
         />
 
         {/* Right: Preview canvas — flex-1 fills remaining space */}
