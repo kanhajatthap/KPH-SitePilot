@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "phase": "product-phase",
+  "auditedFiles": [
+    "AGENTS.md",
+    ".agents/rules/architecture.md",
+    ".agents/rules/security.md",
+    ".agents/rules/testing.md",
+    ".agents/rules/token-efficiency.md"
+  ],
+  "frontmatterFiles": [
+    ".agents/rules/architecture.md",
+    ".agents/rules/security.md",
+    ".agents/rules/testing.md",
+    ".agents/rules/token-efficiency.md"
+  ],
+  "forbidden": [
+    {
+      "id": "old-production-ban",
+      "pattern": "never target or connect to production WordPress environments"
+    },
+    {
+      "id": "old-localwp-only-target",
+      "pattern": "Restrict all local WordPress interactions to isolated LocalWP test sites"
+    },
+    {
+      "id": "old-read-only-phase",
+      "pattern": "Initial phase is strictly read-only and exploratory"
+    },
+    {
+      "id": "old-no-scaffolding",
+      "pattern": "Do not scaffold code, create plugins, or generate ZIP packages until explicitly directed"
+    },
+    {
+      "id": "old-no-staging-tooling",
+      "pattern": "Never point tooling, CLI calls, or agent bridges to production or staging WordPress environments"
+    },
+    {
+      "id": "old-permitted-targets",
+      "pattern": "Permitted target environments are strictly limited to local, non-sensitive LocalWP instances"
+    },
+    {
+      "id": "old-read-only-foundation",
+      "pattern": "The foundational layer operates in read-only inspection mode"
+    },
+    {
+      "id": "old-read-only-description",
+      "pattern": "read-only foundational constraints"
+    },
+    {
+      "id": "old-local-only-description",
+      "pattern": "local-only execution"
+    },
+    {
+      "id": "old-db-mutation-ban",
+      "pattern": "Do not alter LocalWP databases or core files during environment preparation"
+    },
+    {
+      "id": "old-blanket-production-ban",
+      "pattern": "never target production"
+    }
+  ],
+  "required": [
+    {
+      "id": "agents-product-phase",
+      "files": ["AGENTS.md"],
+      "pattern": "Product Phase"
+    },
+    {
+      "id": "production-sites-allowed",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "production sites are allowed"
+    },
+    {
+      "id": "environment-production-registration",
+      "files": ["AGENTS.md", ".agents/rules/security.md", ".agents/rules/architecture.md"],
+      "pattern": "environment: production"
+    },
+    {
+      "id": "plan-8-2",
+      "files": ["AGENTS.md", ".agents/rules/security.md", ".agents/rules/architecture.md"],
+      "pattern": "plan §8\\.2"
+    },
+    {
+      "id": "connector-only-transport",
+      "files": ["AGENTS.md", ".agents/rules/architecture.md", ".agents/rules/security.md"],
+      "pattern": "connector is the only WordPress transport"
+    },
+    {
+      "id": "no-arbitrary-code",
+      "files": ["AGENTS.md", ".agents/rules/architecture.md", ".agents/rules/security.md"],
+      "pattern": "no arbitrary code"
+    },
+    {
+      "id": "no-runtime-tool-invention",
+      "files": [".agents/rules/architecture.md", ".agents/rules/security.md"],
+      "pattern": "unknown tool names are refused"
+    },
+    {
+      "id": "canonical-tool-catalog",
+      "files": [".agents/rules/architecture.md", ".agents/rules/security.md"],
+      "pattern": "WP_TOOL_SPECS"
+    },
+    {
+      "id": "draft-default",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "draft / private"
+    },
+    {
+      "id": "typed-confirmation",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "CONFIRM"
+    },
+    {
+      "id": "r2-gating",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "R2"
+    },
+    {
+      "id": "r3-gating",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "R3"
+    },
+    {
+      "id": "snapshot",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "snapshot"
+    },
+    {
+      "id": "read-back-verification",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "read-back"
+    },
+    {
+      "id": "one-click-undo",
+      "files": ["AGENTS.md", ".agents/rules/security.md"],
+      "pattern": "undo"
+    },
+    {
+      "id": "rls-ownership",
+      "files": [".agents/rules/security.md"],
+      "pattern": "RLS"
+    },
+    {
+      "id": "four-gates",
+      "files": ["AGENTS.md"],
+      "pattern": "pnpm test --force"
+    },
+    {
+      "id": "git-auto-deploy",
+      "files": ["AGENTS.md"],
+      "pattern": "auto-deploy"
+    },
+    {
+      "id": "governance-audit-enforced",
+      "files": ["AGENTS.md", ".agents/rules/security.md", ".agents/rules/testing.md"],
+      "pattern": "governance audit|governance-audit\\.mjs"
+    },
+    {
+      "id": "hosted-ci-php",
+      "files": [".agents/rules/testing.md", ".agents/rules/architecture.md"],
+      "pattern": "PHP 8\\.2"
+    }
+  ]
+}

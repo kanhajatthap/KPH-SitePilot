@@ -15,7 +15,7 @@
 - [x] **E0-04** — CI: add PHP lint + plugin unit test job; add migration SQL syntax check; keep total < 6 min. · *Files:* `.github/workflows/ci.yml` · *Done:* CI shows 2 jobs (`wordpress-plugin` + `validate`) green on PR #14 · *Dep:* E0-01 · *Est:* 2h · ✅
 - [x] **E0-05** — Add `docs/plan-progress.md` template + first entry (audit evidence). · *Files:* `docs/plan-progress.md` · *Done:* file committed with audit numbers · *Dep:* — · *Est:* 30m · ✅
 - [x] **E0-06** — Update `.env.example` + `packages/config` for hosted mode (`validateHostedEnv`, `SITEPILOT_ENCRYPTION_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `SITEPILOT_PLANNER`). · *Files:* `.env.example`, `packages/config/src/index.ts`, `packages/config/tests/config.test.ts` · *Done:* config tests cover both modes; invalid hosted config fails loudly · *Dep:* — · *Est:* 2h · ✅
-- [ ] **E0-07** — Amend governance rules for the product phase: production sites allowed with gating; connector is the only WP transport; no arbitrary code. · *Files:* `AGENTS.md`, `.agents/rules/architecture.md`, `.agents/rules/security.md` · *Done:* rules match plan §8.2; no contradictory statements remain · *Dep:* owner confirmation · *Est:* 1h
+- [x] **E0-07** — Amend governance rules for the product phase: production sites allowed with gating; connector is the only WP transport; no arbitrary code. · *Files:* `AGENTS.md`, `.agents/rules/{architecture,security,testing,token-efficiency}.md`, `scripts/governance-rules.json`, `scripts/governance-audit.mjs`, root `package.json` · *Done:* rules match plan §8.2; no contradictory statements remain · *Dep:* owner confirmation · *Est:* 1h · ✅ 2026-11-03: 11 retired sentences removed and now machine-blocked, 20 product-phase invariants enforced in the right files, all four rule files declare `phase: product-phase`, audit wired into `pnpm lint` (35/35 checks pass) and covered by 18 tests. **Owner confirmation of the amended policy is still owed** (§3 owner checklist); the code/doc amendment itself is done.
 - [x] **E0-08** — Add `docs/sitepilot-master-plan.md` + backlog to README docs index and roadmap. · *Files:* `README.md` · *Done:* README links both docs and marks live hosted + Connector `0.9.0` status · *Dep:* — · *Est:* 30m · ✅
 
 ---
@@ -260,11 +260,11 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 78 of 180 tasks are ✅, `main` auto-deploys
+The original E0/E1/E2 start-up list is **done** — 79 of 180 tasks are ✅, `main` auto-deploys
 from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E1-12 / E0-07 / E1-05 / E1-08** · staging Supabase project, `supabase test db` in CI, governance rules, shared auth helpers, repositories
+1. **E1-12 / E1-05 / E1-08** · typed `@wp-agent/supabase` repositories, shared auth helper consolidation, real signup → reset → connect E2E (staging project creation is owner-side; `supabase test db --local` already runs on `main` migration pushes)
 2. **E9-20** · recorded self-test of connect + first change, with a fixes list (incl. real-device mobile/Lighthouse a11y check owed by E9-16)
 3. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
 4. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
@@ -276,10 +276,11 @@ from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and a
 10. **E9-01** · full app-shell left rail / responsive collapse (360px → 1920px) beyond the chat/canvas pass
 
 **Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), **E9-04 + E9-05**
-(Composer v2 & assistant turn), **E9-19 + E9-18** (public docs hub + real landing page), then
-**E9-16 + E9-17** (mobile chat/canvas pass + AA design tokens). **All six P0 UX items §4 #1–#5
-of the status audit are now ✅**; the remaining P0 work is platform governance/staging (#6).
-See the ✅ rows in E9 above.
+(Composer v2 & assistant turn), **E9-19 + E9-18** (public docs hub + real landing page),
+**E9-16 + E9-17** (mobile chat/canvas pass + AA design tokens), then **E0-07** (product-phase
+governance rules + executable audit). **All P0 UX items §4 #1–#5 and the governance half of #6
+are now ✅**; what remains in P0 is the E1-12/E1-05/E1-08 platform work plus the owner-side
+staging project. See the ✅ rows in E0/E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.

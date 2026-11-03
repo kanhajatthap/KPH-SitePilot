@@ -2,6 +2,7 @@
 name: token-efficiency
 description: Guidelines for context conservation, targeted search patterns, progressive disclosure, and minimal file diffs.
 trigger: always_on
+phase: product-phase
 ---
 
 # Token Efficiency Rules

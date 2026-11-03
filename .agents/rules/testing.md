@@ -2,6 +2,7 @@
 name: testing-standards
 description: Enforces evidence-based testing, targeted-first execution, and test environment isolation.
 trigger: always_on
+phase: product-phase
 ---
 
 # Testing Rules
@@ -18,9 +19,16 @@ trigger: always_on
 
 ## 3. Test Isolation & Database Safety
 - Do not run destructive integration tests against LocalWP databases without backup or transactional rollback.
+- Hosted-product database tests use an isolated local Supabase stack (`supabase test db --local` on `main` pushes touching migrations/tests), never the production project.
 - Prefer in-memory mocks, isolated SQLite fixtures, or ephemeral test containers for unit testing.
 - When running WordPress integration tests, verify the test environment uses an isolated test database prefix (`wptests_`) and mock fixtures.
 
 ## 4. Linting & Static Analysis
-- Enforce TypeScript type-checking (`tsc --noEmit`) and ESLint before declaring frontend work complete.
+- Enforce TypeScript type-checking (`tsc --noEmit`) and `pnpm lint` before declaring frontend work complete.
 - Enforce PHP CodeSniffer (`phpcs`) with WordPress Coding Standards and PHPStan/Psalm for PHP code before release.
+
+## 5. Hosted Product Gates
+- Four gates before any PR: `pnpm typecheck`, `pnpm lint`, `pnpm test --force`, `pnpm build`, plus `git diff --check`.
+- `pnpm lint` includes PHP parsing (`scripts/php-lint.mjs`), Edge typecheck and the governance audit (`scripts/governance-audit.mjs`).
+- CI runs a real PHP 8.2 connector job; no PHP binary is available in the sandbox, so report local PHP verification honestly.
+- PR → checks → merge to `main`; Vercel auto-deploys every merge. Verify the deployed commit with `/api/health?v=<n>`.
