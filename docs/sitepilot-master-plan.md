@@ -1,7 +1,7 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
 > **Status:** executing · **2026-11-03** · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 ✅ (pairing + signed job pipeline live) · M3 ✅ (plan → approve → execute → read-back → undo shipped) · M4/M5 ✅ (34 connector tools, SEO/media/menus/settings + full undo, Studio, `/activity`) · M6 🚧 (onboarding wizard ✅ + error surfaces ✅; docs hub, landing page, automations, beta hardening still open)
-> **Live:** `main` auto-deploys from GitHub on every merge · Vercel prod `kph-sitepilot.vercel.app` READY/PROMOTED · 695 tests green · CI green · [fresh audit](./status-2026-11-03.md)
+> **Live:** `main` auto-deploys from GitHub on every merge · Vercel prod `kph-sitepilot.vercel.app` READY/PROMOTED · 713 tests green · CI green · [fresh audit](./status-2026-11-03.md)
 > **Blocked on the owner:** Supabase integration scoped to the wrong org/project, a verified Resend sending domain, and one real end-to-end signup + site — see [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 and [`docs/email-deliverability.md`](./email-deliverability.md)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
@@ -748,7 +748,7 @@ Today the repo says “never target production”. The product must support real
 - Default write mode = **draft / private**; publish is an explicit R2 step.
 - Destructive tools require typed confirmation; R3 tools require a fresh backup/snapshot + checkbox.
 - Free plan: production sites allowed (user’s own site), but capped (2 sites, quotas).
-- `AGENTS.md` and `.agents/rules/security.md` must be amended accordingly (task **E0-07**).
+- `AGENTS.md` and `.agents/rules/security.md` must be amended accordingly (task **E0-07**). ✅ **2026-11-03:** both files plus `.agents/rules/architecture.md`, `testing.md` and `token-efficiency.md` now describe the product phase; `scripts/governance-audit.mjs` (wired into `pnpm lint`) fails CI if a retired "never target production / read-only / LocalWP-only" sentence returns or a required invariant disappears.
 
 ### 8.3 Secrets
 
@@ -1086,7 +1086,9 @@ assistant turn ✅, **E9-19 docs hub ✅** (`/docs` + 5 static pages + search), 
 landing page ✅** (`/` is public; the root server component picks landing vs workspace from a
 verified Supabase session), and **E9-16 / E9-17 ✅** (phone chat-first / canvas tab, sticky
 composer with safe-area insets, 44px touch targets, AA-compliant tokens, global focus ring).
-Work now continues at E1-12/E0-07 staging + governance → E9-20 recorded first-change self-test →
-E11 hardening, in parallel with the three owner-side unblocks (Supabase project access, verified
-Resend sender, one real E2E; Vercel Git auto-deploy is confirmed active). Every batch still ends
-with the four gates + a progress-log entry + a PR.
+**E0-07 governance ✅** closes the last agent-side P0 item: the rules now match plan §8.2 and are
+machine-enforced. Work now continues at E1-12 / E1-05 / E1-08 (typed repositories, shared auth
+helper consolidation, stage/email E2E — staging project creation is owner-side) → E9-20 recorded
+first-change self-test → E11 hardening, in parallel with the three owner-side unblocks (Supabase
+project access, verified Resend sender, one real E2E; Vercel Git auto-deploy is confirmed active).
+Every batch still ends with the four gates + a progress-log entry + a PR.
