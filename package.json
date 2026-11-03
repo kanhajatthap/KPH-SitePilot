@@ -19,7 +19,8 @@
     "connector:zip": "bash scripts/build-connector-zip.sh",
     "test:php": "php wordpress/kph-sitepilot-connector/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-protocol.php && php wordpress/wp-agent-bridge/tests/test-plugin.php",
     "release:check": "node scripts/release-check.mjs",
-    "release:plan": "node scripts/release-check.mjs --plan"
+    "release:plan": "node scripts/release-check.mjs --plan",
+    "abuse:load": "node scripts/abuse-load.mjs"
   },
   "devDependencies": {
     "php-parser": "^3.7.0",

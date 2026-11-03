@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../lib/auth/api';
 import { callApi, describeApiTarget } from '../../../lib/api-call';
 import { enforceQuota } from '../../../lib/quota';
+import { enforceAbuseLimit } from '../../../lib/abuse';
 
 export async function POST(req: NextRequest) {
   const auth = await authenticateApiRequest();
@@ -10,6 +11,14 @@ export async function POST(req: NextRequest) {
   // Planning calls the model, so it counts against the AI plan quota.
   const quota = await enforceQuota(auth.context, 'plan');
   if (!quota.ok) return quota.response;
+
+  // E11-02: short-window per-user burst guard on top of the daily quota.
+  const abuse = await enforceAbuseLimit({
+    action: 'plan',
+    dimension: 'user',
+    subjectId: auth.context.user?.id ?? 'local',
+  });
+  if (!abuse.ok) return abuse.response;
 
   try {
     const body = await req.json();
@@ -34,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: quota.headers });
+    return NextResponse.json(data, { status: response.status, headers: { ...quota.headers, ...abuse.headers } });
   } catch (err) {
     return NextResponse.json(
       { error: 'INTERNAL_ERROR', message: (err as Error).message },

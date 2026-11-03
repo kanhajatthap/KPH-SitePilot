@@ -233,7 +233,7 @@
 ## E11 — Beta hardening & launch (M6)
 
 - [x] **E11-01** — Secrets audit: bundle scan, log scan, env review, rotation runbook. · *Files:* CI + docs · *Done:* zero secrets in client bundle/logs · *Dep:* E1-09 · *Est:* 2h · ✅ `scripts/secret-audit.mjs` scans 301 tracked source files for 9 credential shapes (private keys, provider tokens, JWT, env assignments, tracked `.env`), never prints the matched text and is wired into `pnpm lint` + `pnpm release:check`. It caught a real raw `postgres://…` echo in the E1-05 adapter, now scrubbed. 8 tests. Honest scope: tracked source + CI-log hygiene; a full built-client-bundle scan and a written rotation runbook remain in E11-08.
-- [ ] **E11-02** — Rate limits + abuse protection on connector and user APIs (per site/user/IP). · *Files:* api-core · *Done:* load test shows graceful 429s · *Dep:* E1-13 · *Est:* 3h
+- [x] **E11-02** — Rate limits + abuse protection on connector and user APIs (per site/user/IP). · *Files:* api-core · *Done:* load test shows graceful 429s · *Dep:* E1-13 · *Est:* 3h · ✅ Pure `packages/api-core/src/abuse.ts` sliding-window policy (4 actions × 3 dimensions, bounded `SITEPILOT_ABUSE_*` overrides, typed `RATE_LIMIT_EXCEEDED` with real `resetAt` / `Retry-After`, no subject-id leak) + one shared injectable counter behind `apps/dashboard/src/lib/abuse.ts` and the legacy per-IP/per-site helpers. Wired into `/api/connector/pair`, `/api/chat`, `/api/plan`; signed connector routes stay per-site. `pnpm abuse:load` proves graceful 429s (600/0, 30+20, 240+760) and is gate #5 of `pnpm release:check`. 21 tests + [`docs/abuse-limits.md`](./abuse-limits.md). Honest scope: deterministic in-process simulation, not a deployed p95/job-loss load test (E11-04); signed connector 429 still uses the legacy `Retry-After: 30` header.
 - [x] **E11-03** — Failure injection suite: offline, timeout, fatal, tampered result, expired token, DB error. · *Files:* tests · *Done:* all produce typed errors + UI guidance · *Dep:* E3-16 · *Est:* 4h · ✅ `failure-guidance.ts` maps all six to one code/status/message + ONE next action, `scrubFailureDetail()` removes tokens/URLs/paths/stack frames, `checkReadBack()` turns a checksum mismatch into `READ_BACK_MISMATCH`. Real injections run through the fake repository, the Supabase adapter (permission error + thrown transport error), the expired-session response and the read-back guard; the same table renders on `/docs/troubleshooting`. 9 tests.
 - [ ] **E11-04** — Load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs. · *Files:* script · *Done:* p95 < 800 ms, no job loss · *Dep:* E3-06 · *Est:* 4h
 - [ ] **E11-05** — Retention + purge jobs verified against 500 MB budget. · *Files:* cron · *Done:* DB stays < 200 MB in simulation · *Dep:* E1-14 · *Est:* 2h
@@ -260,13 +260,13 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 85 of 180 tasks are ✅, `main` auto-deploys
+The original E0/E1/E2 start-up list is **done** — 86 of 180 tasks are ✅, `main` auto-deploys
 from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
 1. **E1-12** · real signup → email confirm → login → protected `/app` on staging (owner-side: staging Supabase project + real SMTP; E1-08 auth guards ✅ shipped; `supabase test db --local` already runs on `main` migration pushes)
 2. **E9-20** · recorded self-test of connect + first change, with a fixes list (incl. real-device mobile/Lighthouse a11y check owed by E9-16)
-3. **E11-02 / E11-04** · per-site/user/IP abuse limits + load test (10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs)
+3. **E11-04** · deployed load test (10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs) with p95 < 800 ms and no job loss; the deterministic abuse simulation ✅ shipped in E11-02
 4. **E11-08** · full docs sweep (several docs still quote 260 tests / v0.9.0); the executable release checklist ✅ shipped in E11-09
 5. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
 6. **E9-01** · full app-shell left rail / responsive collapse (360px → 1920px) beyond the chat/canvas pass
@@ -279,9 +279,9 @@ from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and a
 (Composer v2 & assistant turn), **E9-19 + E9-18** (public docs hub + real landing page),
 **E9-16 + E9-17** (mobile chat/canvas pass + AA design tokens), then **E0-07** (product-phase
 governance rules + executable audit), **E1-05** (typed injectable repositories) and the five-task
-batch **E1-08 / E11-01 / E11-03 / E11-09 / E9-15**. **All P0 UX items §4 #1–#5, the governance,
-repository and shared-auth parts of #6 are now ✅**; what remains in P0 is the E1-12 hosted signup
-E2E plus the owner-side staging project. See the ✅ rows in E0/E9 above.
+batch **E1-08 / E11-01 / E11-03 / E11-09 / E9-15** and **E11-02** (abuse limits). **All P0 UX
+items §4 #1–#5, the governance, repository and shared-auth parts of #6 are now ✅**; what remains
+in P0 is the E1-12 hosted signup E2E plus the owner-side staging project. See the ✅ rows in E0/E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.

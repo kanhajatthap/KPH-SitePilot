@@ -6,7 +6,7 @@ import {
   createSupabasePairingStore,
   enqueueConnectorJob,
 } from '../../../../lib/connector/store';
-import { checkPairingRateLimit, clientIpFrom } from '../../../../lib/connector/rate-limit';
+import { clientIpFrom, enforceAbuseLimit } from '../../../../lib/abuse';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,14 +36,9 @@ function json(body: unknown, status: number) {
  * the platform stores only a hash (token) and an encrypted copy (secret).
  */
 export async function POST(req: Request) {
-  const ip = clientIpFrom(req);
-  const limit = checkPairingRateLimit(ip);
-  if (!limit.ok) {
-    return NextResponse.json(
-      { error: 'RATE_LIMIT_EXCEEDED', message: 'Too many pairing attempts. Try again shortly.' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds), 'Cache-Control': 'no-store' } }
-    );
-  }
+  // E11-02: per-IP burst guard with a real reset time and typed 429 body.
+  const abuse = await enforceAbuseLimit({ action: 'pair', dimension: 'ip', subjectId: clientIpFrom(req) });
+  if (!abuse.ok) return abuse.response;
 
   let body: unknown;
   try {
