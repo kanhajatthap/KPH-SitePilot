@@ -44,6 +44,12 @@ interface ChatPanelProps {
   isPublishing?: boolean;
   /** Capability graph of the currently selected connector site (E9-04). */
   siteContext?: ComposerSiteContext | null;
+  /**
+   * E9-16: on phones only the active pane is shown. Defaults to true so any
+   * other caller keeps the old always-visible behaviour; `md:flex` always wins
+   * on desktop, so a resize can never leave the workspace empty.
+   */
+  mobileVisible?: boolean;
 }
 
 function Icon({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
@@ -419,6 +425,7 @@ export function ChatPanel({
   onCancelPublish,
   isPublishing,
   siteContext,
+  mobileVisible = true,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
@@ -492,7 +499,10 @@ export function ChatPanel({
   );
 
   return (
-    <aside className="flex h-full w-full shrink-0 flex-col border-r border-line bg-white/60 md:w-[420px] lg:w-[460px]">
+    <aside
+      id="workspace-chat-panel"
+      className={`${mobileVisible ? 'flex' : 'hidden'} h-full w-full shrink-0 flex-col border-r border-line bg-white/60 md:flex md:w-[420px] lg:w-[460px]`}
+    >
       {/* Header */}
       <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-line px-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -509,7 +519,7 @@ export function ChatPanel({
           <button
             type="button"
             onClick={onClearChat}
-            className="focus-ring rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink"
+            className="focus-ring min-h-touch rounded-lg px-2 py-1 text-[11px] font-medium text-ink-muted transition hover:bg-paper-deep hover:text-ink sm:min-h-0"
             title="Start a new conversation"
           >
             New chat

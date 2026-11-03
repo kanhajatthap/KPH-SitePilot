@@ -172,7 +172,7 @@ export function Composer({
         event.preventDefault();
         submit();
       }}
-      className="shrink-0 border-t border-line bg-white/70 p-3 sm:p-4"
+      className="composer-dock pb-safe shrink-0 border-t border-line"
     >
       {value.trim() === '' && !isLoading && suggestions.length > 0 ? (
         <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Suggested prompts">
@@ -183,7 +183,7 @@ export function Composer({
               type="button"
               onClick={() => pickSuggestion(suggestion.prompt)}
               title={suggestion.hint}
-              className="max-w-[190px] truncate rounded-lg border border-line bg-white px-2 py-1 text-[10px] text-ink-soft transition hover:border-pink-300 hover:text-ink"
+              className="focus-ring min-h-touch max-w-[190px] truncate rounded-lg border border-line bg-white px-2 py-1 text-[10px] text-ink-soft transition hover:border-pink-300 hover:text-ink sm:min-h-0"
             >
               {suggestion.label}
             </button>
@@ -254,7 +254,7 @@ export function Composer({
                     onClick={() => onAgentModeChange(mode)}
                     title={meta.hint}
                     aria-pressed={active}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                    className={`focus-ring min-h-touch items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition sm:min-h-0 flex ${
                       active ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
                     }`}
                   >
@@ -266,7 +266,7 @@ export function Composer({
             </div>
 
             <div
-              className="flex min-w-0 items-center gap-1.5 rounded-lg border border-line bg-white px-1.5 py-1"
+              className="flex min-h-touch min-w-0 items-center gap-1.5 rounded-lg border border-line bg-white px-1.5 py-1 sm:min-h-0"
               title={`${selectedSite}${siteContext ? ` · ${siteStatus}` : ''}`}
             >
               <span
@@ -302,7 +302,7 @@ export function Composer({
               type="button"
               disabled={attachmentBusy || attachments.length >= MAX_ATTACHMENTS}
               onClick={() => fileInputRef.current?.click()}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-line bg-white text-ink-muted transition hover:text-ink disabled:opacity-40"
+              className="focus-ring flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-white text-ink-muted transition hover:text-ink disabled:opacity-40 sm:h-8 sm:w-8"
               aria-label="Attach text files"
               title="Attach small text files (sent with the prompt)"
             >
@@ -313,7 +313,7 @@ export function Composer({
               <button
                 type="button"
                 onClick={onStop}
-                className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                className="focus-ring flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition hover:bg-rose-100 sm:h-8 sm:w-8"
                 aria-label="Stop task"
                 title="Stop"
               >
@@ -323,7 +323,7 @@ export function Composer({
             <button
               type="submit"
               disabled={!value.trim() && attachments.length === 0}
-              className="brand-gradient focus-ring flex h-8 w-8 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+              className="brand-gradient focus-ring flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-sm transition hover:opacity-95 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 sm:h-8 sm:w-8"
               aria-label="Send prompt"
               title="Send (Enter or ⌘/Ctrl + ↵)"
             >

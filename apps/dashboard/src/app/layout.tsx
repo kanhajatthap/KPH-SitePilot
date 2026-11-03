@@ -1,7 +1,19 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SessionGuard } from '../components/SessionGuard';
 import { getSupabasePublicConfig } from '../lib/supabase/config';
+
+/**
+ * E9-16: `viewportFit: 'cover'` lets the CSS `env(safe-area-inset-*)` tokens
+ * work on notched phones; without it the sticky composer hides behind the home
+ * indicator. `themeColor` matches the paper token.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#faf9f6',
+};
 
 export const metadata: Metadata = {
   title: 'KPH SitePilot — AI WordPress Agent Workspace',
