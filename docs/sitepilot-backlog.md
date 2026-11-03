@@ -26,7 +26,7 @@
 - [x] **E1-02** — Create migration `sites`, `pairing_codes`, `plans`, `approvals`, `jobs`, `job_events`, `snapshots`, `usage_events`, `user_api_keys`, `connector_nonces`, `rate_limits`, `automations`, `feature_flags` with indexes + RLS. · *Files:* `supabase/migrations/2026xxxx_sitepilot_v2.sql` · *Done:* migration applies cleanly on a fresh local DB and on the hosted project · *Dep:* E1-01 · *Est:* 6h · ✅ applied live as `20261101074317_sitepilot_v2` (13 tables, all RLS+FORCE, 6 policies, `site_metadata` view).
 - [x] **E1-03** — SQL functions: `claim_next_job`, `consume_rate_limit` (extend), `purge_expired` (nonces/events/snapshots), `touch_site_heartbeat`. · *Files:* same migration or follow-up · *Done:* pgTAP/SQL tests cover happy + race path · *Dep:* E1-02 · *Est:* 3h · ✅ `claim_next_job` (SKIP LOCKED + lease + attempts), `touch_site_heartbeat`, `purge_expired_connector_state` applied live as `20261101080746_connector_functions`; verified 1→0→1 claim across lease expiry, attempts 2, 2 job_events, revoked site not revived. Rate-limit RPC already existed from v1.
 - [x] **E1-04** — RLS test suite for new tables (cross-tenant read/write denied, service role allowed). · *Files:* `packages/supabase/tests/rls-v2.test.ts` + live `information_schema.role_table_grants` & `pg_class` verification on `zgkewnhrymswhucigtib` · *Done:* all 13 v2 tables have RLS + FORCE RLS, `anon` has 0 grants, `authenticated` has SELECT only on owner-scoped tables/view · *Dep:* E1-02 · *Est:* 4h · ✅
-- [ ] **E1-05** — `@wp-agent/supabase` repos: `sites`, `plans`, `jobs`, `snapshots`, `audit`, `usage` (typed, injectable client). · *Files:* `packages/supabase/src/repos/*` · *Done:* unit tests with fake client · *Dep:* E1-02 · *Est:* 5h
+- [x] **E1-05** — `@wp-agent/supabase` repos: `sites`, `plans`, `jobs`, `snapshots`, `audit`, `usage` (typed, injectable client). · *Files:* `packages/supabase/src/repos/*` · *Done:* unit tests with fake client · *Dep:* E1-02 · *Est:* 5h · ✅ SDK-free `RepositoryClient` port + typed row/spec shapes, six repository factories with explicit project/owner-scoped reads, credential-free `SITE_COLUMNS` projection, `redactPayload()` for audit events, an in-memory fake client with real filter/order/limit/patch behaviour and injectable failures, a thin `createSupabaseRepositoryClient` adapter, and `createAdminRepositories()` as the server-only service-role integration point. 33 package + 4 dashboard tests (37 total). The connector store is intentionally untouched — this batch is additive.
 - [x] **E1-06** — Extract API business logic into `apps/api-core` (transport-agnostic handler map: method + path → handler(input, ctx)). · *Files:* `apps/api-core/src/*`, `apps/api/src/index.ts` · *Done:* Node server uses api-core; existing API tests unchanged and green · *Dep:* — · *Est:* 8h · ✅ delivered as `packages/api-core` (`handleRequest` over transport-neutral `CoreRequest`/`CoreResponse` + `createCoreHandler`); `apps/api` is now a Node adapter; 6 new core tests.
 - [x] **E1-07** — Next.js catch-all route `apps/dashboard/src/app/api/v1/[...path]/route.ts` delegating to api-core with Supabase auth context. · *Files:* new route + `lib/api-core-context.ts` · *Done:* `/api/v1/health` + `/api/v1/projects` work on Vercel preview · *Dep:* E1-06 · *Est:* 4h · ✅ delivered as in-process delegation: dashboard route handlers call `callApi()` → api-core, so the hosted app never dials `127.0.0.1:3001`.
 - [ ] **E1-08** — Server auth helpers: session → user, project ownership guard, service-role client (server-only). · *Files:* `apps/dashboard/src/lib/auth/*`, `packages/supabase/src/server.ts` · *Done:* unauth request → 401; other user's project → 404/403; tests · *Dep:* E1-07 · *Est:* 3h
@@ -260,11 +260,11 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 79 of 180 tasks are ✅, `main` auto-deploys
+The original E0/E1/E2 start-up list is **done** — 80 of 180 tasks are ✅, `main` auto-deploys
 from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E1-12 / E1-05 / E1-08** · typed `@wp-agent/supabase` repositories, shared auth helper consolidation, real signup → reset → connect E2E (staging project creation is owner-side; `supabase test db --local` already runs on `main` migration pushes)
+1. **E1-08 / E1-12** · shared auth helper consolidation (session → user, project ownership guard) and a real signup → reset → connect E2E (typed `@wp-agent/supabase` repositories ✅ shipped in E1-05; staging project creation is owner-side; `supabase test db --local` already runs on `main` migration pushes)
 2. **E9-20** · recorded self-test of connect + first change, with a fixes list (incl. real-device mobile/Lighthouse a11y check owed by E9-16)
 3. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
 4. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
@@ -278,9 +278,9 @@ from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and a
 **Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), **E9-04 + E9-05**
 (Composer v2 & assistant turn), **E9-19 + E9-18** (public docs hub + real landing page),
 **E9-16 + E9-17** (mobile chat/canvas pass + AA design tokens), then **E0-07** (product-phase
-governance rules + executable audit). **All P0 UX items §4 #1–#5 and the governance half of #6
-are now ✅**; what remains in P0 is the E1-12/E1-05/E1-08 platform work plus the owner-side
-staging project. See the ✅ rows in E0/E9 above.
+governance rules + executable audit) and **E1-05** (typed injectable repositories). **All P0 UX
+items §4 #1–#5 and the governance + repository halves of #6 are now ✅**; what remains in P0 is
+the E1-08/E1-12 platform work plus the owner-side staging project. See the ✅ rows in E0/E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.
