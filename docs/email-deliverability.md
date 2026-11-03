@@ -224,7 +224,7 @@ dependency** — §4.2 is kept as an optional fallback for deployments without
 Once (2) is done, tell the agent the verified sender address — it can set
 `SITEPILOT_MAIL_FROM` in Vercel and redeploy. Then (3) verifies the whole path.
 See [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 for the full
-owner-side checklist (including Supabase access and Vercel auto-deploy).
+owner-side checklist (including Supabase access; Vercel Git auto-deploy is confirmed active).
 
 ## 6. Failure → meaning
 
