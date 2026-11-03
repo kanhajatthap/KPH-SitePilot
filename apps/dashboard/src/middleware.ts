@@ -73,8 +73,10 @@ export async function middleware(request: NextRequest) {
     error,
   } = await supabase.auth.getUser();
 
-  // Public authentication pages. Signed-in users skip login/register, but must
-  // still be able to reach recovery and confirmation routes.
+  // Public pages: auth entry points, the `/` landing page and `/docs/*`.
+  // Signed-in users skip login/register, but must still reach recovery and
+  // confirmation routes. `/` decides between landing page and workspace in the
+  // root server component, using this same verified `user` lookup.
   if (isPublicPagePath(pathname)) {
     const isEntryPage = pathname === '/login' || pathname === '/register';
     if (user && isEntryPage) {

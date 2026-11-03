@@ -1,9 +1,11 @@
 /**
  * Explicit route inventory for the dashboard.
  *
- * Public: authentication entry points and the health probe only.
+ * Public: authentication entry points, the marketing landing page (`/`), the
+ * documentation tree (`/docs/*`), and the health/session/diagnostics probes.
  * Everything else is private and requires a verified Supabase session when
- * SaaS mode is enabled.
+ * SaaS mode is enabled. `/` stays a single URL for both audiences: the root
+ * server component decides between landing page and workspace.
  */
 
 export const PUBLIC_PAGE_PATHS = [
@@ -13,13 +15,13 @@ export const PUBLIC_PAGE_PATHS = [
   '/reset-password',
   '/auth/confirm',
   '/auth/callback',
+  // `/` is the public landing page for signed-out visitors; the root server
+  // component renders the workspace instead when a verified session exists.
+  '/',
+  // Documentation is public so a stranger can evaluate the product before signup.
+  '/docs',
 ] as const;
 
-/**
- * `/api/auth/status` is a diagnostics probe: public, read-only, and free of both
- * secrets and user data. It is what makes "the email never arrived" debuggable
- * without a session.
- */
 /**
  * `/api/auth/status` is a diagnostics probe: public, read-only, and free of both
  * secrets and user data. It is what makes "the email never arrived" debuggable
@@ -54,9 +56,12 @@ export function isCronPath(pathname: string): boolean {
 }
 
 export function isPublicPagePath(pathname: string): boolean {
-  return PUBLIC_PAGE_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`)
-  );
+  return PUBLIC_PAGE_PATHS.some((path) => {
+    // `/` is an exact match only. A prefix rule would make `//evil.example`
+    // public, which is both a wrong answer and an open redirect helper.
+    if (path === '/') return pathname === '/';
+    return pathname === path || pathname.startsWith(`${path}/`);
+  });
 }
 
 export function isPublicApiPath(pathname: string): boolean {
@@ -67,6 +72,15 @@ export function isPublicApiPath(pathname: string): boolean {
 
 export function isApiPath(pathname: string): boolean {
   return pathname === '/api' || pathname.startsWith('/api/');
+}
+
+/**
+ * The client-side session watcher must stay active on the workspace even though
+ * `/` is now a public path. The workspace root opts in with a DOM marker; public
+ * marketing/docs pages do not, so a signed-out visitor is never bounced to login.
+ */
+export function shouldWatchSession(pathname: string, optedIn: boolean): boolean {
+  return !isPublicPagePath(pathname) || optedIn;
 }
 
 export function isPrivatePath(pathname: string): boolean {

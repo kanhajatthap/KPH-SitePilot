@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loginPathWithNext, safeNextPath } from '../src/lib/auth/redirect';
-import { isPublicApiPath, isPublicPagePath } from '../src/lib/auth/routes';
+import { isPublicApiPath, isPublicPagePath, shouldWatchSession } from '../src/lib/auth/routes';
 
 describe('safeNextPath', () => {
   it('allows same-origin absolute paths with query and hash', () => {
@@ -43,13 +43,45 @@ describe('safeNextPath', () => {
 });
 
 describe('route inventory', () => {
-  it('keeps only authentication pages public', () => {
-    for (const path of ['/login', '/register', '/forgot-password', '/reset-password', '/auth/confirm', '/auth/callback']) {
+  it('keeps auth pages, the landing page and every docs page public', () => {
+    for (const path of [
+      '/login',
+      '/register',
+      '/forgot-password',
+      '/reset-password',
+      '/auth/confirm',
+      '/auth/callback',
+      '/',
+      '/docs',
+      '/docs/connector',
+      '/docs/tools',
+      '/docs/safety',
+      '/docs/troubleshooting',
+      '/docs/faq',
+    ]) {
       expect(isPublicPagePath(path), path).toBe(true);
     }
-    for (const path of ['/', '/projects', '/api/agent', '/dashboard']) {
+    for (const path of ['/studio', '/connect', '/projects', '/settings/site', '/api/agent', '/dashboard']) {
       expect(isPublicPagePath(path), path).toBe(false);
     }
+  });
+
+  it('does not make unrelated paths public just because / and /docs are', () => {
+    for (const path of ['/docsanything', '/documentation', '/api/docs', '//docs', '/settings/site']) {
+      expect(isPublicPagePath(path), path).toBe(false);
+    }
+    // Nested docs pages are intentionally public; the connector guide is one.
+    expect(isPublicPagePath('/docs/connector')).toBe(true);
+  });
+
+  it('keeps the session watcher on the workspace but off public pages', () => {
+    expect(shouldWatchSession('/', true)).toBe(true); // workspace marks itself
+    expect(shouldWatchSession('/', false)).toBe(false); // landing page does not
+    expect(shouldWatchSession('/docs', false)).toBe(false);
+    expect(shouldWatchSession('/docs/tools?risk=R2', false)).toBe(false);
+    expect(shouldWatchSession('/login', false)).toBe(false);
+    expect(shouldWatchSession('/studio', false)).toBe(true);
+    expect(shouldWatchSession('/connect', true)).toBe(true);
   });
 
   it('keeps only health and session probe APIs public', () => {

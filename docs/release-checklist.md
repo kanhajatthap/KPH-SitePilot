@@ -12,7 +12,7 @@ Every item in this section must pass in automated CI before any production relea
 |---|---|---|---|
 | **TypeScript Typecheck** | `pnpm typecheck` | 0 errors across all 12 workspace packages & Supabase Edge Functions (22/22 tasks) | **PASS** |
 | **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors (12/12 tasks + 15 PHP files via php-parser; real `php -l` in CI) | **PASS** |
-| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**644 tests**, 22/22 tasks, dashboard 335/335) | **PASS** |
+| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**668 tests**, 22/22 tasks, dashboard 359/359) | **PASS** |
 | **Production Build** | `pnpm build` | Clean Next.js 15 App Router production bundle (`.next`) and compiled API (`dist/`) | **PASS** |
 | **Dependency Licensing** | `pnpm licenses list` | 100% permissive licenses (MIT, Apache-2.0, BSD-3-Clause, ISC); zero GPL or restricted copyleft | **PASS** |
 | **Secret Leak Check** | `git ls-files \| grep -E "^\.env(\.local)?$"` | Zero `.env` files tracked in git; all credentials confined to `.env.local` | **PASS** |

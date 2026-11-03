@@ -94,8 +94,8 @@ const TROUBLESHOOTING = [
 export default function ConnectorDocsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12">
-      <Link className="text-sm text-ink-muted underline-offset-4 hover:underline" href="/connect">
-        ← Connected sites
+      <Link className="text-sm text-ink-muted underline-offset-4 hover:underline" href="/docs">
+        ← All docs
       </Link>
 
       <h1 className="mt-6 text-2xl font-semibold">Install the SitePilot Connector</h1>

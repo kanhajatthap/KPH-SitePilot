@@ -1,7 +1,7 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
 > **Status:** executing · **2026-11-03** · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 ✅ (pairing + signed job pipeline live) · M3 ✅ (plan → approve → execute → read-back → undo shipped) · M4/M5 ✅ (34 connector tools, SEO/media/menus/settings + full undo, Studio, `/activity`) · M6 🚧 (onboarding wizard ✅ + error surfaces ✅; docs hub, landing page, automations, beta hardening still open)
-> **Live:** `main` auto-deploys from GitHub on every merge · Vercel prod `kph-sitepilot.vercel.app` READY/PROMOTED · 644 tests green · CI green · [fresh audit](./status-2026-11-03.md)
+> **Live:** `main` auto-deploys from GitHub on every merge · Vercel prod `kph-sitepilot.vercel.app` READY/PROMOTED · 668 tests green · CI green · [fresh audit](./status-2026-11-03.md)
 > **Blocked on the owner:** Supabase integration scoped to the wrong org/project, a verified Resend sending domain, and one real end-to-end signup + site — see [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 and [`docs/email-deliverability.md`](./email-deliverability.md)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
@@ -1080,10 +1080,11 @@ Legend: **R0** read · **R1** safe write · **R2** destructive/visibility · **R
 ---
 
 **Next action (2026-11-03):** the M0–M5 spine above is shipped and verified live (see
-[`docs/status-2026-11-03.md`](./status-2026-11-03.md)). Work now starts at **P0 of that audit**:
-E9-03 onboarding wizard ✅, E9-14 error surfaces ✅, E9-04 Composer v2 ✅ and E9-05
-assistant turn ✅ are shipped (`/onboarding`, `RecoveryNotice`, `Composer.tsx`,
-`AssistantTurn.tsx`). Work now continues at E9-19/E9-18 docs hub + landing page →
-E9-16/E9-17 mobile + design polish → E1-12/E0-07 staging + governance, in parallel with the
-three owner-side unblocks (Supabase project access, verified Resend sender, one real E2E; Vercel
-Git auto-deploy is confirmed active). Every batch still ends with the four gates + a progress-log entry + a PR.
+[`docs/status-2026-11-03.md`](./status-2026-11-03.md)). All **P0 UX** work of that audit is now
+shipped: E9-03 onboarding wizard ✅, E9-14 error surfaces ✅, E9-04 Composer v2 ✅, E9-05
+assistant turn ✅, **E9-19 docs hub ✅** (`/docs` + 5 static pages + search) and **E9-18 public
+landing page ✅** (`/` is public; the root server component picks landing vs workspace from a
+verified Supabase session). Work now continues at E9-16/E9-17 mobile + design polish →
+E1-12/E0-07 staging + governance, in parallel with the three owner-side unblocks (Supabase
+project access, verified Resend sender, one real E2E; Vercel Git auto-deploy is confirmed active).
+Every batch still ends with the four gates + a progress-log entry + a PR.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPrivatePath, isSafeStaticPath, isSignedConnectorPath } from '../src/lib/auth/routes';
+import { isPrivatePath, isPublicPagePath, isSafeStaticPath, isSignedConnectorPath } from '../src/lib/auth/routes';
 
 describe('signed connector paths', () => {
   it('lets a paired site reach the machine-to-machine endpoints', () => {
@@ -35,6 +35,14 @@ describe('signed connector paths', () => {
     expect(isSignedConnectorPath('/api/connector/jobs/../result')).toBe(false);
     expect(isSignedConnectorPath('/api/connector/jobs/1/result')).toBe(false);
     expect(isSignedConnectorPath('/api/connector/jobs/claim/../claim')).toBe(false);
+  });
+
+  it('does not gate the public landing page or documentation', () => {
+    for (const path of ['/', '/docs', '/docs/connector', '/docs/tools', '/docs/safety', '/docs/troubleshooting', '/docs/faq']) {
+      expect(isPublicPagePath(path), path).toBe(true);
+      expect(isPrivatePath(path), path).toBe(false);
+    }
+    expect(isPrivatePath('/api/connector/sites')).toBe(true);
   });
 
   it('serves connector ZIP downloads as safe static assets', () => {
