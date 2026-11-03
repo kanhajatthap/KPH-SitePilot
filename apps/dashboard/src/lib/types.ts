@@ -39,6 +39,10 @@ export interface ToolActivity {
   isReadOnly: boolean;
   arguments?: Record<string, unknown>;
   output?: unknown;
+  /** Optional timing / retry metadata for the E9-05 tool card. */
+  startedAt?: string;
+  finishedAt?: string;
+  attempt?: number;
   error?: {
     code: string;
     message: string;
