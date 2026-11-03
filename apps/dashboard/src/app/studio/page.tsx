@@ -396,6 +396,9 @@ export default function StudioPage() {
           <Link className="text-pink-700 underline" href="/docs/connector">
             Install guide
           </Link>
+          <Link className="text-pink-700 underline" href="/onboarding">
+            Guided setup
+          </Link>
         </div>
       </header>
 
@@ -406,12 +409,17 @@ export default function StudioPage() {
             Install the SitePilot Connector on your site, then pair it from the connected-sites page. Any WordPress
             site works — it does not need to be local.
           </p>
-          <Link
-            className="mt-4 inline-block rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white"
-            href="/connect"
-          >
-            Open connected sites
-          </Link>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              className="inline-block rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white"
+              href="/onboarding"
+            >
+              Start the 3-step guided setup
+            </Link>
+            <Link className="text-sm text-pink-700 underline" href="/connect">
+              Open connected sites
+            </Link>
+          </div>
         </section>
       ) : (
         <section className="mt-8 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">

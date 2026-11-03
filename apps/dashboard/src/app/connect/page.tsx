@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ALL_SITE_SCOPES, evaluateSiteCapabilities, type SiteScope } from '../../lib/capabilities';
+import { RecoveryNotice } from '../../components/onboarding/RecoveryNotice';
+import {
+  describeOnboardingFailure,
+  type OnboardingAction,
+  type OnboardingIssue,
+} from '../../lib/onboarding/errors';
 
 interface ConnectedSite {
   id: string;
@@ -80,9 +86,9 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function ConnectPage() {
   const [sites, setSites] = useState<ConnectedSite[]>([]);
-  const [sitesError, setSitesError] = useState<string | null>(null);
+  const [sitesError, setSitesError] = useState<OnboardingIssue | null>(null);
   const [code, setCode] = useState<PairingCode | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<OnboardingIssue | null>(null);
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
@@ -119,13 +125,15 @@ export default function ConnectPage() {
       const body = await res.json();
       if (!res.ok) {
         setSites([]);
-        setSitesError(body.message ?? 'Connected sites could not be loaded.');
+        setSitesError(
+          describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+        );
         return;
       }
       setSites(body.sites ?? []);
       setSitesError(null);
-    } catch (error) {
-      setSitesError((error as Error).message);
+    } catch {
+      setSitesError(describeOnboardingFailure({ network: true }));
     }
   }, []);
 
@@ -176,15 +184,17 @@ export default function ConnectPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setCodeError(body.message ?? 'Project could not be created.');
+        setCodeError(
+          describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+        );
         return;
       }
       const created = body.project as OwnedProject;
       setProjects((curr) => [...curr, created]);
       setSelectedProjectId(created.id);
       setNewProjectName('');
-    } catch (error) {
-      setCodeError((error as Error).message);
+    } catch {
+      setCodeError(describeOnboardingFailure({ network: true }));
     } finally {
       setCreatingProject(false);
     }
@@ -201,12 +211,14 @@ export default function ConnectPage() {
       });
       const body = await res.json();
       if (!res.ok) {
-        setCodeError(body.message ?? 'A pairing code could not be created.');
+        setCodeError(
+          describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+        );
         return;
       }
       setCode({ code: body.code, expiresAt: body.expiresAt, expiresInSeconds: body.expiresInSeconds });
-    } catch (error) {
-      setCodeError((error as Error).message);
+    } catch {
+      setCodeError(describeOnboardingFailure({ network: true }));
     } finally {
       setBusy(false);
     }
@@ -226,10 +238,14 @@ export default function ConnectPage() {
         ...current,
         [siteId]: res.ok
           ? 'Queued — the connector picks it up within a minute.'
-          : body.message ?? 'The job could not be queued.',
+          : describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+              .detail,
       }));
-    } catch (error) {
-      setJobNotice((current) => ({ ...current, [siteId]: (error as Error).message }));
+    } catch {
+      setJobNotice((current) => ({
+        ...current,
+        [siteId]: describeOnboardingFailure({ network: true }).detail,
+      }));
     } finally {
       setJobBusy(null);
     }
@@ -250,14 +266,20 @@ export default function ConnectPage() {
       const body = await res.json().catch(() => ({}));
       setJobNotice((current) => ({
         ...current,
-        [siteId]: res.ok ? successMessage : body.message ?? 'Update failed.',
+        [siteId]: res.ok
+          ? successMessage
+          : describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+              .detail,
       }));
       if (res.ok) {
         setEditingSiteId(null);
         await loadSites();
       }
-    } catch (error) {
-      setJobNotice((current) => ({ ...current, [siteId]: (error as Error).message }));
+    } catch {
+      setJobNotice((current) => ({
+        ...current,
+        [siteId]: describeOnboardingFailure({ network: true }).detail,
+      }));
     } finally {
       setJobBusy(null);
     }
@@ -306,7 +328,11 @@ export default function ConnectPage() {
       if (!res.ok) {
         setJobNotice((current) => ({
           ...current,
-          [site.id]: body.message ?? 'Secret rotation failed.',
+          [site.id]: describeOnboardingFailure({
+            status: res.status,
+            code: body.error,
+            message: body.message,
+          }).detail,
         }));
         return;
       }
@@ -322,8 +348,11 @@ export default function ConnectPage() {
         [site.id]: 'Credentials rotated. Copy them from the banner above right now.',
       }));
       await loadSites();
-    } catch (error) {
-      setJobNotice((current) => ({ ...current, [site.id]: (error as Error).message }));
+    } catch {
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: describeOnboardingFailure({ network: true }).detail,
+      }));
     } finally {
       setJobBusy(null);
     }
@@ -346,16 +375,39 @@ export default function ConnectPage() {
       const body = await res.json().catch(() => ({}));
       setJobNotice((current) => ({
         ...current,
-        [site.id]: res.ok ? 'Disconnected. The site can no longer claim jobs.' : body.message ?? 'Disconnect failed.',
+        [site.id]: res.ok
+          ? 'Disconnected. The site can no longer claim jobs.'
+          : describeOnboardingFailure({ status: res.status, code: body.error, message: body.message })
+              .detail,
       }));
       if (res.ok) {
         await loadSites();
       }
-    } catch (error) {
-      setJobNotice((current) => ({ ...current, [site.id]: (error as Error).message }));
+    } catch {
+      setJobNotice((current) => ({
+        ...current,
+        [site.id]: describeOnboardingFailure({ network: true }).detail,
+      }));
     } finally {
       setJobBusy(null);
     }
+  };
+
+  const handleCodeRecovery = (action: OnboardingAction) => {
+    if (action.kind === 'link') return; // rendered as a real anchor
+    setCodeError(null);
+    if (action.kind === 'refresh') {
+      void loadProjects();
+      return;
+    }
+    void generateCode();
+  };
+
+  const handleSitesRecovery = (action: OnboardingAction) => {
+    if (action.kind === 'link') return;
+    setSitesError(null);
+    if (action.kind === 'refresh') void loadProjects();
+    void loadSites();
   };
 
   return (
@@ -380,6 +432,9 @@ export default function ConnectPage() {
           <Link href="/docs/connector" className="text-pink-700 underline">
             Install guide
           </Link>
+          <Link href="/onboarding" className="text-pink-700 underline">
+            Guided setup
+          </Link>
         </div>
       </div>
 
@@ -389,6 +444,22 @@ export default function ConnectPage() {
         site — content, media, settings, plugins, themes, files and code. Every write still needs a
         plan, your approval, a snapshot and read-back verification.
       </p>
+
+      {!sitesError && sites.length === 0 ? (
+        <section className="mt-5 rounded-2xl border border-pink-200 bg-pink-50 p-4">
+          <p className="text-sm font-semibold text-pink-950">First time here?</p>
+          <p className="mt-1 text-sm text-pink-900/80">
+            The guided setup walks you through the plugin download, the pairing code and the first
+            heartbeat — with a recovery step if anything goes wrong.
+          </p>
+          <Link
+            href="/onboarding"
+            className="mt-3 inline-block rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white hover:bg-pink-700"
+          >
+            Start the 3-step guided setup
+          </Link>
+        </section>
+      ) : null}
 
       <section className="mt-6 rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -496,7 +567,9 @@ export default function ConnectPage() {
           ) : null}
         </div>
 
-        {codeError ? <p className="mt-3 text-sm text-red-600">{codeError}</p> : null}
+        {codeError ? (
+          <RecoveryNotice issue={codeError} onAction={handleCodeRecovery} />
+        ) : null}
 
         <h2 className="mt-8 text-base font-semibold text-ink">3. Paste it in WordPress</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-muted">
@@ -571,7 +644,9 @@ export default function ConnectPage() {
       <section className="mt-6 rounded-2xl border border-black/5 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold text-ink">Connected sites</h2>
 
-        {sitesError ? <p className="mt-3 text-sm text-red-600">{sitesError}</p> : null}
+        {sitesError ? (
+          <RecoveryNotice issue={sitesError} onAction={handleSitesRecovery} />
+        ) : null}
 
         {!sitesError && sites.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No sites connected yet.</p>
