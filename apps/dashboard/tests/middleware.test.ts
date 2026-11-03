@@ -59,7 +59,7 @@ describe('dashboard authentication middleware', () => {
     });
 
     const response = await middleware(
-      new NextRequest('http://localhost:3002/', {
+      new NextRequest('http://localhost:3002/studio', {
         headers: { cookie: 'sb-example-auth-token=stale' },
       })
     );
@@ -95,6 +95,17 @@ describe('dashboard authentication middleware', () => {
     for (const path of ['/login', '/register', '/forgot-password', '/reset-password', '/auth/confirm', '/auth/callback', '/api/health']) {
       const response = await middleware(new NextRequest(`http://localhost:3002${path}`));
       expect(response.status, path).toBe(200);
+    }
+  });
+
+  it('serves the public landing page and docs without a session', async () => {
+    enableSaas();
+    getUser.mockResolvedValue({ data: { user: null }, error: new Error('expired') });
+
+    for (const path of ['/', '/docs', '/docs/connector', '/docs/tools', '/docs/safety', '/docs/troubleshooting', '/docs/faq']) {
+      const response = await middleware(new NextRequest(`http://localhost:3002${path}`));
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get('location'), path).toBeNull();
     }
   });
 

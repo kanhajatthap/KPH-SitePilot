@@ -211,8 +211,8 @@
 - [ ] **E9-16** — Mobile pass: chat-first, canvas tab, sticky composer, safe areas, touch targets. · *Files:* UI · *Done:* Lighthouse mobile ≥ 90 a11y · *Dep:* E9-01 · *Est:* 4h
 - [ ] **E9-17** — Design tokens + type scale + focus rings + dark-ready (optional) polish. · *Files:* `globals.css`, tailwind config · *Done:* contrast AA verified · *Dep:* E9-01 · *Est:* 3h
 - [x] **E9-18** *(new)* — **Studio surface**: pick a connected site, type a prompt, review the plan, approve it (typed confirmation for R3), run it and watch each step, then undo any write from the same screen. · *Files:* `apps/dashboard/src/app/studio/page.tsx`, `components/Header.tsx` · *Done:* prompt → applied change without touching wp-admin · *Dep:* E3-06, E3-08 · *Est:* 4h · ✅ `/studio` ships: site selector, planner hints, per-step job status polled every 2 s from `GET /api/connector/plans/{id}`, undo list fed by the snapshot rows; no "just do it" button exists.
-- [ ] **E9-18** — Marketing landing page with real product GIF + single CTA. · *Files:* `/` · *Done:* LCP < 2.5 s on 4G · *Dep:* E9-03 · *Est:* 4h
-- [ ] **E9-19** — Docs hub: connect guide, tool catalog, safety/undo, troubleshooting, FAQ. · *Files:* `docs/`, `/docs` UI · *Done:* searchable static pages · *Dep:* E9-03 · *Est:* 4h
+- [x] **E9-18** — Marketing landing page + single CTA. · *Files:* `components/landing/LandingPage.tsx`, `lib/landing.ts`, `app/page.tsx` (server split), `app/WorkspaceClient.tsx` · *Done:* public `/` for signed-out visitors, workspace for signed-in, one primary CTA · *Dep:* E9-03 · *Est:* 4h · ✅ 2026-11-03: static CSS product mock (no GIF/external image, so the hero is LCP-safe), `/` and `/docs` added to `PUBLIC_PAGE_PATHS`, root server component chooses landing vs workspace from verified `getUser()`, local mode unchanged. Scope change: a real product GIF and a 4G LCP measurement were **not** added — deliberately replaced by an image-free static mock so nothing is fabricated or slow.
+- [x] **E9-19** — Docs hub: connect guide, tool catalog, safety/undo, troubleshooting, FAQ. · *Files:* `lib/docs.ts`, `app/docs/**`, `components/docs/DocsSearch.tsx` · *Done:* searchable static pages · *Dep:* E9-03 · *Est:* 4h · ✅ 2026-11-03: `/docs` index with client-side AND search (title/summary/keywords), `/docs/tools` generated from the canonical 34 `SHIPPED_TOOL_SPECS`, `/docs/safety`, `/docs/troubleshooting` driven by the *same* error taxonomy as the UI, `/docs/faq`, existing `/docs/connector` now public; 24 new pure/route tests + signed-out dev smoke.
 - [ ] **E9-20** — UX acceptance: 5 first-time users (or recorded self-test) complete connect + first change. · *Files:* acceptance doc · *Done:* notes + fixes list · *Dep:* E9-16 · *Est:* 3h
 
 ---
@@ -260,23 +260,25 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 74 of 180 tasks are ✅, `main` auto-deploys
+The original E0/E1/E2 start-up list is **done** — 76 of 180 tasks are ✅, `main` auto-deploys
 from GitHub on every merge (34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
-2. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
-3. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
-4. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
-5. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
-6. **E9-20** · recorded self-test of connect + first change, with a fixes list
-7. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
-8. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
-9. **E11-04** · load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs
-10. **E11-07** · connector upgrade path / min-version gate + in-plugin update notice
+1. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
+2. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
+3. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
+4. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
+5. **E9-20** · recorded self-test of connect + first change, with a fixes list
+6. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
+7. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
+8. **E11-04** · load test: 10 sites × 60 s polling, 50 concurrent plans, 1 000 jobs
+9. **E11-07** · connector upgrade path / min-version gate + in-plugin update notice
+10. **E11-10** · first 10–20 real beta sites with feedback notes
 
-**Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), then **E9-04 + E9-05**
-(Composer v2 & assistant turn). See the ✅ rows in E9 above.
+**Shipped so far in P0:** E9-03 + E9-14 (wizard & error surfaces), **E9-04 + E9-05**
+(Composer v2 & assistant turn), then **E9-19 + E9-18** (public docs hub + real landing page).
+P0 UX items §4 #1–#4 of the status audit are all ✅; only the mobile/design batch remains.
+See the ✅ rows in E9 above.
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.

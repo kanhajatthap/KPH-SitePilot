@@ -47,7 +47,7 @@ Most AI website builders ask you to trust a black box. KPH SitePilot takes the o
 | **Providers** | Google Gemini · OpenRouter · Groq · Mock (BYOK on hosted; swap without touching business logic) |
 | **Persistence** | Supabase-backed hosted SaaS · local-only fallback when unconfigured |
 | **Writes** | Plan → human approval → snapshot → read-back verify → one-click undo (R0–R3 risk gated) |
-| **Tests** | **644 passing** across 12 workspace projects · zero-quota mock mode |
+| **Tests** | **668 passing** across 12 workspace projects · zero-quota mock mode |
 | **CI** | Typecheck → lint → secret scan → audit → tests → build |
 
 ---
@@ -404,7 +404,7 @@ Every stage is independent: a proposal can be rejected, a hash mismatch aborts t
 ```powershell
 pnpm typecheck     # strict TS across all packages + Edge Functions
 pnpm lint          # static analysis (zero-tolerance)
-pnpm test          # 644 tests, mock mode, zero quota, zero network
+pnpm test          # 668 tests, mock mode, zero quota, zero network
 pnpm build         # Turborepo build across the workspace
 ```
 
@@ -456,6 +456,8 @@ The same gates run in CI on every push and pull request to `main`.
 | [`docs/phase-1-acceptance.md`](./docs/phase-1-acceptance.md) · [`4`](./docs/phase-4-acceptance.md) · [`5`](./docs/phase-5-acceptance.md) · [`6`](./docs/phase-6-acceptance.md) · [`7`](./docs/phase-7-acceptance.md) · [`8`](./docs/phase-8-acceptance.md) | Phase acceptance evidence |
 | [`docs/full-e2e-qa-acceptance-report.md`](./docs/full-e2e-qa-acceptance-report.md) | Full end-to-end QA report |
 | [`tests/README.md`](./tests/README.md) | Tiered testing architecture |
+| **In-app docs (`/docs`)** | Public, searchable hub: connect guide, 34-tool catalog, safety/undo, troubleshooting (error codes → one action), FAQ |
+| **Public landing (`/`)** | Signed-out visitors get a static, image-free marketing page; signed-in users get the workspace at the same URL |
 
 ---
 

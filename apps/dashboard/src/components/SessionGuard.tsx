@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { isPublicPagePath } from '../lib/auth/routes';
+import { shouldWatchSession } from '../lib/auth/routes';
 
 interface SessionGuardProps {
   enabled: boolean;
@@ -22,7 +22,10 @@ export function SessionGuard({ enabled }: SessionGuardProps) {
     let cancelled = false;
 
     const check = async () => {
-      if (isPublicPagePath(window.location.pathname)) return;
+      // `/` is public for the landing page, but the workspace rendered there
+      // opts in with a marker so an expired session is still detected.
+      const optedIn = document.querySelector('[data-session-watch="true"]') !== null;
+      if (!shouldWatchSession(window.location.pathname, optedIn)) return;
 
       try {
         const response = await fetch('/api/auth/me', {
