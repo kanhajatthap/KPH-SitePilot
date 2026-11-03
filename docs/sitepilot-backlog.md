@@ -195,7 +195,7 @@
 
 - [ ] **E9-01** — App shell: left rail (projects, sites, activity, automations, settings), chat + canvas panes, responsive collapse. · *Files:* `apps/dashboard/src/app/(app)/**` · *Done:* works 360 px → 1920 px · *Dep:* E1-12 · *Est:* 6h
 - [x] **E9-02** — Projects CRUD UI + switcher + per-project site binding + auto-default workspace provisioning. · *Files:* `supabase/migrations/20261102070000_auto_default_project.sql` (live `20261102063413`), `lib/connector/store.ts`, `app/api/connector/projects/route.ts`, `app/api/connector/pairing-codes/route.ts`, `app/connect/page.tsx` · *Done:* default `"My Sites"` auto-provisioned in DB trigger + server store; `/connect` supports switching & creating projects and minting project-scoped pairing codes · *Dep:* E9-01 · *Est:* 4h · ✅
-- [ ] **E9-03** — Onboarding wizard (3 steps, plugin download, code, scan) with progress + failure recovery. · *Files:* UI · *Done:* first-time user completes without docs · *Dep:* E2-19, E9-01 · *Est:* 6h
+- [x] **E9-03** — Onboarding wizard (3 steps, plugin download, code, scan) with progress + failure recovery. · *Files:* `/onboarding` + `lib/onboarding/**` · *Done:* first-time user completes without docs · *Dep:* E2-19, E9-01 · *Est:* 6h · ✅ 2026-11-03: 3-step stepper, resumable step, live 3 s heartbeat poll, scan-grace + 3 min timeout, success CTA to Studio
 - [ ] **E9-04** — Composer v2: mode selector, site pill, attachments, ⌘↵, stop, suggestions from capabilities. · *Files:* `ChatPanel.tsx` · *Done:* keyboard + mobile tested · *Dep:* E9-01 · *Est:* 5h
 - [ ] **E9-05** — Assistant turn: reasoning timeline, tool cards with durations, retries, honest errors. · *Files:* UI · *Done:* snapshot tests for 6 states · *Dep:* E3-13 · *Est:* 5h
 - [x] **E9-06** — Plan card v2: risk badge, staging advice, step list, visual layout/SEO/menu preview, SHA-256 hash, approve/execute. · *Files:* `apps/dashboard/src/app/studio/page.tsx`, `apps/dashboard/src/components/StepVisualPreview.tsx` · *Done:* approve triggers jobs; edited plan invalidates; production R2/R3 plans display staging advice · *Dep:* E3-05 · *Est:* 6h · ✅
@@ -206,7 +206,7 @@
 - [x] **E9-11** — Sites page: scopes, capabilities table, last seen, rotate secret, disconnect. · *Files:* UI · *Done:* destructive actions confirmed · *Dep:* E2-15 · *Est:* 4h · ✅ `/connect` now supports pause/resume, inline environment & 7-scope editing (`PATCH /api/connector/sites/{id}`), capability badges, typed-confirmation **Rotate secret** (`POST …/rotate-secret` with one-time copyable token+secret banner), and typed-confirmation **Disconnect**.
 - [x] **E9-12** — Settings: profile, BYOK keys (add/test/delete), usage meter, delete account. · *Files:* `apps/dashboard/src/app/settings/keys/page.tsx` · *Done:* keys never re-displayed after save · *Dep:* E3-11 · *Est:* 4h · ✅ `/settings/keys` manages Gemini, OpenRouter and Groq keys (save with live verification, test stored key, delete, encryption-readiness banner, daily quota card); raw keys are cleared immediately after save and never returned by any endpoint.
 - [x] **E9-13** — Empty states + suggested prompts generated from capability graph. · *Files:* `apps/dashboard/src/lib/capabilities.ts`, `app/studio/page.tsx` · *Done:* no generic filler prompts · *Dep:* E4-06 · *Est:* 3h · ✅ `suggestPromptsForSite()` adapts Studio example pills to active scopes and theme type (read-only inspection prompts when `content`/`site_ops` scopes are off; Gutenberg block examples on block themes).
-- [ ] **E9-14** — Error surfaces: offline site, expired token, quota, model failure, verify failure — one action each. · *Files:* UI · *Done:* mapped from error taxonomy · *Dep:* E3-16 · *Est:* 3h
+- [x] **E9-14** — Error surfaces: offline site, expired token, quota, model failure, verify failure — one action each. · *Files:* `components/onboarding/RecoveryNotice.tsx`, `lib/onboarding/errors.ts`, `/connect` · *Done:* mapped from error taxonomy · *Dep:* E3-16 · *Est:* 3h · ✅ 2026-11-03: 20 typed codes mapped to one honest action (retry / fresh code / sign-in / docs / wait / refresh), secret-safe messages, 20 unit tests
 - [ ] **E9-15** — Command palette (⌘K) + shortcuts (⌘↵, u, g+a). · *Files:* UI · *Done:* accessible, documented in help · *Dep:* E9-04 · *Est:* 3h
 - [ ] **E9-16** — Mobile pass: chat-first, canvas tab, sticky composer, safe areas, touch targets. · *Files:* UI · *Done:* Lighthouse mobile ≥ 90 a11y · *Dep:* E9-01 · *Est:* 4h
 - [ ] **E9-17** — Design tokens + type scale + focus rings + dark-ready (optional) polish. · *Files:* `globals.css`, tailwind config · *Done:* contrast AA verified · *Dep:* E9-01 · *Est:* 3h
@@ -260,20 +260,22 @@
 
 ## Immediate next 10 (as of 2026-11-03)
 
-The original E0/E1/E2 start-up list is **done** — 70 of 180 tasks are ✅, `main` is at
-`connector-v1.0.0` (34 tools), hosted prod is READY and all gates are green. See
+The original E0/E1/E2 start-up list is **done** — 72 of 180 tasks are ✅, `main` is at
+`142d2c9` (PR #21 merged, 34-tool connector 1.0.0), hosted prod is READY and all gates are green. See
 [`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
 
-1. **E9-03** · onboarding wizard (download plugin → pairing code → scan), with recovery
-2. **E9-14** · error surfaces for offline site / expired token / quota / model failure / verify failure
-3. **E9-04** · Composer v2 (mode selector, site pill, attachments, ⌘↵, stop, suggestions)
-4. **E9-05** · assistant turn (reasoning timeline, tool cards, retries, honest errors)
-5. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
-6. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
-7. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
-8. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
-9. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
-10. **E9-20** · recorded self-test of connect + first change, with a fixes list
+1. **E9-04** · Composer v2 (mode selector, site pill, attachments, ⌘↵, stop, suggestions)
+2. **E9-05** · assistant turn (reasoning timeline, tool cards, retries, honest errors)
+3. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
+4. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
+5. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
+6. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
+7. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
+8. **E9-20** · recorded self-test of connect + first change, with a fixes list
+9. **E9-08 / E9-09** · preview canvas v2 + before/after snapshot toggle
+10. **E9-15** · command palette (⌘K) + documented keyboard shortcuts
+
+**Shipped in this batch:** E9-03 + E9-14 (see the ✅ rows in E9 above).
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.

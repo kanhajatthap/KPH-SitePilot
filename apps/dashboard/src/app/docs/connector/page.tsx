@@ -53,8 +53,10 @@ const STEPS: Array<{ title: string; body: React.ReactNode }> = [
     title: '3 — Create a pairing code here',
     body: (
       <>
-        Open <Link className="text-pink-700 underline" href="/connect">Connected sites</Link> and create a pairing code.
-        Codes are single-use, valid for ten minutes, and bound to your account.
+        Open the{' '}
+        <Link className="text-pink-700 underline" href="/onboarding">3-step guided setup</Link>{' '}
+        (or <Link className="text-pink-700 underline" href="/connect">Connected sites</Link>) and create a
+        pairing code. Codes are single-use, valid for ten minutes, and bound to your account.
       </>
     ),
   },

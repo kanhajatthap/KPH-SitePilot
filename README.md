@@ -47,7 +47,7 @@ Most AI website builders ask you to trust a black box. KPH SitePilot takes the o
 | **Providers** | Google Gemini · OpenRouter · Groq · Mock (BYOK on hosted; swap without touching business logic) |
 | **Persistence** | Supabase-backed hosted SaaS · local-only fallback when unconfigured |
 | **Writes** | Plan → human approval → snapshot → read-back verify → one-click undo (R0–R3 risk gated) |
-| **Tests** | **593 passing** across 12 workspace projects · zero-quota mock mode |
+| **Tests** | **613 passing** across 12 workspace projects · zero-quota mock mode |
 | **CI** | Typecheck → lint → secret scan → audit → tests → build |
 
 ---
@@ -404,7 +404,7 @@ Every stage is independent: a proposal can be rejected, a hash mismatch aborts t
 ```powershell
 pnpm typecheck     # strict TS across all packages + Edge Functions
 pnpm lint          # static analysis (zero-tolerance)
-pnpm test          # 593 tests, mock mode, zero quota, zero network
+pnpm test          # 613 tests, mock mode, zero quota, zero network
 pnpm build         # Turborepo build across the workspace
 ```
 
