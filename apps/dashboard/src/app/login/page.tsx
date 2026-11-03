@@ -97,6 +97,7 @@ export default async function LoginPage({
               next={safeNext}
               confirmUrl={diagnostics.emailRedirects.confirm}
               trusted={diagnostics.siteUrl.trusted}
+              mailerConfigured={diagnostics.mailer.configured}
             />
           ) : null}
 

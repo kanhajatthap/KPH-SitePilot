@@ -43,11 +43,11 @@ Most AI website builders ask you to trust a black box. KPH SitePilot takes the o
 | **Product** | Conversational AI workspace for WordPress site building |
 | **Architecture** | pnpm monorepo · Turborepo · TypeScript strict |
 | **Apps** | `@wp-agent/dashboard` (Next.js 15 · React 19) · `@wp-agent/api` (Node 22) |
-| **Packages** | 7 shared libraries + 2 apps, fully typed contracts |
-| **Providers** | Google Gemini · OpenRouter · Mock (swap without touching business logic) |
-| **Persistence** | Local-only by default · optional Supabase SaaS foundation |
-| **Writes** | Draft-only, SHA-256 locked, human-approved |
-| **Tests** | 260+ cases across 37 suites · zero-quota mock mode |
+| **Packages** | 10 shared libraries + 2 apps, fully typed contracts |
+| **Providers** | Google Gemini · OpenRouter · Groq · Mock (BYOK on hosted; swap without touching business logic) |
+| **Persistence** | Supabase-backed hosted SaaS · local-only fallback when unconfigured |
+| **Writes** | Plan → human approval → snapshot → read-back verify → one-click undo (R0–R3 risk gated) |
+| **Tests** | **593 passing** across 12 workspace projects · zero-quota mock mode |
 | **CI** | Typecheck → lint → secret scan → audit → tests → build |
 
 ---
@@ -404,7 +404,7 @@ Every stage is independent: a proposal can be rejected, a hash mismatch aborts t
 ```powershell
 pnpm typecheck     # strict TS across all packages + Edge Functions
 pnpm lint          # static analysis (zero-tolerance)
-pnpm test          # 260+ tests, mock mode, zero quota, zero network
+pnpm test          # 593 tests, mock mode, zero quota, zero network
 pnpm build         # Turborepo build across the workspace
 ```
 
@@ -432,7 +432,7 @@ The same gates run in CI on every push and pull request to `main`.
 | **6** | Builder integrations: Gutenberg, Elementor, ACF, WooCommerce, FSE | ✅ |
 | **7** | Supabase SaaS foundation: auth, RLS, vault, rate limits | ✅ |
 | **8** | Security review, OWASP LLM matrix, release readiness | ✅ |
-| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector `0.9.0` (24 tools), BYOK keys, Studio + Safe Site Settings + One-click Undo | 🚧 **live** (M0–M6 shipped · WooCommerce/SEO/Media upload next) · [master plan](./docs/sitepilot-master-plan.md) |
+| **9** | Hosted “Lovable for WordPress”: Vercel runtime, Supabase, SitePilot Connector `1.0.0` (34 tools), BYOK keys, Studio + Safe Site Settings + `/activity` visual previews + one-click undo | 🚧 **live** (M0–M5 shipped · M6 onboarding/UX polish, automations and beta hardening open) · [status audit](./docs/status-2026-11-03.md) · [master plan](./docs/sitepilot-master-plan.md) |
 
 ---
 
@@ -443,6 +443,7 @@ The same gates run in CI on every push and pull request to `main`.
 | [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md) | A–Z plan: audit, architecture, connector spec, tool catalog, free-tier constraints, roadmap |
 | [`docs/sitepilot-backlog.md`](./docs/sitepilot-backlog.md) | Micro-task execution backlog (`E0-01` … `E11-12`) |
 | [`docs/plan-progress.md`](./docs/plan-progress.md) | Evidence log for every executed task |
+| [`docs/status-2026-11-03.md`](./docs/status-2026-11-03.md) | **Current status audit**: what is shipped/live, owner-side checklist, forward plan |
 | [`docs/architecture-decisions.md`](./docs/architecture-decisions.md) | Why the system is shaped this way (ADRs) |
 | [`docs/environment-setup.md`](./docs/environment-setup.md) | Verified toolchain inventory and setup record |
 | [`docs/deployment-guide.md`](./docs/deployment-guide.md) | Production deployment prerequisites |

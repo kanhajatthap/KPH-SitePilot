@@ -67,6 +67,9 @@ describe('auth email diagnostics endpoint', () => {
     expect(body.warnings).toEqual([
       'No app-side mailer is configured (RESEND_API_KEY + SITEPILOT_MAIL_FROM), so authentication email depends on the Supabase project SMTP.',
     ]);
+    // With the Supabase mailer, the advice really is about SMTP + URL config.
+    expect(body.nextSteps.join(' ')).toMatch(/custom SMTP/);
+    expect(body.nextSteps.join(' ')).toMatch(/URL Configuration/);
     // No key material, no project URL, no user data.
     const text = JSON.stringify(body);
     expect(text).not.toContain('eyJ');
@@ -89,8 +92,26 @@ describe('auth email diagnostics endpoint', () => {
       provider: 'resend',
       from: 'no-reply@kph.example',
     });
+    // Advice follows the transport actually in use: no stale "configure SMTP".
+    expect(body.nextSteps.join(' ')).toMatch(/Resend/);
+    expect(body.nextSteps.join(' ')).not.toMatch(/custom SMTP/);
     // The key itself must never reach the response.
     expect(JSON.stringify(body)).not.toContain('re_test_key');
+  });
+
+  it('warns when the app mailer still uses Resend\'s shared sandbox sender', async () => {
+    withEnv({
+      RESEND_API_KEY: 're_test_key_1234567890',
+      SITEPILOT_MAIL_FROM: 'onboarding@resend.dev',
+    });
+
+    const response = await GET(new Request('https://kph-sitepilot.vercel.app/api/auth/status?probe=0'));
+    const body = await response.json();
+
+    expect(body.mailer.configured).toBe(true);
+    expect(body.warnings.join(' ')).toMatch(/shared test domain/);
+    expect(body.nextSteps[0]).toMatch(/Verify a sending domain/);
+    expect(body.nextSteps.join(' ')).not.toMatch(/custom SMTP/);
   });
 
   it('shouts when production would email loopback links', async () => {
@@ -164,9 +185,11 @@ describe('Supabase auth provider probe', () => {
     expect(JSON.stringify(result)).not.toContain('nope');
   });
 
-  it('is honest that SMTP state cannot be read with the anon key', () => {
+  it('is honest that delivery cannot be verified with the anon key', () => {
+    withEnv({ RESEND_API_KEY: undefined, SITEPILOT_MAIL_FROM: undefined });
     const diagnostics = localAuthDiagnostics(process.env, null);
     expect(diagnostics.emailDelivery).toBe('unverified');
+    // No app mailer in this context → the Supabase SMTP guidance is correct.
     expect(diagnostics.nextSteps.join(' ')).toMatch(/custom SMTP/);
   });
 });

@@ -60,7 +60,12 @@ export default async function RegisterPage({
           </p>
 
           {diagnostics ? (
-            <EmailHelp next={safeNext} confirmUrl={diagnostics.emailRedirects.confirm} trusted={diagnostics.siteUrl.trusted} />
+            <EmailHelp
+              next={safeNext}
+              confirmUrl={diagnostics.emailRedirects.confirm}
+              trusted={diagnostics.siteUrl.trusted}
+              mailerConfigured={diagnostics.mailer.configured}
+            />
           ) : null}
         </>
       )}

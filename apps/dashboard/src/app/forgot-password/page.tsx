@@ -68,7 +68,11 @@ export default async function ForgotPasswordPage({
           </p>
 
           {diagnostics ? (
-            <EmailHelp confirmUrl={diagnostics.emailRedirects.confirm} trusted={diagnostics.siteUrl.trusted} />
+            <EmailHelp
+              confirmUrl={diagnostics.emailRedirects.confirm}
+              trusted={diagnostics.siteUrl.trusted}
+              mailerConfigured={diagnostics.mailer.configured}
+            />
           ) : null}
         </>
       )}

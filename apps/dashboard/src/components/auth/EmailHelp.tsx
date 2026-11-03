@@ -8,6 +8,8 @@ interface EmailHelpProps {
   confirmUrl: string;
   /** True when the origin came from configuration or the platform. */
   trusted: boolean;
+  /** True when the deployment sends auth mail itself (Resend), not via Supabase SMTP. */
+  mailerConfigured?: boolean;
   defaultEmail?: string;
 }
 
@@ -20,15 +22,24 @@ interface EmailHelpProps {
  * visible instead of mysterious, offers a real resend, and links to the live
  * diagnostics endpoint.
  */
-export function EmailHelp({ next = '/', confirmUrl, trusted, defaultEmail }: EmailHelpProps) {
+export function EmailHelp({ next = '/', confirmUrl, trusted, mailerConfigured = false, defaultEmail }: EmailHelpProps) {
   return (
     <details className="mt-5 rounded-xl border border-line bg-white/70 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-soft">
       <summary className="cursor-pointer font-medium text-ink">Email not arriving?</summary>
 
       <ol className="mt-2.5 list-decimal space-y-1 pl-4 text-ink-muted">
         <li>Wait a minute and check the spam or promotions folder.</li>
-        <li>Supabase allows only a few auth emails per hour — extra attempts are dropped.</li>
-        <li>Ask the deployment owner whether custom SMTP is configured; the built-in mailer only reaches project members.</li>
+        {mailerConfigured ? (
+          <>
+            <li>This deployment sends its own mail through Resend — the sender domain must be verified (SPF + DKIM).</li>
+            <li>If you are the deployment owner, check Resend Emails/Logs for a rejected or bounced send.</li>
+          </>
+        ) : (
+          <>
+            <li>Supabase allows only a few auth emails per hour — extra attempts are dropped.</li>
+            <li>Ask the deployment owner whether custom SMTP is configured; the built-in mailer only reaches project members.</li>
+          </>
+        )}
       </ol>
 
       <p className="mt-2.5 text-ink-muted">
