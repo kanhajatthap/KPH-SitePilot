@@ -1,7 +1,8 @@
 # KPH SitePilot — “Lovable for WordPress” Master Plan (A → Z)
 
-> **Status:** executing · 2026-11-02 · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 in progress (pairing + job pipeline live) · M3 in progress (plan → approve → execute → undo shipped)
-> **Blocked on the owner:** auth email delivery (custom SMTP + Supabase project access) — see [`docs/email-deliverability.md`](./email-deliverability.md)
+> **Status:** executing · **2026-11-03** · M0 ✅ · M1 ✅ (auth, quotas, cron, health) · M2 ✅ (pairing + signed job pipeline live) · M3 ✅ (plan → approve → execute → read-back → undo shipped) · M4/M5 ✅ (34 connector tools, SEO/media/menus/settings + full undo, Studio, `/activity`) · M6 🚧 (onboarding wizard, docs hub, landing page, automations, beta hardening still open)
+> **Live:** `main` @ `60c2e57` = `connector-v1.0.0` · Vercel prod `kph-sitepilot.vercel.app` READY · 593 tests green · CI green · [fresh audit](./status-2026-11-03.md)
+> **Blocked on the owner:** Supabase integration scoped to the wrong org/project, a verified Resend sending domain, one real end-to-end signup + site, and re-enabling Vercel Git auto-deploy — see [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 and [`docs/email-deliverability.md`](./email-deliverability.md)
 > **Owner:** Kanha Jatthap · **Executor:** Arena agent + owner
 > **Scope:** turn KPH SitePilot into a free-tier, hosted, connect-any-WordPress product where the
 > entire WordPress admin can be driven by prompts, safely and reversibly.
@@ -32,7 +33,7 @@ Plan ka core:
 Delivery: **M0 → M6**, ~8–10 weeks solo, har micro-task ID ke saath (`E0-01` … `E12-xx`).
 
 > ⚠️ Session rule: main branch par direct push is environment me allowed nahi hai. Har step
-> `arena/d0d25bf5-kph-sitepilot` branch par commit + push hoga, aur aap ek click me PR merge kar sakte hain.
+> **current Arena session branch** par commit + push hoga (Arena har session me branch pin karta hai), aur aap ek click me PR merge kar sakte hain.
 > Har step ke baad `docs/plan-progress.md` update hoga (evidence ke saath).
 
 ---
@@ -850,7 +851,7 @@ Every micro-task follows the same loop:
 5. **Update** `docs/plan-progress.md`: date, task ID, what changed, evidence (command output / URL),
    next task.
 6. **Commit** with conventional message `feat(E2-03): connector heartbeat endpoint` and
-   **push** to `arena/d0d25bf5-kph-sitepilot`.
+   **push** to the current Arena session branch (never directly to `main`).
 7. **PR** per phase (or per milestone) to `main`; user merges.
 8. **Never** mark done without evidence; if blocked, log blocker + exact next action.
 
@@ -1070,7 +1071,7 @@ Legend: **R0** read · **R1** safe write · **R2** destructive/visibility · **R
 
 ## 16. Appendix C — Workflow & branching
 
-- Branch: `arena/d0d25bf5-kph-sitepilot` (this session). Push only here.
+- Branch: the current Arena session branch, pinned per session (2026-11-03: `arena/955370af-kph-sitepilot`). Push only there.
 - Commit style: `feat(E2-03): …, fix(E0-02): …, docs(E1-01): …`.
 - PR per milestone → `main`; PR body links progress log + demo evidence.
 - Every phase release: tag `v0.x.0`, GitHub Release with connector ZIP.
@@ -1078,5 +1079,9 @@ Legend: **R0** read · **R1** safe write · **R2** destructive/visibility · **R
 
 ---
 
-**Next action:** E0-01 (fix test ordering + failing test) → E0-02 (CI green) → E1-01 (apply Supabase
-migrations) → E1-02 (Vercel env + hosted runtime proof). Execution starts on confirmation.
+**Next action (2026-11-03):** the M0–M5 spine above is shipped and verified live (see
+[`docs/status-2026-11-03.md`](./status-2026-11-03.md)). Work now starts at **P0 of that audit**:
+E9-03 onboarding wizard → E9-14 error surfaces → E9-04/E9-05 composer + assistant turn →
+E9-19/E9-18 docs hub + landing page → E9-16/E9-17 mobile + design polish, in parallel with the
+four owner-side unblocks (Supabase project access, verified Resend sender, one real E2E, Vercel
+Git auto-deploy). Every batch still ends with the four gates + a progress-log entry + a PR.

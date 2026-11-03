@@ -252,21 +252,28 @@
 1. Code + tests (unit; integration where relevant; PHP tests for plugin).
 2. `pnpm typecheck && turbo run test --concurrency=1 && pnpm build` green (evidence pasted).
 3. `docs/plan-progress.md` updated (task ID, change, evidence, next).
-4. Commit `feat/fix/docs(Exx-xx): …` pushed to `arena/d0d25bf5-kph-sitepilot`.
+4. Commit `feat/fix/docs(Exx-xx): …` pushed to the current Arena session branch (never directly to `main`).
 5. Demoable on the preview URL or verifiable via script/curl.
 6. No secret, no fabricated success, no dead button.
 
 ---
 
-## Immediate next 10 (start here)
+## Immediate next 10 (as of 2026-11-03)
 
-1. E0-01 · CI/test ordering
-2. E0-02 · failing test
-3. E0-05 · progress log
-4. E0-08 · README links
-5. E1-01 · apply migrations
-6. ~~E1-02 · v2 schema~~ ✅
-7. ~~E1-06 · api-core extraction~~ ✅
-8. ~~E1-07 · Next catch-all API~~ ✅ (in-process callApi)
-9. E2-01 · connector scaffold
-10. E2-03 · HMAC protocol
+The original E0/E1/E2 start-up list is **done** — 70 of 180 tasks are ✅, `main` is at
+`connector-v1.0.0` (34 tools), hosted prod is READY and all gates are green. See
+[`docs/status-2026-11-03.md`](./status-2026-11-03.md) for evidence and the owner-side checklist.
+
+1. **E9-03** · onboarding wizard (download plugin → pairing code → scan), with recovery
+2. **E9-14** · error surfaces for offline site / expired token / quota / model failure / verify failure
+3. **E9-04** · Composer v2 (mode selector, site pill, attachments, ⌘↵, stop, suggestions)
+4. **E9-05** · assistant turn (reasoning timeline, tool cards, retries, honest errors)
+5. **E9-19 / E9-18** · in-app docs hub + real public landing page (today `/` → `/login`)
+6. **E9-16 / E9-17** · mobile pass + design tokens, focus rings, contrast
+7. **E1-12 / E0-07** · staging Supabase project, `supabase test db` in CI, product-phase governance
+8. **E11-01 → E11-03** · secrets audit, abuse/rate limits, failure-injection suite
+9. **E11-08 / E11-09** · docs sweep (several docs still quote 260 tests / v0.9.0) + executable release checklist
+10. **E9-20** · recorded self-test of connect + first change, with a fixes list
+
+Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
+stays in P2 until a real beta site gives feedback.

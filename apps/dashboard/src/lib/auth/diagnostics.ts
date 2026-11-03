@@ -1,20 +1,21 @@
 /**
  * Authentication email diagnostics.
  *
- * Almost every "the confirmation email never arrived" report is one of four
- * things, and three of them are visible from outside Supabase:
+ * There are two transports and they fail differently:
  *
- *   1. no custom SMTP configured  → Supabase's default mailer only delivers to
- *      project members and throttles hard;
- *   2. the deployment resolves its own URL to localhost, so the link inside the
- *      mail points nowhere;
- *   3. the redirect URL is missing from the project's allow list, so Supabase
- *      refuses the request before an email is even queued;
- *   4. the hourly email quota is already spent.
+ *  - **App-side mailer (Resend)** — the app mints the link and sends the mail
+ *    itself. Supabase's SMTP, Site URL and hourly mail quota are off the path;
+ *    what matters is a verified sender domain and a working API key.
+ *  - **Supabase mailer (fallback)** — the project's SMTP, Site URL, redirect
+ *    allow list and hourly quota decide whether anything arrives.
  *
- * This module reports (1)–(3) honestly. (1) lives behind the service-role key and
- * is reported as `unverified` rather than guessed — an app that claims "SMTP is
- * fine" when it cannot see SMTP is worse than one that asks you to check.
+ * The origin problem and the redirect allow list are visible from outside
+ * Supabase and are always reported. Delivery itself is never claimed as `ok`:
+ * SMTP lives behind a service-role key and an inbox cannot be read from here,
+ * so `emailDelivery` stays `unverified` in both modes. `nextSteps` is chosen
+ * from the transport actually in use — telling an app-mailer deployment to
+ * "configure custom SMTP" is exactly the kind of dishonest hint this endpoint
+ * exists to avoid.
  */
 
 import { getSupabasePublicConfig } from '../supabase/config';
@@ -57,11 +58,35 @@ export interface AuthDiagnostics {
   provider?: ProviderCheck;
 }
 
-const NEXT_STEPS = [
+/** Only shown when the app has *no* mailer of its own. */
+const SUPABASE_MAILER_NEXT_STEPS = [
   'In Supabase → Authentication → URL Configuration, set Site URL to this deployment origin and add the three redirect URLs listed here.',
   'In Supabase → Authentication → Emails, configure custom SMTP (Resend, Brevo, SendGrid or SES). The built-in mailer is for testing and only reaches project members.',
   'Send one real signup and one password reset, then confirm the links point at this origin.',
 ];
+
+/**
+ * Resend's `onboarding@resend.dev` is a shared sandbox sender: it can only
+ * reach the Resend account owner. Real signups need a verified domain.
+ */
+function usesSharedSender(from: string | null): boolean {
+  return Boolean(from && /@resend\.dev$/i.test(from));
+}
+
+const SHARED_SENDER_WARNING =
+  'The sender uses Resend\'s shared test domain (onboarding@resend.dev); mail only reaches the Resend account owner until a sending domain is verified.';
+
+function appMailerNextSteps(from: string | null): string[] {
+  const steps = [
+    'In Resend, check Emails/Logs for a rejected or bounced send.',
+    'Confirm RESEND_API_KEY and SITEPILOT_MAIL_FROM are set on this deployment, then redeploy after any change.',
+    'Send one real signup and one password reset, then confirm the links point at this origin.',
+  ];
+  if (usesSharedSender(from)) {
+    steps.unshift('Verify a sending domain in Resend (SPF + DKIM) and set SITEPILOT_MAIL_FROM to an address on that domain before inviting other users.');
+  }
+  return steps;
+}
 
 /**
  * Diagnostics that need no network call: URL resolution plus configuration
@@ -101,6 +126,9 @@ export function localAuthDiagnostics(
       'No app-side mailer is configured (RESEND_API_KEY + SITEPILOT_MAIL_FROM), so authentication email depends on the Supabase project SMTP.'
     );
   }
+  if (authEnabled && mailer.configured && usesSharedSender(mailer.from)) {
+    warnings.push(SHARED_SENDER_WARNING);
+  }
 
   return {
     authEnabled,
@@ -114,7 +142,11 @@ export function localAuthDiagnostics(
     emailRedirects: emailRedirectTargets(resolved.url),
     emailDelivery: authEnabled ? 'unverified' : 'not-configured',
     warnings,
-    nextSteps: authEnabled ? NEXT_STEPS : [],
+    nextSteps: authEnabled
+      ? mailer.configured
+        ? appMailerNextSteps(mailer.from)
+        : SUPABASE_MAILER_NEXT_STEPS
+      : [],
   };
 }
 

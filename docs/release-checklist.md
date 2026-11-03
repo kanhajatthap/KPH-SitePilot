@@ -10,9 +10,9 @@ Every item in this section must pass in automated CI before any production relea
 
 | Gate | Verification Command | Required Outcome | Status |
 |---|---|---|---|
-| **TypeScript Typecheck** | `pnpm typecheck` | 0 errors across all 9 packages & Supabase Edge Functions | **PASS** |
-| **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors | **PASS** |
-| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (170+ tests) | **PASS** |
+| **TypeScript Typecheck** | `pnpm typecheck` | 0 errors across all 12 workspace packages & Supabase Edge Functions (22/22 tasks) | **PASS** |
+| **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors (12/12 tasks + 15 PHP files via php-parser; real `php -l` in CI) | **PASS** |
+| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**593 tests**, 22/22 tasks, dashboard 283/283) | **PASS** |
 | **Production Build** | `pnpm build` | Clean Next.js 15 App Router production bundle (`.next`) and compiled API (`dist/`) | **PASS** |
 | **Dependency Licensing** | `pnpm licenses list` | 100% permissive licenses (MIT, Apache-2.0, BSD-3-Clause, ISC); zero GPL or restricted copyleft | **PASS** |
 | **Secret Leak Check** | `git ls-files \| grep -E "^\.env(\.local)?$"` | Zero `.env` files tracked in git; all credentials confined to `.env.local` | **PASS** |
@@ -38,6 +38,8 @@ The following items represent **Hard Release Blockers**. If any blocker remains 
   1. `loadConfig()` enforces fail-safe checks: In `production`, missing `GEMINI_API_KEY` or `OPENROUTER_API_KEY` immediately throws `AgentError(ErrorCode.CONFIGURATION_ERROR)`.
   2. `AI_PROVIDER=mock` is rejected in production unless explicitly overridden with `ALLOW_MOCK_IN_PRODUCTION=true`.
   3. Verify production keys are injected via secure secret managers (e.g. Doppler, AWS Secrets Manager, Vercel) and never committed to source control.
+
+> **2026-11-03 note:** this blocker describes the **local-only API** (`apps/api`). The hosted SaaS deliberately has **no platform-level model key**: each user brings an encrypted BYOK Gemini / OpenRouter / Groq key via `/settings/keys`, and the deterministic planner works without one. A production `GEMINI_API_KEY` in Vercel would be a regression, not a requirement. Owner-side launch gates are tracked in [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3.
 
 ### Blocker 3: Non-HTTPS WordPress Target in Production
 * **Severity**: **CRITICAL**

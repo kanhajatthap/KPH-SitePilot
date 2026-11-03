@@ -57,7 +57,11 @@ and is wired into an "Email not arriving?" panel on `/login`, `/register` and
 The resend response is deliberately neutral (`message=confirmation-resent`) for
 unknown or already-confirmed addresses, so the form cannot be used to enumerate
 accounts. Only `rate-limited` is surfaced, because that is the failure worth
-acting on.
+acting on. Since PR #13, `resendConfirmation()` also calls `deliverOwnAuthMail()`
+first when the app mailer is configured; Supabase `auth.resend` is only the
+fallback. The help panel therefore receives `mailerConfigured` and shows
+**Resend-specific guidance** (verified sender, Emails/Logs) instead of the old
+"Supabase sends only a few mails per hour / configure custom SMTP" copy.
 
 ### 2.3 One URL that answers "why no email?"
 
@@ -84,9 +88,13 @@ acting on.
 required and whether signups are open.
 
 **Honest limit:** `emailDelivery` is `unverified`, never `ok`. SMTP configuration
-sits behind the service-role key; an app that claims SMTP is healthy when it
-cannot see it is worse than one that asks you to check. The payload contains no
-project URL, no key prefix and no `eyJ…` — asserted in `tests/auth-status.test.ts`.
+sits behind the service-role key and an inbox cannot be read from the app, so a
+claim that delivery is healthy would be a guess. `nextSteps` is chosen from the
+active transport (`mailer.configured`): Resend guidance when the app mails
+itself, Supabase SMTP/URL guidance only for the fallback. When the sender is
+`onboarding@resend.dev`, `warnings` says so — that shared sandbox address reaches
+only the Resend account owner. The payload contains no project URL, no key prefix
+and no `eyJ…` — asserted in `tests/auth-status.test.ts` (9 tests).
 
 ## 3. Verify a deploy in 60 seconds
 
@@ -200,26 +208,33 @@ the link survives mail scanners that pre-fetch URLs:
 The default `{{ .ConfirmationURL }}` template keeps working — `/auth/confirm`
 also handles the PKCE `?code=` shape.
 
-## 5. What is still needed from the owner
+## 5. What is still needed from the owner (2026-11-03)
+
+The app now owns the transport, so **Supabase custom SMTP is no longer a
+dependency** — §4.2 is kept as an optional fallback for deployments without
+`RESEND_API_KEY`. Only these remain:
 
 | # | Need | Why it cannot be done from here |
 |---|---|---|
-| 1 | Supabase access to project `zgkewnhrymswhucigtib` | the connected Supabase integration only exposes `tmgtqgjylmywrloulfpf` (an unrelated project), so `Site URL`, redirect URLs, SMTP and templates cannot be read or set |
-| 2 | A sending domain + DNS access (SPF/DKIM) | a verified domain is required by every transactional provider; without it mail is spoofed or bounced |
-| 3 | SMTP credentials (host, port, user, password, sender) | secrets must be entered in the Supabase dashboard, never pasted into the repo or this session |
+| 1 | Supabase access to project `zgkewnhrymswhucigtib` | the connected Supabase integration still exposes only `tmgtqgjylmywrloulfpf` (an unrelated `LTP Signal Lab` project); `get_project` on the KPH ref returns 403. Needed to *audit* Site URL / redirect allow list / RLS — not to send mail |
+| 2 | A verified sending domain (SPF + DKIM) in Resend | live `SITEPILOT_MAIL_FROM` is `onboarding@resend.dev`, a shared sandbox sender that reaches only the Resend account owner. DNS records need the domain owner |
+| 3 | A real signup + password reset on an address the owner controls | an inbox cannot be read from this session; this is what turns `emailDelivery: unverified` into evidence |
 | 4 | Confirmation of the canonical production origin | `https://kph-sitepilot.vercel.app` today; if a custom domain is planned, set it before users sign up |
 
-Once (1)–(3) are in place the only remaining step is one real signup + one real
-reset, which §3 verifies.
+Once (2) is done, tell the agent the verified sender address — it can set
+`SITEPILOT_MAIL_FROM` in Vercel and redeploy. Then (3) verifies the whole path.
+See [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3 for the full
+owner-side checklist (including Supabase access and Vercel auto-deploy).
 
 ## 6. Failure → meaning
 
 | Symptom | Meaning | Fix |
 |---|---|---|
-| No mail at all, `provider.reachable: true` | mail queued by Supabase, not delivered → no custom SMTP, or recipient is not an org member | §4.2 |
+| No mail at all, `provider.reachable: true`, `mailer.configured: true` | app-side send rejected/bounced, or sender domain unverified | Resend → Emails/Logs; verify SPF + DKIM (§5 #2) |
+| No mail at all, `provider.reachable: true`, `mailer.configured: false` | Supabase's default mailer only reaches org members | §4.2 or set the two app-mailer vars |
 | Mail arrives, link opens `localhost:3002` | deployment origin misresolved | set `NEXT_PUBLIC_SITE_URL`, redeploy |
-| Link opens a Supabase error page (`redirect_to` not allowed) | redirect URL missing from the allow list | §4.1 |
-| `error=rate-limited` on every retry | hourly quota spent | raise the limit in §4.2, wait |
+| Link opens a Supabase error page (`redirect_to` not allowed) | redirect URL missing from the allow list (fallback path only) | §4.1 |
+| `error=rate-limited` on every retry | a rate limit on whichever transport is active | wait a few minutes; for the fallback, raise the limit in §4.2 |
 | `error=confirmation-invalid` | link already used or older than the OTP window | resend from `/login` |
 | `provider.reachable: false` | the auth project is paused, deleted, or the URL/anon key pair is wrong | check the Supabase project + Vercel env |
 
