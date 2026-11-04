@@ -103,3 +103,20 @@
   signup/reset + WordPress E2E, and creation of a staging Supabase project.
 - Do not ask for passwords, tokens or 2FA codes in chat; use Arena's connected
   apps settings instead.
+
+## Approved restricted-editor workstream (2026-11-04)
+
+The owner approved development of a **staging-only restricted file editor** for
+exactly selected theme/plugin PHP, JS and CSS files, not full filesystem access.
+The experimental engine may be developed and tested in isolated fixtures. It is
+**not bootstrapped, not a shipped connector tool, and not available to prompts**.
+The shipped no arbitrary code policy remains in force until a separately reviewed
+R3 plan/approval, capability, UI and recovery integration is implemented.
+
+Release requirements: explicit local operator opt-in, WordPress staging check,
+exact file allowlist, admin/edit capabilities, protected paths and secrets blocked,
+immutable expiring approval, current-file hashes, encrypted verified backup before
+write, private same-filesystem temporary workspace, atomic replacement and read-back.
+A PHP parse check is not proof of safe runtime behaviour. SQL, shell, WP-CLI, core
+files, uploads, unrestricted filesystem and production file editing remain blocked.
+See `docs/restricted-file-editor.md` for scope, residual risks and release gates.

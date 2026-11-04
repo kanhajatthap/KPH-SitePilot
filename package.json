@@ -17,7 +17,7 @@
     "lint": "turbo run lint && node scripts/php-lint.mjs && node scripts/governance-audit.mjs && node scripts/secret-audit.mjs && pnpm typecheck:edge",
     "lint:php": "node scripts/php-lint.mjs",
     "connector:zip": "bash scripts/build-connector-zip.sh",
-    "test:php": "php wordpress/kph-sitepilot-connector/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-protocol.php && php wordpress/wp-agent-bridge/tests/test-plugin.php",
+    "test:php": "php wordpress/kph-sitepilot-connector/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-protocol.php && php wordpress/wp-agent-bridge/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php && KPH_TEST_MODE=disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php && KPH_TEST_MODE=mods-disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php",
     "release:check": "node scripts/release-check.mjs",
     "release:plan": "node scripts/release-check.mjs --plan",
     "abuse:load": "node scripts/abuse-load.mjs"

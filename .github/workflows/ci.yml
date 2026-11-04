@@ -35,6 +35,12 @@ jobs:
       - name: Connector static checks
         run: php wordpress/kph-sitepilot-connector/tests/test-plugin.php
 
+      - name: Restricted file engine (isolated filesystem, not a live WordPress site)
+        run: |
+          php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php
+          KPH_TEST_MODE=disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php
+          KPH_TEST_MODE=mods-disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php
+
       - name: Legacy bridge static checks
         run: php wordpress/wp-agent-bridge/tests/test-plugin.php
 
