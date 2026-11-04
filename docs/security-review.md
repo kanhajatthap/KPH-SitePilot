@@ -63,11 +63,12 @@ exploit was reproduced merely from source inspection.
    The earlier claim that raw HTML rendering is prohibited everywhere was false.
    Trace each data source, sanitisation and iframe origin; add adversarial XSS tests
    and review isolation before asserting browser containment.
-2. **Connector rate-limit ordering:** `auth.ts` consumes the per-site budget before
-   signature verification, despite its header comment describing a later check.
-   A claimed existing site id can reach that counter without a valid signature.
-   Assess budget-exhaustion impact and guard ordering; owner/replay checks are not
-   a substitute for that review.
+2. **Connector rate-limit ordering (fixed in code, 2026-11-04):** the per-site
+   budget now runs after signature/site matching and successful nonce recording.
+   Invalid signatures, stale requests and replays cannot spend that site's budget.
+   A valid rate-limited request consumes its nonce; retries must be freshly signed.
+   This is not an unauthenticated IP/edge DoS defence: lookup, crypto and nonce
+   storage still need independent capacity protection.
 3. **Abuse metadata and scaling:** counters are in-process/per-instance and fail
    open on counter errors. Signed routes still return fixed `Retry-After: 30` in
    `route-helpers.ts`; do not claim all endpoints report the actual reset time.

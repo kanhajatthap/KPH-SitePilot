@@ -107,10 +107,6 @@ export async function authenticateConnectorRequest({
     return fail(403, 'SITE_PAUSED', 'This connection is paused. Resume it in SitePilot.');
   }
 
-  if (isRateLimited?.(site.id)) {
-    return fail(429, 'RATE_LIMIT_EXCEEDED', 'Too many connector requests. Retry shortly.');
-  }
-
   let secret: string;
   try {
     secret = decryptSecret(site.secret_encrypted, encryptionKey);
@@ -138,6 +134,12 @@ export async function authenticateConnectorRequest({
   const fresh = await store.recordNonce(site.id, verification.nonce).catch(() => false);
   if (!fresh) {
     return fail(401, 'REPLAY_DETECTED', 'This request was already used.');
+  }
+
+  // Only authenticated, fresh requests spend this site's budget. A denied
+  // request still consumes its nonce; retry with a newly signed request.
+  if (isRateLimited?.(site.id)) {
+    return fail(429, 'RATE_LIMIT_EXCEEDED', 'Too many connector requests. Retry shortly.');
   }
 
   return {
