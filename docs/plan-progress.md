@@ -224,3 +224,29 @@
   live RLS, deployed p95/job accounting, mobile Lighthouse and restore rehearsal.
 - Next: finish E11-08 detailed hosted runbooks; E11-04 needs authorised staging;
   E1-12/E9-20 need owner-side account/inbox/site access. No production changes.
+
+## 2026-11-04 — E11-08 hosted deployment runbook
+
+- Branch: `arena/78539c23-kph-sitepilot`, clean starting tree at `62e249f`.
+- Replaced the mixed legacy deployment guide with hosted connector architecture,
+  server/public environment classification, monorepo build procedure, Git delivery,
+  isolated database checks, pairing and first-change flow, health semantics and
+  explicit live acceptance requirements. Removed obsolete Docker/systemd/Nginx,
+  direct REST transport and standalone-output deployment recipes. Corrected the
+  Resend key's secret classification and auth-origin fallback order.
+- Updated `docs/README.md` and E11-08 backlog scope; added five regression tests
+  for cron config, secret classification, commands, health limitations and links.
+  Runtime behaviour and remote project settings are unchanged.
+- Verification in `/home/user/KPH-SitePilot`, each command exit 0:
+  - `pnpm install --frozen-lockfile` — 197 packages; lockfile unchanged.
+  - `pnpm --filter @wp-agent/dashboard test tests/deployment-docs.test.mjs tests/release-check.test.mjs`
+    — 14 tests in 2 files.
+  - `pnpm release:check` — 8/8 gates: typecheck 22/22, lint 12/12,
+    `pnpm test --force` 833 tests / 91 files (dashboard 473 / 50), build 12/12,
+    abuse simulation three scenarios, governance 35/35, tracked-file secret audit
+    306 files / zero findings, diff check clean.
+- Not claimed: fresh hosting configuration inspection, live auth/email/WordPress
+  E2E, database migration, deployed load test or restore rehearsal. PHP runtime
+  checks are left to CI; local lint used the PHP parser.
+- Next: E11-08 security, incident and backup runbooks, followed by API/FAQ audit.
+  The umbrella docs task remains open; this completes only the deployment slice.

@@ -1,283 +1,182 @@
-# KPH SitePilot — Production Deployment Guide
+# KPH SitePilot — hosted deployment guide
 
-> **Scope correction (2026-11-04):** This is a mixed historical/local-API deployment guide. The diagram and Application Password/provider configuration below describe the legacy standalone API, not the hosted connector transport. Hosted production runs Next.js on Vercel with Supabase, encrypted optional BYOK keys and a deterministic fallback; WordPress traffic uses only the signed connector queue. Main merges auto-deploy via the Vercel Git integration. Do not deploy the legacy REST transport as the hosted architecture. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+> **Scope correction (2026-11-04):** This guide now describes the shipped hosted
+> dashboard and signed WordPress connector, not the legacy standalone REST API.
+> See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+> These are operator instructions, not evidence that a deployment was performed.
 
-This guide details the deployment procedures, environment variables, security configurations, and operational runbooks for hosting KPH SitePilot across production, staging, and local environments.
-
----
-
-## 1. System Architecture Overview
+## 1. Architecture and prerequisites
 
 ```text
-  [ Client Browser ]
-         │ (HTTPS / TLS 1.3)
-         ▼
-  [ Reverse Proxy / CDN (Cloudflare / Nginx / Caddy) ]
-   ├── /               ──> [ Dashboard (Next.js 15 SSR/Static) - Port 3000 ]
-   ├── /api/proxy/*    ──> [ Supabase Edge Functions (Deno Runtime) ]
-   └── /api/*          ──> [ KPH SitePilot Backend API (Node.js 22 LTS) - Port 3001 ]
-                                 │
-                                 ├──> Google Gemini 1.5 / 2.0 / Flash (LLM Provider)
-                                 └──> WordPress Target (REST API over HTTPS)
+Browser → same-origin Next.js dashboard routes (Vercel)
+                    ├─ Supabase Auth, RLS and connector storage
+                    ├─ optional encrypted user BYOK model adapters
+                    └─ plans / approvals / snapshots / signed job queue
+WordPress Connector → pairing, heartbeat, job claim and result routes
 ```
 
----
+The connector is the only WordPress transport. The cloud never fetches arbitrary
+WordPress REST/XML-RPC/admin URLs. The dashboard calls core API logic in-process
+by default (`apps/dashboard/src/lib/api-call.ts`); a separately deployed Node API
+or Supabase Edge proxy is not required for the hosted connector flow.
 
-## 2. Environment Variables Matrix
+Prerequisites: Node 22 LTS, the pnpm version pinned in root `package.json`, access
+to the intended hosting and database projects, and an authorised test WordPress
+site. Use isolated staging credentials for preview/testing, not production data.
+Staging remains an owner-side setup task until actual project access is verified.
 
-| Variable | Target Service | Secret? | Default / Example | Purpose |
-|---|---|---|---|---|
-| `PORT` | API | No | `3001` | HTTP listening port for backend API |
-| `NODE_ENV` | API & Dashboard | No | `production` | Node execution environment |
-| `WP_SITE_URL` | API | No | `http://plugin-test.local` | Target WordPress base URL |
-| `WP_APPLICATION_USERNAME` | API | Yes | `admin` | WordPress Application Password username |
-| `WP_APPLICATION_PASSWORD` | API | Yes | `**** **** **** ****` | WordPress Application Password credentials |
-| `GEMINI_API_KEY` | API | Yes | `AIzaSy...` | Google Gemini API key for model orchestration |
-| `GEMINI_MODEL` | API | No | `gemini-3.8-flash` | Selected Gemini model |
-| `VAULT_MASTER_KEY` | Edge Functions only | Yes | 32-byte hex/base64 placeholder | AES-256-GCM master key for encrypted WordPress credentials |
-| `NEXT_PUBLIC_SUPABASE_URL` | Dashboard | No | `https://[ref].supabase.co` | Supabase API endpoint URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard | Public | `<public anon key>` | Supabase Auth session and RLS client |
-| `NEXT_PUBLIC_SITE_URL` | Dashboard | No | `https://kph-sitepilot.vercel.app` | Origin used inside auth emails; without it the app falls back to `VERCEL_URL`, then localhost. See [`email-deliverability.md`](./email-deliverability.md) |
-| `SITEPILOT_SITE_URL` | Dashboard | No | — | Server-only override for the above |
-| `SUPABASE_URL` | Edge Functions only | No | `https://[ref].supabase.co` | Supabase API endpoint URL |
-| `SUPABASE_ANON_KEY` | Edge Functions only | Public | `<public anon key>` | Verifies caller session with Supabase Auth |
-| `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions | Yes | `eyJhb...` | Administrative key for privileged edge operations |
-| `RESEND_API_KEY` | Dashboard | No | `re_…` | Optional. When set together with `SITEPILOT_MAIL_FROM`, the app mints the confirmation/recovery link itself (`auth.admin.generateLink`) and sends the mail through Resend's HTTP API, so authentication email no longer depends on the Supabase project's SMTP. Unset → previous behaviour, unchanged. |
-| `SITEPILOT_MAIL_FROM` | Dashboard | No | `no-reply@<verified-domain>` | Sender for the app-side mailer; the domain must be verified in Resend. A display-name form (`KPH SitePilot <no-reply@…>`) also works. |
-| `SITEPILOT_MAIL_REPLY_TO` | Dashboard | No | `help@<domain>` | Optional Reply-To. A malformed value is dropped rather than sent to the provider. |
-| `CRON_SECRET` | Dashboard | Yes (prod) | `openssl rand -hex 32` | Shared secret for `GET /api/cron/daily`. Vercel sends it as `Authorization: Bearer $CRON_SECRET` on every scheduled run; the route compares it in constant time and answers **503** (never 200) when the variable is absent, so a missing secret can never expose the purge endpoint. Generate it in Vercel — nobody needs to read it. **Set it before the first scheduled run, and redeploy afterwards**: an env var added without a new deployment is invisible to the functions already running. |
-| `SITEPILOT_QUOTA_AI` / `_PLAN` / `_JOB` | Dashboard | No | `200` / `100` / `500` | Per-user daily caps. Unset or junk falls back to the defaults; the value is clamped to 1–100000 so a typo cannot silently disable metering. |
+## 2. Dashboard environment
 
-> [!CAUTION]
-> Never store plain credentials in git, Dockerfiles, or browser-accessible client bundles. All production secrets must be injected via secure secret managers (e.g. AWS Secrets Manager, Doppler, GCP Secret Manager, or Vercel Environment Variables).
+Configure values through the hosting platform's environment settings for the
+intended environment. Never paste credentials into chat, logs, screenshots or
+Git. Do not copy the entire root `.env.example` into production: it also contains
+legacy local-API and Edge Function settings.
 
----
+| Variable | Visibility | Hosted purpose |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Public | Intended Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Same project's anon/publishable key, never a service-role key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only secret | Privileged connector storage and app-side auth link generation |
+| `SITEPILOT_ENCRYPTION_KEY` | Server-only secret | 32-byte encryption key encoded as 64 hex characters or base64; protects stored connector secrets and BYOK keys |
+| `SITEPILOT_SITE_URL` | Server-only configuration | Explicit HTTPS origin for auth links; takes precedence over `NEXT_PUBLIC_SITE_URL` |
+| `NEXT_PUBLIC_SITE_URL` | Public configuration | Alternative explicit auth origin; not a credential |
+| `CRON_SECRET` | Server-only secret | Authenticates daily maintenance; missing value makes cron return 503 |
+| `RESEND_API_KEY` | Server-only secret | Optional app-side email transport; requires a valid sender and admin configuration |
+| `SITEPILOT_MAIL_FROM` | Server-only configuration | Verified sending address, optionally with display name |
+| `SITEPILOT_MAIL_REPLY_TO` | Server-only configuration | Optional valid Reply-To address |
+| `SITEPILOT_PLANNER` | Server-only configuration | `auto`, `model` or `deterministic`; default `auto` |
+| `SITEPILOT_PLANNER_TIMEOUT_MS` | Server-only configuration | Planner timeout; template default 12000 ms |
+| `SITEPILOT_QUOTA_AI`, `SITEPILOT_QUOTA_PLAN`, `SITEPILOT_QUOTA_JOB` | Server-only configuration | Daily per-user ceilings; defaults 200 / 100 / 500 |
+| `SITEPILOT_ABUSE_PAIR`, `SITEPILOT_ABUSE_CONNECTOR`, `SITEPILOT_ABUSE_PLAN`, `SITEPILOT_ABUSE_CHAT` | Server-only configuration | Burst ceilings; see [abuse limits](./abuse-limits.md) for defaults and window overrides |
 
-## 3. Component Deployment Procedures
+Store an approved backup of encryption material securely. Replacing the encryption
+key without a migration makes previously encrypted data unreadable; do not rotate
+it by simply generating a new value in a deployment setting.
 
-### 3.1 Backend API (`apps/api`)
+Both public Supabase variables must be configured together. With neither present,
+the dashboard uses local mode; a successful homepage is therefore not proof of
+hosted configuration. Do not set platform-wide model API keys as a hosted requirement:
+users save encrypted keys at `/settings/keys`, and deterministic planning works
+without a model key. Leave demo account credentials unset in production.
 
-#### Option A: Docker Container
-```dockerfile
-FROM node:22-alpine AS builder
-WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@12.14.0 --activate
-COPY . .
-RUN pnpm install --frozen-lockfile
-RUN pnpm build
+Auth origin resolution in `src/lib/auth/site-url.ts` is: explicit server/public
+origin → `VERCEL_PROJECT_PRODUCTION_URL` → `VERCEL_URL` → allowlisted request
+origin → local fallback. Set an explicit staging origin for previews; otherwise
+auth links may point to the stable production domain. Configure Supabase Site URL
+and allowed redirects for the intended origin; verify the computed destinations
+through `/api/auth/status?probe=0`. Follow [email deliverability](./email-deliverability.md)
+for the actual confirmation/recovery paths and transport diagnostics.
 
-FROM node:22-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-RUN corepack enable && corepack prepare pnpm@12.14.0 --activate
-COPY --from=builder /app .
-EXPOSE 3001
-CMD ["node", "apps/api/dist/index.js"]
-```
+## 3. Build and Git deployment
 
-Build and run:
+Run from the repository root:
+
 ```bash
-docker build -t kph-sitepilot-api:latest .
-docker run -d \
-  --name kph-sitepilot-api \
-  -p 127.0.0.1:3001:3001 \
-  --env-file .env.production \
-  --restart unless-stopped \
-  kph-sitepilot-api:latest
+corepack enable
+pnpm install --frozen-lockfile
+pnpm release:check
 ```
 
-#### Option B: Systemd Service (Linux VM)
-Create `/etc/systemd/system/sitepilot-api.service`:
-```ini
-[Unit]
-Description=KPH SitePilot Backend API
-After=network.target
+The release command executes the eight documented gates, including a production
+build. Record the commit and results; green local gates do not establish live readiness.
 
-[Service]
-Type=simple
-User=sitepilot
-WorkingDirectory=/opt/kph-sitepilot
-EnvironmentFile=/opt/kph-sitepilot/.env.production
-ExecStart=/usr/bin/node /opt/kph-sitepilot/apps/api/dist/index.js
-Restart=always
-RestartSec=5
-LimitNOFILE=65535
+For the dashboard hosting project, use Next.js with root directory `apps/dashboard`
+and access to workspace files outside that directory. The build must compile
+workspace dependencies before the dashboard: the root `pnpm build` uses Turborepo
+and its dependency graph. If configuring an explicit build override from the app
+root, use `cd ../.. && pnpm build`. Keep the Next.js output directory `.next`
+relative to `apps/dashboard`. Review existing project overrides before changing
+settings; this guide does not claim those remote settings were inspected.
 
-[Install]
-WantedBy=multi-user.target
-```
-Enable and start:
+Work on the current Arena branch → open a PR → review CI → merge when authorised.
+The Git integration auto-deploys `main`. Do not create a redundant manual production
+deployment. Environment changes affect a new deployment, not already-running
+functions; arrange them through the authorised deployment workflow and verify the
+resulting commit. Never push directly to `main`.
+
+`apps/dashboard/vercel.json` schedules `/api/cron/daily` at `0 3 * * *` (03:00 UTC).
+Keep `CRON_SECRET` configured server-side. Do not invoke this mutating cleanup
+endpoint as a public health check.
+
+## 4. Database preparation and isolation
+
+Versioned schema and RLS live in `supabase/migrations/`. A dashboard deploy does
+not apply database migrations. Before an authorised migration, confirm the target
+project identity, backup/restore plan and schema compatibility; never infer the
+target from a previously linked CLI session. Production migration and restore
+operations require explicit scope/approval, not an opportunistic setup command.
+
+The following reproduces the isolated local database CI workflow and requires Docker:
+
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now sitepilot-api
-sudo systemctl status sitepilot-api
+pnpm dlx supabase@2.122.0 start
+pnpm dlx supabase@2.122.0 migration up --local
+pnpm dlx supabase@2.122.0 test db --local
+# Only for the disposable stack started above:
+pnpm dlx supabase@2.122.0 stop --no-backup
 ```
 
----
+`.github/workflows/supabase-local.yml` runs this on matching `main` pushes or
+manual dispatch. Local pgTAP success is not proof of live staging/production RLS.
+Check cross-tenant isolation on authorised staging separately. Do not deploy the
+legacy `credentials-vault` / `agent-proxy` Edge Functions as a substitute for the
+current signed connector. Their environment belongs to their separate runtime.
 
-### 3.2 Dashboard (`apps/dashboard`)
+## 5. WordPress installation and first change
 
-#### Vercel Deployment
-1. Set Root Directory to `apps/dashboard`.
-2. Framework Preset: Next.js.
-3. Build Command: `pnpm build`.
-4. Output Directory: `.next`.
-5. Configure Environment Variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `AGENT_API_URL`.
+1. Use the connector ZIP release or `pnpm connector:zip`. Verify the plugin version
+   and release provenance; install through the site owner's WordPress admin.
+2. Sign in, select/create the intended project, and follow `/connect` or `/onboarding`.
+   Register the correct site environment and use the single-use pairing code in
+   the connector settings. Never include the code or returned secrets in evidence.
+3. Confirm the site is active and its reported scopes/capabilities match the task.
+4. On an authorised test site, run plan → approve → snapshot → write → read-back
+   verify → undo. Record actual results, not just job submission.
+5. Defaults are draft/private. Explicit publishing is R2 and requires `CONFIRM`;
+   R3 requires a fresh snapshot and plan-id confirmation. Production sites are
+   allowed with ownership and pairing gates; unknown targets fail closed.
 
-#### Self-Hosted Node.js Server
-```bash
-cd apps/dashboard
-pnpm build
-PORT=3000 node .next/standalone/server.js
-```
+A queued or unverified change is not a verified write. A failed/unavailable undo
+must not be described as restoration. Never execute arbitrary code or upload a
+plugin through a model-generated tool call.
 
----
+## 6. Post-deployment verification
 
-### 3.3 Supabase Edge Functions & Database Migrations
-
-This repository's Phase 7 migrations and Edge Functions are version controlled.
-Local development requires Supabase CLI and Docker. Configure the dashboard's
-public URL/anon key separately from Edge Function secrets. Use the local CLI and
-the Supabase Auth redirect allow-list before testing signup/recovery. RLS tests:
-
-```powershell
-supabase start
-supabase migration up
-supabase test db
-supabase functions serve --env-file supabase/.env.local
-```
-
-The Edge Function environment requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY`, `VAULT_MASTER_KEY`, and `DASHBOARD_ORIGIN`. Store these
-with the Supabase CLI secret manager or an approved secret manager; never in the
-dashboard bundle. Keep the vault key backed up and restrict access because its loss
-makes stored WordPress credentials unrecoverable.
-
-Hosted deployment must be separately authorized. Do not run `supabase link`,
-`supabase db push`, `supabase functions deploy`, or purchase a hosted plan as part
-of local development. Before any authorized deployment, run the RLS integration
-tests and review the migration and Edge Function changes. The agent Edge Function
-intentionally fails closed until the per-connection agent bridge is implemented;
-the legacy local API is not a SaaS fallback.
-
-#### Database Migrations
-Deploy SQL schema and RLS policies using Supabase CLI:
-```bash
-supabase link --project-ref <your-project-ref>
-supabase db push
-```
-
-#### Edge Functions Deployment
-Set the credentials vault master key and deploy functions:
-```bash
-supabase secrets set VAULT_MASTER_KEY="your-256-bit-hex-master-key"
-supabase secrets set AGENT_UPSTREAM_API_URL="https://api.yourdomain.com/api/chat"
-
-supabase functions deploy credentials-vault
-supabase functions deploy agent-proxy
-```
-
----
-
-## 4. Production Reverse Proxy Configuration (Nginx)
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name sitepilot.yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/sitepilot.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/sitepilot.yourdomain.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # Security Headers
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;" always;
-
-    # Dashboard Frontend
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Backend API Routes
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Timeouts for streaming LLM responses
-        proxy_read_timeout 120s;
-        proxy_send_timeout 120s;
-    }
-}
-```
-
----
-
-## 5. Health Monitoring & Alerting
-
-### 5.1 Hosted dashboard — `GET /api/health`
-
-The Vercel deployment answers with mode, version, commit and per-component
-checks. It is public, `no-store`, and contains no key material, host or prefix.
-
-```json
-{
-  "status": "ok",
-  "service": "kph-sitepilot-dashboard",
-  "version": "0.1.0",
-  "mode": "hosted",
-  "environment": "production",
-  "commit": "22c4297",
-  "checks": {
-    "dashboard": "ok",
-    "apiServer": "connected",
-    "auth": "ready",
-    "storage": "ready",
-    "encryption": "ready"
-  },
-  "timestamp": "2026-11-01T18:12:03.950Z"
-}
-```
-
-| Field | Meaning |
+| Check | Evidence to record (without credentials) |
 |---|---|
-| `status` | `ok` (200), `degraded` (502, API reachable but erroring), `failed` (503, API unreachable) |
-| `mode` | `hosted` when Supabase auth is configured, otherwise `local` |
-| `checks.auth` | `ready` · `not-configured` · `misconfigured` (only half the URL/key pair set) |
-| `checks.storage` / `checks.encryption` | connector readiness — **not** part of the overall `status`, so a fresh deploy is not reported as broken before a site is paired |
+| Deployment | Ready status and intended Git commit |
+| `GET /api/health` | HTTP status, `mode`, `commit`, component checks |
+| `GET /api/auth/status?probe=0` | Correct origin, redirects and transport configuration; not an inbox delivery test |
+| Real auth | Non-owner inbox signup, confirmation, login and password reset on authorised staging |
+| Connector | Pairing and actual approved draft change/read-back/undo on test WordPress |
+| Operations | Cron execution outcome and separately rehearsed backup/restore evidence |
 
-### 5.2 Auth email — `GET /api/auth/status`
+Health semantics from `src/app/api/health/route.ts`:
 
-Answers "why is no email arriving": the origin auth links use, the three
-redirect URLs, warnings, and a live probe of Supabase's auth settings.
-`?probe=0` skips the network call. Full runbook:
-[`email-deliverability.md`](./email-deliverability.md).
+- Overall status tracks API reachability: `ok` → 200, `degraded` → 502,
+  `failed` → 503. Responses are `Cache-Control: no-store`.
+- `checks.auth` distinguishes ready, not-configured and misconfigured.
+- `checks.storage` and `checks.encryption` describe configuration readiness,
+  not a database query, migration, encryption round-trip or RLS integration test.
+- Storage/encryption readiness does not control overall HTTP status. Require
+  hosted mode and the expected component states as well as HTTP 200.
+- `commit` is the first seven characters of `VERCEL_GIT_COMMIT_SHA`, or null
+  when unavailable. Compare it with the merged commit; do not reuse example SHAs.
 
-### 5.3 Local API — `GET http://127.0.0.1:3001/health`
+Live load tests, job-loss accounting, inbox delivery and restore rehearsals remain
+separate acceptance gates. Do not label them passed because a build or health check
+succeeded. See the [release checklist](./release-checklist.md) for sign-off.
 
-```json
-{ "status": "ok", "service": "kph-sitepilot-api", "version": "0.1.0", "timestamp": "2026-10-22T08:35:00.000Z" }
-```
+## 7. Local development and legacy boundary
 
-### 5.4 Alert conditions
+For dashboard development, root `.env.local` is loaded by `apps/dashboard/next.config.mjs`.
+Keep it ignored. Omit hosted credentials for local-only mode, or use authorised
+isolated staging credentials for hosted-flow testing. After dependency builds, run
+`pnpm dev:dashboard` (port 3002). Browser-facing requests remain same-origin.
 
-- `GET /api/health` HTTP status != 200 for 2 consecutive checks.
-- `status: "degraded"` or `"failed"` in the body even when the edge returns 200.
-- `checks.auth: "misconfigured"` — a half-configured Supabase pair.
-- Response time > 3000 ms.
-- Process restart count > 3 in 15 minutes.
+`apps/api` is an optional legacy/debug runtime. `API_SERVER_URL` is an explicit
+server-side transport override, not required in hosted production. Application
+Passwords, local `WP_SITE_URL`, platform provider keys and Edge vault settings are
+not substitutes for connector pairing. There is no configured Next.js standalone
+output in this repository; use `pnpm start:dashboard` after a build for Node serving,
+not a nonexistent `.next/standalone/server.js`.
