@@ -32,7 +32,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   try {
     payload = await req.json();
   } catch {
-    payload = {};
+    return json({ error: 'VALIDATION_FAILED', message: 'Request body must be valid JSON.' }, 400);
   }
 
   const parsed = ApproveSchema.safeParse(payload);
@@ -40,30 +40,35 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     return json({ error: 'VALIDATION_FAILED', message: 'Invalid approval payload.' }, 400);
   }
 
-  const store = createSupabasePlanStore();
-  if (!store) return json({ error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' }, 503);
+  try {
+    const store = createSupabasePlanStore();
+    if (!store) return json({ error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' }, 503);
 
-  const plan = await store.getPlan(id);
-  if (!plan) return json({ error: 'PLAN_NOT_FOUND', message: 'No such plan.' }, 404);
-  if (!(await siteBelongsToUser(plan.site_id, auth.context.user.id))) {
-    return json({ error: 'PLAN_NOT_FOUND', message: 'No such plan.' }, 404);
+    const plan = await store.getPlan(id);
+    if (!plan) return json({ error: 'PLAN_NOT_FOUND', message: 'No such plan.' }, 404);
+    if (!(await siteBelongsToUser(plan.site_id, auth.context.user.id))) {
+      return json({ error: 'PLAN_NOT_FOUND', message: 'No such plan.' }, 404);
+    }
+
+    const approved = await approvePlan(
+      { planId: id, approvedBy: auth.context.user.id, confirmation: parsed.data.confirmation },
+      { store }
+    );
+
+    if (!approved.ok) return json({ error: approved.code, message: approved.message }, approved.status);
+
+    return json(
+      {
+        status: 'approved',
+        planId: id,
+        planHash: approved.approval.plan_hash,
+        risk: plan.risk,
+        next: 'Run the plan when you are ready. Each step is a separate signed job.',
+      },
+      200
+    );
+  } catch {
+    return NextResponse.json({ error: 'APPROVAL_UNAVAILABLE', message: 'The operation could not be confirmed. Check Activity before trying again.' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
-
-  const approved = await approvePlan(
-    { planId: id, approvedBy: auth.context.user.id, confirmation: parsed.data.confirmation },
-    { store }
-  );
-
-  if (!approved.ok) return json({ error: approved.code, message: approved.message }, approved.status);
-
-  return json(
-    {
-      status: 'approved',
-      planId: id,
-      planHash: approved.approval.plan_hash,
-      risk: plan.risk,
-      next: 'Run the plan when you are ready. Each step is a separate signed job.',
-    },
-    200
-  );
 }

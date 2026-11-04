@@ -35,36 +35,41 @@ export async function GET(req: Request) {
     );
   }
 
-  const supabase = createSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Connector storage is not configured.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } }
-    );
+  try {
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Connector storage is not configured.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const { data: job, error } = await supabase
+      .from('jobs')
+      .select('id, site_id, tool, status, risk, attempts, result, error, created_at, updated_at')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error || !job) {
+      return NextResponse.json(
+        { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const owned = await siteBelongsToUser((job as { site_id: string }).site_id, auth.context.user.id);
+    if (!owned) {
+      return NextResponse.json(
+        { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    return NextResponse.json({ job }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch {
+    return NextResponse.json({ error: 'JOB_LOAD_FAILED', message: 'The operation could not be confirmed. Check Activity before trying again.' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
-
-  const { data: job, error } = await supabase
-    .from('jobs')
-    .select('id, site_id, tool, status, risk, attempts, result, error, created_at, updated_at')
-    .eq('id', jobId)
-    .maybeSingle();
-
-  if (error || !job) {
-    return NextResponse.json(
-      { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  const owned = await siteBelongsToUser((job as { site_id: string }).site_id, auth.context.user.id);
-  if (!owned) {
-    return NextResponse.json(
-      { error: 'JOB_NOT_FOUND', message: 'No such job for your account.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  return NextResponse.json({ job }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 /**

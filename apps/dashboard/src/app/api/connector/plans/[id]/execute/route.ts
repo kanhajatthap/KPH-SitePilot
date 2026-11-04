@@ -24,32 +24,37 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 
   const { id } = await context.params;
 
-  const store = createSupabasePlanStore();
-  if (!store) {
-    return NextResponse.json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
+  try {
+    const store = createSupabasePlanStore();
+    if (!store) {
+      return NextResponse.json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
-  const plan = await store.getPlan(id);
-  if (!plan || !(await siteBelongsToUser(plan.site_id, auth.context.user.id))) {
-    return NextResponse.json(
-      { error: 'PLAN_NOT_FOUND', message: 'No such plan.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
+    const plan = await store.getPlan(id);
+    if (!plan || !(await siteBelongsToUser(plan.site_id, auth.context.user.id))) {
+      return NextResponse.json(
+        { error: 'PLAN_NOT_FOUND', message: 'No such plan.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
-  const started = await startPlan({ planId: id }, { store });
-  if (!started.ok) {
-    return NextResponse.json(
-      { error: started.code, message: started.message },
-      { status: started.status, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
+    const started = await startPlan({ planId: id }, { store });
+    if (!started.ok) {
+      return NextResponse.json(
+        { error: started.code, message: started.message },
+        { status: started.status, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
-  return NextResponse.json(
-    { status: 'queued', planId: id, jobId: started.jobId, steps: plan.steps.length },
-    { status: 202, headers: { 'Cache-Control': 'no-store' } }
-  );
+    return NextResponse.json(
+      { status: 'queued', planId: id, jobId: started.jobId, steps: plan.steps.length },
+      { status: 202, headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch {
+    return NextResponse.json({ error: 'EXECUTION_UNAVAILABLE', message: 'The operation could not be confirmed. Check Activity before trying again.' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { isolatedPreviewDocument, PREVIEW_SANDBOX, safePreviewUrl } from '../lib/preview-isolation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { DraftProposal, BuilderProposal, PreviewState, SitePageSummary } from '../lib/types';
 
@@ -424,10 +425,9 @@ export function PreviewCanvas({
           <div className="flex h-full w-full flex-col" style={viewportStyle}>
             {builderProposal ? (
               <div className="h-full w-full overflow-y-auto rounded-xl border border-line bg-white shadow-lift">
-                <div
-                  className="builder-canvas-preview text-ink"
-                  dangerouslySetInnerHTML={{ __html: builderProposal.renderedPreviewHtml }}
-                />
+                <iframe title="Static builder preview" className="h-full min-h-[400px] w-full"
+                  sandbox={PREVIEW_SANDBOX} referrerPolicy="no-referrer"
+                  srcDoc={isolatedPreviewDocument(builderProposal.renderedPreviewHtml)} />
               </div>
             ) : proposal ? (
               <article className="mx-auto h-full w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-9">
@@ -473,10 +473,9 @@ export function PreviewCanvas({
                     <Icon d="M7 17L17 7M9 7h8v8" className="h-3 w-3" />
                   </a>
                 </div>
-                <div
-                  className="prose prose-stone mt-5 max-w-none text-[13.5px] leading-7 text-ink-soft"
-                  dangerouslySetInnerHTML={{ __html: res.content }}
-                />
+                <iframe title="Static content preview" className="mt-5 min-h-[400px] w-full"
+                  sandbox={PREVIEW_SANDBOX} referrerPolicy="no-referrer"
+                  srcDoc={isolatedPreviewDocument(res.content)} />
               </article>
             ) : plan ? (
               <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-white p-6 shadow-lift sm:p-8">
@@ -653,10 +652,11 @@ export function PreviewCanvas({
           <div className="flex h-full w-full justify-center" style={viewportStyle}>
             <iframe
               key={iframeKey}
-              src={selectedLiveUrl}
+              src={safePreviewUrl(selectedLiveUrl)}
               className="h-full min-h-[500px] w-full rounded-xl border border-line bg-white shadow-lift"
               title="Live WordPress preview"
-              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+              sandbox={PREVIEW_SANDBOX}
+              referrerPolicy="no-referrer"
             />
           </div>
         ) : null}

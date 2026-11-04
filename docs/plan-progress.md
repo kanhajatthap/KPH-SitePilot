@@ -420,3 +420,48 @@ and production security verification remain unverified.
 Delivery update: the owner subsequently requested a pull request for this batch.
 The local-only status above records the completion checkpoint; commit/push and PR
 creation are now authorised. Merge and production deployment remain unrequested.
+
+## 2026-11-04 — six-track safety/recovery batch, local work only
+
+Branch `arena/424f5575-kph-sitepilot`; no commit/push/PR/merge, remote migration,
+production probing, credential change or live load/restore operation performed.
+
+| Track | Implemented / verified locally | Outstanding |
+|---|---|---|
+| Remaining API audit | Plan create/approve/execute and job-read exception boundaries; malformed approval JSON fails before storage; owner denials retained | Global audit of all returned payloads/auth infrastructure not claimed |
+| Preview isolation | Removed both direct HTML sinks; static srcDoc with early restrictive CSP and sandbox with no permissions; live URL scheme/credential checks and no script/same-origin/form/popup sandbox permissions | Browser adversarial/E2E unrun; scripts and remote assets intentionally restricted, visual compatibility needs review |
+| Undo | No enqueue-time restored_at write; explicit boolean verification required for restore job success; DB trigger sets timestamp and job link only for matching project/site/idempotency restore job | Migration not deployed; full local Supabase/pgTAP pending; historical timestamps and retry/reconciliation remain separate |
+| Revocation | Single RPC, site-status cancellation trigger (including PATCH), and claim admission site lock/status check; cancellation failure rolls back revocation | Migration not deployed; full concurrency testing pending; already-running WordPress work not stopped |
+| Documentation | Connector route inventory, auth/outcome/deployment semantics; security and recovery docs corrected; rollout gate added | Full historical docs sweep remains open |
+| Live acceptance | Read-only Supabase project listing succeeded, but only a project different from the documented production target was visible; no confirmed isolated staging/inbox/WordPress target | Real auth/email/WP E2E, deployed p95/job accounting and restore rehearsal BLOCKED, not passed |
+
+Evidence from `/home/user/KPH-SitePilot`:
+- `pnpm install --frozen-lockfile` + dependency build: exit 0.
+- Targeted preview/undo/error suites: 22 tests / 3 files, exit 0.
+- Restore handler tests: 32 passed; first revocation mock run had 2 failures
+  because ownership metadata was absent in the fake. Corrected the fixture.
+- Final remaining-API/revocation suites: 10 tests / 2 files, exit 0.
+- `pnpm --filter @wp-agent/dashboard test`: **609 tests / 58 files**, exit 0.
+- `pnpm release:check`: **8/8 gates**, exit 0; typecheck 22/22, lint 12/12,
+  `pnpm test --force` **969 tests / 99 files**, build 12/12, governance 35/35,
+  tracked-file secret audit 306 / zero findings, diff clean.
+- SQL: installed Apache-2.0 `@electric-sql/pglite@0.3.14` only in external scratch
+  `/home/user/.cache/sitepilot-sql` (no workspace dependency/lockfile change).
+  Executed the migration and database test statements on an isolated minimal
+  schema with assertion shims: **11 SQL assertions passed**, exit 0. This tests
+  trigger/RPC syntax, verified completion, revoked claim denial and rollback on
+  cancellation failure, NOT full Supabase/pgTAP, RLS or a restore rehearsal.
+  Reproducible harness: `node supabase/tests/recovery-smoke.mjs /home/user/.cache/sitepilot-sql/node_modules/@electric-sql/pglite/dist/index.js` from repo root.
+- Docker, PHP runtime and browser binaries absent; full DB stack and browser XSS
+  tests unverified. Local lint used the PHP parser. No remote CI run for this batch.
+
+Rollout blocker: validate the migration on full isolated Supabase and authorised
+staging BEFORE app deployment. Missing RPC must fail safely, not silently fall
+back to non-atomic writes. Live acceptance must not be replaced with production
+load/destructive tests. Request confirmed staging project/site/inbox scope through
+normal app settings, not secrets in chat.
+
+Delivery update: the owner requested a pull request for this branch. Commit/push
+and draft PR creation are now authorised; the local-only statements above describe
+the implementation checkpoint. Full isolated Supabase/staging migration validation
+and browser/live acceptance remain outstanding. No merge or deployment authorised.

@@ -23,10 +23,10 @@ auth links, cookies or decrypted snapshot data in public issues or chat.
 1. Verify the signed-in owner and intended site at `/connect`. Use **Pause** to
    block subsequent signed connector requests while investigating. Authentication
    rejects paused and revoked sites with `SITE_PAUSED` / `SITE_REVOKED`.
-2. For compromise, use **Disconnect** and confirm the site name. This soft-revokes
-   the site and attempts to cancel queued jobs while retaining history. Verify
-   queue state separately: the cancellation update is not atomic with revocation,
-   and its database error is not checked by the current store implementation.
+2. For compromise, use **Disconnect** and confirm the site name. With the recovery migration installed, this soft-revokes
+   the site and cancels queued jobs in one database transaction while retaining
+   history. Earlier code was not atomic with revocation; old outcomes still need
+   reconciliation. A database failure must not be reported as a completed revoke.
 3. Pause/revoke is not an emergency stop for already-claimed or running work.
    Inspect WordPress state directly through the authorised owner's admin interface
    and reconcile in-flight jobs. A blocked result submission is not proof that a
@@ -80,8 +80,9 @@ Use the [backup and restore runbook](./backup-restore-strategy.md). Identify the
 specific snapshot and compare current content, including legitimate edits made
 since the incident. Do not blindly undo an entire site or replay failed jobs.
 
-An undo response of **202 queued is not restored**. The route marks snapshot
-metadata when the undo job is enqueued, before WordPress executes it. Follow the
+An undo response of **202 queued is not restored**. The recovery migration marks snapshot metadata only after a succeeded restore
+job with boolean verified=true. Earlier deployments marked it at enqueue time;
+old restored_at values are not automatically repaired. Follow the
 returned job and verify the resulting WordPress state; `restored_at` alone is not
 proof. If `ALREADY_RESTORED` appears after a failed job, inspect that job rather
 than resetting metadata or resubmitting repeatedly.

@@ -370,6 +370,17 @@ describe('authenticateConnectorRequest', () => {
 });
 
 describe('connector handlers', () => {
+  it.each([undefined, false, 'true', true])('requires boolean restore verification (%s)', async (verified) => {
+    jobs.jobs[0] = makeJob({ status: 'claimed', tool: 'content.restore' });
+    const body = JSON.stringify({ jobId: JOB_ID, ok: true, result: { verified } });
+    const output = await handleJobResult(JOB_ID, signed(body), body, deps);
+    expect(output.body).toMatchObject({ status: verified === true ? 'succeeded' : 'failed' });
+    if (verified !== true) {
+      expect(jobs.finished[0].error?.code).toBe('RESTORE_UNVERIFIED');
+      expect(jobs.finished[0].retryable).toBe(false);
+    }
+  });
+
   it('records a heartbeat with the capability manifest', async () => {
     const body = JSON.stringify({
       pluginVersion: '0.3.0',

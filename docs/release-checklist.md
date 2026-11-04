@@ -109,3 +109,14 @@ missing staging access. Never ask for credentials in chat.
 
 Replace Pending only with attributable evidence for the particular release.
 Repository tests do not provide human sign-off or general-availability approval.
+
+### Recovery-integrity rollout gate (2026-11-04 branch work)
+
+Before deploying the recovery changes, run `supabase test db --local` on the full
+isolated schema including `20261104120000_recovery_integrity.sql`. Rehearse migration
+and rollback on authorised staging, then deploy the migration before the app.
+The optional PGlite smoke harness (`supabase/tests/recovery-smoke.mjs`) tests the
+SQL logic on a minimal fixture, not full RLS, Supabase integration or concurrency.
+Local release:check does not run this database gate. Do not deploy solely because
+its eight repository gates passed. Historical restored_at values require a
+separately reviewed reconciliation; this migration does not silently rewrite them.

@@ -58,11 +58,11 @@ These are observed code limitations or unverified boundaries, not fixed by this
 review. Severity/exploitability requires focused validation; do not imply an
 exploit was reproduced merely from source inspection.
 
-1. **Preview rendering:** `apps/dashboard/src/components/PreviewCanvas.tsx` has
-   `dangerouslySetInnerHTML` sinks and an iframe allowing scripts and same-origin.
-   The earlier claim that raw HTML rendering is prohibited everywhere was false.
-   Trace each data source, sanitisation and iframe origin; add adversarial XSS tests
-   and review isolation before asserting browser containment.
+1. **Preview isolation (code hardened, browser audit pending):** PreviewCanvas
+   no longer injects HTML into the dashboard DOM. Static content is in opaque-origin
+   sandboxed srcDoc frames with restrictive CSP; live frames have no script,
+   same-origin, form or popup permissions. Remote resources/styles may no longer
+   render identically. Browser-based adversarial verification remains unrun.
 2. **Connector rate-limit ordering (fixed in code, 2026-11-04):** the per-site
    budget now runs after signature/site matching and successful nonce recording.
    Invalid signatures, stale requests and replays cannot spend that site's budget.
@@ -84,11 +84,14 @@ exploit was reproduced merely from source inspection.
    factories and selected ownership/query failures are inside safe boundaries.
    Rotation uses a typed configuration error, not matching backend message text;
    unreadable pairing-code bodies fail before project/code creation.
-   Other connector handlers still require review for raw caught error messages;
+   Plan create/approve/execute and job-read storage exceptions are also masked.
+   Other handler-returned payloads still require review for raw caught error messages;
    this scoped fix does not certify all runtime errors as scrubbed.
-5. **Recovery bookkeeping:** undo marks snapshot restoration metadata at enqueue,
-   not verified completion; revoke/cancel is not atomic; cloud snapshot recording
-   may fail after a write. Consult the incident/backup runbooks and do not infer
+5. **Recovery bookkeeping (migration pending):** a new SQL completion trigger
+   marks verified restore outcomes; revocation uses a transactional RPC/site trigger.
+   Requires isolated migration validation and deployment before app rollout. Old
+   restored timestamps are not repaired, concurrent in-flight work still needs
+   reconciliation, and cloud snapshot recording may fail after a write. Consult the incident/backup runbooks and do not infer
    restoration or cancellation from a request being accepted.
 6. **Dependency audit:** CI currently logs production dependency audit warnings
    without failing the job. Green CI is not proof of zero vulnerabilities or

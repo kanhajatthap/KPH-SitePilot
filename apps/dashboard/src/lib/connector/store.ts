@@ -381,12 +381,8 @@ export function createSupabaseSiteWriter(): SiteWriter | null {
     },
 
     async revokeSite(siteId) {
-      const { error } = await supabase
-        .from('sites')
-        .update({ status: 'revoked', updated_at: new Date().toISOString() })
-        .eq('id', siteId);
-
-      if (error) throw new Error(error.message);
+      const { error } = await supabase.rpc('revoke_connector_site', { p_site_id: siteId });
+      if (error) throw new Error('Site revocation could not be confirmed.');
     },
   };
 }
@@ -572,16 +568,6 @@ export async function getSnapshot(snapshotId: string): Promise<SnapshotRow | nul
   return (data as SnapshotRow | null) ?? null;
 }
 
-export async function markSnapshotRestored(snapshotId: string, jobId: string | null): Promise<void> {
-  const supabase = createSupabaseAdminClient();
-  if (!supabase) return;
-
-  await supabase
-    .from('snapshots')
-    .update({ restored_at: new Date().toISOString(), restore_job_id: jobId })
-    .eq('id', snapshotId);
-}
-
 /** True when the site belongs to the given user (checked in SQL, not by trust). */
 export async function siteBelongsToUser(siteId: string, userId: string): Promise<boolean> {
   const supabase = createSupabaseAdminClient();
@@ -702,18 +688,8 @@ export async function revokeSiteForUser(siteId: string, userId: string): Promise
 
   if (!(await siteBelongsToUser(siteId, userId))) return 'not_found';
 
-  const { error } = await supabase
-    .from('sites')
-    .update({ status: 'revoked', updated_at: new Date().toISOString() })
-    .eq('id', siteId);
-
+  const { error } = await supabase.rpc('revoke_connector_site', { p_site_id: siteId });
   if (error) return 'unavailable';
-
-  await supabase
-    .from('jobs')
-    .update({ status: 'cancelled' })
-    .eq('site_id', siteId)
-    .eq('status', 'queued');
 
   return 'revoked';
 }

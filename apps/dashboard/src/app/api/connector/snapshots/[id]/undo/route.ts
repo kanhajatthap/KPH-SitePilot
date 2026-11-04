@@ -4,7 +4,6 @@ import { createSupabaseAdminClient } from '../../../../../../lib/supabase/admin'
 import {
   enqueueConnectorJob,
   getSnapshot,
-  markSnapshotRestored,
   siteBelongsToUser,
 } from '../../../../../../lib/connector/store';
 import { resolveUndoJob } from '../../../../../../lib/connector/undo';
@@ -75,7 +74,7 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
       idempotencyKey: `undo:${snapshot.id}`,
     });
 
-    await markSnapshotRestored(snapshot.id, jobId);
+    if (!jobId) throw new Error('Restore job was not queued.');
 
     return NextResponse.json(
       { status: 'queued', jobId, tool: resolved.tool, resource: snapshot.resource },

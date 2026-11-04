@@ -239,11 +239,15 @@ export async function handleJobResult(
     };
   }
 
-  const ok = body.ok === true;
-  const errorCode = asString((body.error as Record<string, unknown> | undefined)?.code) ?? 'TOOL_FAILED';
+  const restoreTools = new Set(['content.restore', 'settings.restore', 'terms.restore',
+    'seo.meta.restore', 'media.restore', 'media.restore_featured', 'menus.restore']);
+  const unverifiedRestore = body.ok === true && restoreTools.has(job.tool) &&
+    (body.result as { verified?: unknown } | undefined)?.verified !== true;
+  const ok = body.ok === true && !unverifiedRestore;
+  const errorCode = unverifiedRestore ? 'RESTORE_UNVERIFIED' : asString((body.error as Record<string, unknown> | undefined)?.code) ?? 'TOOL_FAILED';
   const errorMessage =
-    asString((body.error as Record<string, unknown> | undefined)?.message) ?? 'The connector reported a failure.';
-  const retryable = body.retryable !== false;
+    unverifiedRestore ? 'Restore was not verified. Inspect the site before retrying.' : asString((body.error as Record<string, unknown> | undefined)?.message) ?? 'The connector reported a failure.';
+  const retryable = !unverifiedRestore && body.retryable !== false;
   const durationMs = typeof body.durationMs === 'number' ? body.durationMs : undefined;
 
   if (ok) {
