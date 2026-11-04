@@ -115,3 +115,21 @@ WordPress integration or proof of real-host locking/durability.
   concurrency/fault injection and independent recovery acceptance remain pending.
 - No connected-site configuration, database migration or production rollout was
   performed for this batch.
+
+## Follow-up hardening — 2026-11-04
+
+- Reject anonymous user IDs even if a capability filter erroneously allows them.
+- Refresh filesystem metadata on each resolution and reject a world-writable
+  content root, not only world-writable children.
+- Read at most 64 KiB + 1 byte from an opened handle; compare its device/inode to
+  the live path before and after reading. This bounds allocation if an external
+  writer grows a file after the size check. It is not a filesystem snapshot and
+  does not eliminate races with non-cooperative writers.
+- Added boundary-size, invalid UTF-8, anonymous-user and content-root permission
+  fixtures, plus restore refusal for wrong owner/confirmation and rotated salts.
+- Local PHP 8.5 WASM: **57 engine assertions + 2 disabled-mode assertions passed**;
+  hard-link test remains explicitly skipped. PHP parser: **17 files passed**.
+  Focused dashboard governance/release-boundary checks: **23 tests / 2 files passed**.
+- Hosted integration and independent runtime-fatal recovery remain pending; no
+  bootstrap, catalog, endpoint or activation changes are included.
+- Follow-up full `pnpm release:check`: **8/8 gates passed**, **974 tests / 100 files**.
