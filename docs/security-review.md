@@ -72,10 +72,13 @@ exploit was reproduced merely from source inspection.
 3. **Abuse metadata and scaling:** counters are in-process/per-instance and fail
    open on counter errors. Signed routes still return fixed `Retry-After: 30` in
    `route-helpers.ts`; do not claim all endpoints report the actual reset time.
-4. **Error disclosure:** some connector handlers return raw caught error messages
-   (for example the site route and snapshot undo route). Secret-audit success does
-   not prove all runtime errors are scrubbed. Replace unsafe boundaries with typed
-   safe errors in a separately tested change.
+4. **Error disclosure (partially hardened, 2026-11-04):** site GET/PATCH/DELETE
+   and snapshot undo now convert backend exceptions to fixed client-safe messages.
+   Snapshot lookup and ownership failures are included in the undo error boundary;
+   no restore is queued when those checks throw. Undo failure copy tells the owner
+   to inspect Activity first because enqueue may already have succeeded.
+   Other connector handlers still require review for raw caught error messages;
+   this scoped fix does not certify all runtime errors as scrubbed.
 5. **Recovery bookkeeping:** undo marks snapshot restoration metadata at enqueue,
    not verified completion; revoke/cancel is not atomic; cloud snapshot recording
    may fail after a write. Consult the incident/backup runbooks and do not infer

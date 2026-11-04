@@ -81,8 +81,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     }
 
     return json({ site, capabilitySummary: summariseCapabilities(site.capabilities) });
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Connected sites are unavailable. Refresh the site details before trying again.' }, 503);
   }
 }
 
@@ -123,8 +123,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return json({ error: 'SITE_NOT_FOUND', message: 'That site is not connected to your account.' }, 404);
     }
     return json({ site });
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Connected sites are unavailable. Refresh the site details before trying again.' }, 503);
   }
 }
 
@@ -148,17 +148,21 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
     return json({ error: 'VALIDATION_FAILED', message: 'Site id must be a UUID.' }, 400);
   }
 
-  const result = await revokeSiteForUser(id, auth.context.user.id);
+  try {
+    const result = await revokeSiteForUser(id, auth.context.user.id);
 
-  if (result === 'not_found') {
-    return json({ error: 'SITE_NOT_FOUND', message: 'That site is not connected to your account.' }, 404);
+    if (result === 'not_found') {
+      return json({ error: 'SITE_NOT_FOUND', message: 'That site is not connected to your account.' }, 404);
+    }
+
+    if (result === 'unavailable') {
+      return json({ error: 'STORAGE_UNAVAILABLE', message: 'Connected sites are not available right now.' }, 503);
+    }
+
+    return json({ site: { id, status: 'revoked' } });
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Disconnect could not be confirmed. Refresh the site status before trying again.' }, 503);
   }
-
-  if (result === 'unavailable') {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Connected sites are not available right now.' }, 503);
-  }
-
-  return json({ site: { id, status: 'revoked' } });
 }
 
 /**
