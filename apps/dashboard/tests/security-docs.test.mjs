@@ -15,7 +15,7 @@ describe('E11-08 security evidence and public docs', () => {
   });
   it('keeps code findings open rather than claiming certification', () => {
     expect(review).not.toContain('COMPLETED & VERIFIED');
-    for (const text of ['dangerouslySetInnerHTML', 'before\n   signature verification', 'Retry-After: 30', 'raw caught error messages', 'without failing the job']) {
+    for (const text of ['dangerouslySetInnerHTML', 'budget now runs after signature/site matching', 'Retry-After: 30', 'raw caught error messages', 'without failing the job']) {
       expect(review).toContain(text);
     }
     expect(review).toContain('not fixed by this');

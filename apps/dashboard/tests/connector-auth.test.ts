@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   buildSignedHeaders,
   generateNonce,
@@ -300,6 +300,55 @@ describe('authenticateConnectorRequest', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('SECRET_UNAVAILABLE');
+  });
+
+  it.each(['wrong-secret', 'tampered-body', 'stale', 'missing-signature'])(
+    'does not consume site budget for %s requests', async (kind) => {
+      const headers = signed('{}', kind === 'wrong-secret'
+        ? { secret: 'c'.repeat(64) }
+        : kind === 'stale' ? { nowSeconds: 1_799_999_000 } : {});
+      if (kind === 'missing-signature') headers.delete('x-sitepilot-signature');
+      const isRateLimited = vi.fn(() => true);
+      const result = await authenticateConnectorRequest({
+        headers, rawBody: kind === 'tampered-body' ? '{"changed":true}' : '{}',
+        store: sites, encryptionKey: KEY, nowSeconds: 1_800_000_000, isRateLimited,
+      });
+      expect(result).toMatchObject({ ok: false, status: 401 });
+      expect(isRateLimited).not.toHaveBeenCalled();
+      expect(sites.nonces.size).toBe(0);
+    }
+  );
+
+  it('charges fresh authenticated requests once, not replayed requests', async () => {
+    const headers = signed('{}');
+    const isRateLimited = vi.fn(() => false);
+    const input = { headers, rawBody: '{}', store: sites, encryptionKey: KEY,
+      nowSeconds: 1_800_000_000, isRateLimited };
+    expect((await authenticateConnectorRequest(input)).ok).toBe(true);
+    expect(await authenticateConnectorRequest(input)).toMatchObject({ code: 'REPLAY_DETECTED' });
+    expect(isRateLimited).toHaveBeenCalledExactlyOnceWith(SITE_ID);
+  });
+
+  it('consumes a denied authenticated nonce; retries require a fresh signature', async () => {
+    const headers = signed('{}');
+    const isRateLimited = vi.fn(() => true);
+    const input = { headers, rawBody: '{}', store: sites, encryptionKey: KEY,
+      nowSeconds: 1_800_000_000, isRateLimited };
+    expect(await authenticateConnectorRequest(input)).toMatchObject({ status: 429 });
+    expect(await authenticateConnectorRequest(input)).toMatchObject({ code: 'REPLAY_DETECTED' });
+    isRateLimited.mockReturnValue(false);
+    expect((await authenticateConnectorRequest({ ...input, headers: signed('{}') })).ok).toBe(true);
+    expect(isRateLimited).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not charge when nonce storage fails closed', async () => {
+    const isRateLimited = vi.fn(() => false);
+    sites.recordNonce = async () => { throw new Error('storage unavailable'); };
+    expect(await authenticateConnectorRequest({
+      headers: signed('{}'), rawBody: '{}', store: sites, encryptionKey: KEY,
+      nowSeconds: 1_800_000_000, isRateLimited,
+    })).toMatchObject({ code: 'REPLAY_DETECTED' });
+    expect(isRateLimited).not.toHaveBeenCalled();
   });
 
   it('enforces the per-site budget', async () => {

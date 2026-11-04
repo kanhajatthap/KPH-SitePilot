@@ -299,3 +299,28 @@
   change or certification. PHP runtime verification belongs to PR CI.
 - Next: prioritise connector budget ordering and unsafe error boundaries, review
   preview input isolation, and finish E11-08 connector API reference/doc audit.
+
+## 2026-11-04 — connector authenticated budget ordering
+
+- Branch `arena/5ccd1e0c-kph-sitepilot`. Moved the per-site rate-limit callback
+  after signature verification, site matching and successful nonce recording.
+  Forged, stale and replayed traffic no longer spends a site's authenticated budget.
+  A valid denied request consumes its nonce; retry with a freshly signed request.
+- Added seven regression cases: wrong secret, changed body, stale timestamp,
+  missing signature, replay accounting, denied-request retry and nonce-store failure.
+  Updated the security finding and abuse docs; remaining error/preview findings
+  are not fixed by this change. No new global/IP DoS protection is claimed.
+- Commands in `/home/user/KPH-SitePilot`:
+  - `pnpm install --frozen-lockfile` and dependency build via
+    `pnpm exec turbo run build --filter='@wp-agent/dashboard^...'`: exit 0.
+  - Before fix, `pnpm --filter @wp-agent/dashboard test tests/connector-auth.test.ts`:
+    exit 1, seven new regressions failed / 21 existing tests passed.
+  - After fix, `pnpm --filter @wp-agent/dashboard test tests/connector-auth.test.ts tests/security-docs.test.mjs tests/abuse-guard.test.ts`:
+    exit 0, 40 tests / 3 files.
+  - `pnpm release:check`: exit 0, 8/8 gates; 849 tests / 93 files
+    (dashboard 489 / 52), typecheck 22/22, lint 12/12, build 12/12,
+    governance 35/35, secret audit 306 files / zero findings; diff clean.
+- No production changes or live load/E2E test. Local PHP verification uses the
+  parser; runtime PHP checks are left to PR CI.
+- Next: typed safe errors at connector boundaries; preview isolation review and
+  full connector API documentation remain pending.

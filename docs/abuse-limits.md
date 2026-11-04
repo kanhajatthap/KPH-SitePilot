@@ -73,3 +73,12 @@ Every denial is `RATE_LIMIT_EXCEEDED` with a `Retry-After >= 1`, a future `reset
 - This is a **deterministic in-process simulation**, not a deployed load test. E11-04 still owes p95 < 800 ms and a no-job-loss measurement against a running deployment.
 - The signed connector routes keep their legacy `Retry-After: 30` in `connectorJson`; the typed 429 body above is served by the pair, chat and plan routes. Unifying the signed-route 429 headers is a follow-up.
 - No secret, connection string or stack frame is returned by any denial.
+
+## Signed connector authentication order
+
+Per-site budget is consumed only after signature/site matching and successful
+nonce recording. Invalid signatures, stale timestamps, replayed requests and
+nonce-store failures do not spend that site's budget. A valid request denied
+with 429 still consumes its nonce: wait, then sign a fresh request with a new
+nonce/timestamp. Never replay the old signature as a retry. This guard does not
+replace edge/IP protection for unauthenticated lookup or cryptographic load.
