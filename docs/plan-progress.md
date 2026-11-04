@@ -276,3 +276,26 @@
   credential rotation, database operation or manual deployment executed.
 - Follow-up: security review and API/FAQ audit; separately harden undo completion
   bookkeeping and revoke/cancel error handling rather than implying docs fixed them.
+
+## 2026-11-04 — E11-08 security evidence / public FAQ and safety
+
+- On `arena/65e8efb2-kph-sitepilot`, replaced the legacy blanket security
+  certification with a hosted control/evidence map and explicit open findings.
+- Source review found raw HTML preview sinks, pre-signature per-site budget
+  consumption, fixed signed-route retry metadata and raw error-message boundaries.
+  Recorded these as review/remediation work, not demonstrated exploits or fixes.
+  Retained recovery/dependency/live-evidence limitations from the operational audit.
+- Corrected public FAQ/safety claims: conditional undo, enqueue versus completion,
+  configurable email transport, existing local database CI, and code injection as
+  prohibited rather than a roadmap feature. Full API reference audit remains open.
+- Verification in `/home/user/KPH-SitePilot`, each exit 0:
+  - `pnpm install --frozen-lockfile`: 197 packages, unchanged lockfile.
+  - `pnpm --filter @wp-agent/dashboard test tests/security-docs.test.mjs tests/release-check.test.mjs`:
+    13 tests / 2 files (four new security-doc regressions).
+  - `pnpm release:check`: 8/8 gates; tests 842 / 93 files (dashboard 482 / 52),
+    typecheck 22/22, lint 12/12, build 12/12, governance 35/35,
+    secret audit 306 tracked files / zero findings, diff check clean.
+- No runtime security fixes, live penetration test, database operation, production
+  change or certification. PHP runtime verification belongs to PR CI.
+- Next: prioritise connector budget ordering and unsafe error boundaries, review
+  preview input isolation, and finish E11-08 connector API reference/doc audit.

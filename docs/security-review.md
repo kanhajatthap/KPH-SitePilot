@@ -1,59 +1,113 @@
-# KPH SitePilot — Comprehensive Security Review & Audit
+# KPH SitePilot — hosted security review and evidence map
 
-> **Scope correction (2026-11-04):** This dated review records earlier local-API scope, not a current hosted security certification. Its REST transport, global headers/limits and verification assertions must not be extrapolated to hosted routes. The hosted product uses the signed connector queue, catalog risk floors, owner-side checks and optional encrypted BYOK keys. Re-run release gates and collect live tenancy evidence before sign-off. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+> **Scope correction (2026-11-04):** This replaces the earlier local-API audit.
+> It records code controls and unresolved review items, not a penetration test,
+> compliance certification or live security sign-off. See the
+> [release checklist](./release-checklist.md) and [documentation map](./README.md).
 
-**Date:** 2026-10-22  
-**Status:** COMPLETED & VERIFIED  
-**Frameworks:** OWASP Top 10 for LLMs (2025), CWE Top 25, WordPress Defensive Coding Standards
+## 1. Trust boundaries and source evidence
 
----
+The browser uses hosted Next.js routes, verified sessions and owner-scoped data.
+WordPress uses the signed connector job queue; legacy local API/Edge proxy code
+must not be treated as the hosted transport. Site content and model output are
+untrusted. Provider credentials are optional encrypted BYOK, not a required
+platform-wide key.
 
-## 1. OWASP Top 10 for LLM Applications Matrix
+Paths below are relative to the repository. Tests are review entry points; their
+presence alone does not mean they passed on a particular commit.
 
-| Vulnerability ID | Vulnerability Name | Mitigation in KPH SitePilot | Verification Status |
-|---|---|---|---|
-| **LLM01** | **Prompt Injection** | Prompt delimiters isolate system instructions from user prompts. WordPress page contents and external data are parsed as untrusted strings, never as instructions. Zod schema validation strips non-conforming instructions. | Verified in `tests/agent-core.test.ts` & `tests/page-read.test.ts` |
-| **LLM02** | **Insecure Output Handling** | Model outputs are parsed into strict Zod ASTs (`SitePlanSchema`, `ChangePlanSchema`). Dashboard renders using typed React components with automatic text escaping; `dangerouslySetInnerHTML` is prohibited. | Verified in `apps/dashboard/tests/` |
-| **LLM03** | **Training Data Poisoning** | KPH SitePilot operates strictly via runtime inference against authorized foundational models (Gemini); no continuous fine-tuning is performed on untrusted corpus. | N/A (Runtime Inference) |
-| **LLM04** | **Model Denial of Service** | Strict 64 KB request body limits (`readJsonBody`), max token caps (8192 tokens), and sliding-window rate limiters prevent resource exhaustion. | Verified in `apps/api/src/index.ts` & `packages/supabase/tests/agent-proxy.test.ts` |
-| **LLM05** | **Supply Chain Vulnerabilities** | Monorepo uses `pnpm` with frozen lockfile validation (`--frozen-lockfile`) and supply-chain auditing. Zero untrusted CDN scripts. | Verified via `pnpm audit` |
-| **LLM06** | **Sensitive Information Disclosure** | WordPress credentials and Gemini API keys are server-side only. Logs pass through `@wp-agent/audit` with automated regex redaction. Credentials in database are encrypted with AES-256-GCM. | Verified in `packages/audit/tests/` & `packages/supabase/tests/vault.test.ts` |
-| **LLM07** | **Insecure Plugin Design** | Tool execution is **deny-by-default**. Tool invocations are strictly schema-validated; unknown tools, arbitrary shell commands, and arbitrary PHP code evaluation are rejected with `UNKNOWN_TOOL` / `FORBIDDEN`. | Verified in `packages/agent-core/tests/` |
-| **LLM08** | **Excessive Agency** | All write operations are staged into a `ChangePlan`. Direct mutations are forbidden without explicit human approval and cryptographic hash locking (`calculatePlanHash`). | Verified in `packages/agent-core/tests/mutation-controller.test.ts` |
-| **LLM09** | **Overreliance** | Staged change plans display human-readable before/after visual diffs and dry-run impact estimates prior to execution. | Verified in Phase 5 controller & UI |
-| **LLM10** | **Model Theft** | API keys and adapter tokens reside behind server-side reverse proxy and Supabase Edge Functions; never exposed to browser context. | Verified in `apps/dashboard/tests/api-routes.test.ts` |
+| Boundary / risk | Implemented controls | Evidence entry points |
+|---|---|---|
+| Model output and excessive agency | Canonical tool names, argument validation, scopes/capability checks, risk floors; model output cannot invent tools or lower risk | `packages/wp-tools/src/`, `apps/dashboard/src/lib/connector/model-planner.ts`, `apps/dashboard/tests/model-planner.test.ts` |
+| Approval integrity | Approved plan hash, R2 typed CONFIRM, R3 plan-id confirmation and snapshot requirements | `apps/dashboard/src/lib/connector/plans.ts`, `apps/dashboard/tests/connector-plans.test.ts` |
+| Connector authenticity/replay | HMAC-SHA256 over timestamp, nonce and raw-body hash; constant-time signature check, timestamp window and stored nonce | `packages/connector-protocol/src/index.ts`, `apps/dashboard/src/lib/connector/auth.ts`, `apps/dashboard/tests/connector-auth.test.ts` |
+| Tenant isolation | Verified sessions, explicit owner checks, secret-free site metadata projection and database RLS | `apps/dashboard/tests/connector-store-ownership.test.ts`, `apps/dashboard/tests/auth-project-guard.test.ts`, `supabase/migrations/`, `supabase/tests/database/` |
+| Secrets at rest | AES-256-GCM for site secrets and BYOK keys; token hashes; stored keys not re-displayed | `apps/dashboard/src/lib/connector/crypto.ts`, `apps/dashboard/src/lib/connector/keys.ts`, `apps/dashboard/tests/connector-keys.test.ts` |
+| Secret exposure | Redaction utilities, server/client boundary checks and credential-literal audit | `packages/audit/src/`, `scripts/secret-audit.mjs`, `apps/dashboard/tests/secret-boundary.test.ts` |
+| Resource abuse | Daily quotas and per-IP/site/user burst counters; provider calls bounded separately | `packages/api-core/src/abuse.ts`, `apps/dashboard/tests/abuse-guard.test.ts`, `docs/abuse-limits.md` |
+| Recovery correctness | Snapshot resolver, signed restore jobs, typed unusable/unavailable errors | `apps/dashboard/src/lib/connector/undo.ts`, `apps/dashboard/tests/connector-undo.test.ts`, `docs/backup-restore-strategy.md` |
 
----
+The catalog and gating prohibit arbitrary PHP, SQL, shell, file edits and runtime
+tool invention. Code injection is prohibited, not a future roadmap feature.
+R0 reads need no approval; ordinary writes are planned/approved, while explicit
+owner-triggered undo uses its dedicated owned-snapshot route. Publishing is a
+shipped explicit R2 tool, not silent automatic publishing.
 
-## 2. Server-Side Request Forgery (SSRF) Mitigations
+## 2. Transport and cryptographic scope
 
-KPH SitePilot interacts with WordPress REST endpoints. To prevent SSRF attacks targeting cloud metadata services or internal corporate networks:
+The connector is the only WordPress transport for the hosted product. Do not
+extrapolate the legacy local target allowlist to hosted registration or introduce
+arbitrary WordPress fetches to bypass the queue. Never disable TLS verification.
+Review any new outbound fetch path independently for URL validation, redirects,
+DNS behaviour and data disclosure; this document does not certify all network paths.
 
-1. **Target Allowlist Enforcement**:
-   - Only URLs explicitly configured in `allowedTargets` or ending with `.local`, `localhost`, or `127.0.0.1` are accepted.
-   - Cloud metadata IP addresses (`169.254.169.254`, `metadata.google.internal`) are blocked at URL resolution.
-2. **Protocol Restrictions**:
-   - Only `http:` and `https:` protocols are accepted; `file:`, `gopher:`, `ftp:` are rejected by Zod `.url()` and URL parsing.
-3. **TLS Validation**:
-   - TLS certificate validation cannot be disabled; `--insecure` and `NODE_TLS_REJECT_UNAUTHORIZED=0` are strictly disallowed.
+The protocol constants define a 300-second timestamp window and a 262144-byte
+body limit. These are signed connector protocol limits, not global HTTP body caps.
+The canonical signature input is `<timestamp>.<nonce>.<sha256hex(rawBody)>`;
+verify raw bytes before parsing. Method/path are not included in that canonical
+string, so route-specific validation and replay prevention remain important.
 
----
+`SITEPILOT_ENCRYPTION_KEY` protects stored connector and model secrets. Replacing
+it alone does not migrate ciphertext. Keep matching recovery material protected;
+no rehearsed key migration is certified here. Pairing and rotation return new
+credentials once through their authorised flow; never log or publish them.
 
-## 3. Cryptographic Storage & Secrets Hygiene
+## 3. Open findings and review priorities
 
-1. **AES-256-GCM Encryption**:
-   - WordPress Application Passwords are encrypted before persisting to PostgreSQL using AES-256-GCM with a 96-bit unique IV and 128-bit authentication tag.
-   - Tampered payloads fail decryption immediately with `AgentError(ErrorCode.UNAUTHORIZED)`.
-2. **Post-Approval Integrity Locking**:
-   - When a user approves a staged change plan, a SHA-256 hash of the entire plan (author, operations, resources, parameters) is computed.
-   - If any operation is altered in transit or before application, the controller rejects execution with `FORBIDDEN`.
-3. **Secret Redaction in Audit Logging**:
-   - `@wp-agent/audit` automatically sanitizes bearer tokens, API keys, basic auth headers, and passwords prior to writing log records.
+These are observed code limitations or unverified boundaries, not fixed by this
+review. Severity/exploitability requires focused validation; do not imply an
+exploit was reproduced merely from source inspection.
 
----
+1. **Preview rendering:** `apps/dashboard/src/components/PreviewCanvas.tsx` has
+   `dangerouslySetInnerHTML` sinks and an iframe allowing scripts and same-origin.
+   The earlier claim that raw HTML rendering is prohibited everywhere was false.
+   Trace each data source, sanitisation and iframe origin; add adversarial XSS tests
+   and review isolation before asserting browser containment.
+2. **Connector rate-limit ordering:** `auth.ts` consumes the per-site budget before
+   signature verification, despite its header comment describing a later check.
+   A claimed existing site id can reach that counter without a valid signature.
+   Assess budget-exhaustion impact and guard ordering; owner/replay checks are not
+   a substitute for that review.
+3. **Abuse metadata and scaling:** counters are in-process/per-instance and fail
+   open on counter errors. Signed routes still return fixed `Retry-After: 30` in
+   `route-helpers.ts`; do not claim all endpoints report the actual reset time.
+4. **Error disclosure:** some connector handlers return raw caught error messages
+   (for example the site route and snapshot undo route). Secret-audit success does
+   not prove all runtime errors are scrubbed. Replace unsafe boundaries with typed
+   safe errors in a separately tested change.
+5. **Recovery bookkeeping:** undo marks snapshot restoration metadata at enqueue,
+   not verified completion; revoke/cancel is not atomic; cloud snapshot recording
+   may fail after a write. Consult the incident/backup runbooks and do not infer
+   restoration or cancellation from a request being accepted.
+6. **Dependency audit:** CI currently logs production dependency audit warnings
+   without failing the job. Green CI is not proof of zero vulnerabilities or
+   approved licenses. Review findings and exceptions for the specific release.
+7. **Live evidence:** isolated schema tests do not prove deployed tenant isolation,
+   email delivery, WordPress E2E, restore readiness or production header policy.
+   Owner-authorised staging evidence is still required.
 
-## 4. Multi-Tenant Cross-Contamination Defense (RLS)
+## 4. Verification and change discipline
 
-- **PostgreSQL Row Level Security**: Declared on `profiles`, `projects`, `wordpress_connections`, `change_proposals`, and `audit_events`.
-- **Immutability of Audit Records**: Tenants are prohibited from updating or deleting records in `audit_events`.
-- **Cross-Tenant Leakage**: All queries enforce `auth.uid() = owner_id` or join through project ownership chains.
+Run `pnpm release:check` and record exact commit, commands, exit codes and counts.
+Inspect PR PHP tests and the separate local database workflow. The latter runs
+on matching main pushes or manual dispatch; it is not a live database audit.
+Never label every response as having one universal CSP, correlation id, body cap
+or rate limit without route-level evidence.
+
+For follow-up fixes, add targeted negative tests: invalid signatures must not
+consume a victim's authenticated budget; unsafe preview content must not execute;
+backend errors must not expose secrets; failed undo must not be reported as restored.
+Do not bypass ownership, approvals or TLS to make a test pass.
+
+Full security sign-off requires review of the open findings, dependency output,
+authorised cross-tenant and browser tests, plus live recovery evidence. The older
+OWASP-labelled matrix was not a reliable current mapping and has been removed;
+no blanket framework compliance is claimed.
+
+## 5. Operational response
+
+Use [incident response](./incident-response-and-rollback.md) for containment and
+credential-specific recovery, [backup/restore](./backup-restore-strategy.md) for
+resource versus platform recovery, and [deployment](./deployment-guide.md) for
+configuration and health semantics. No production probing, secret rotation,
+database operation or security remediation is performed by this docs update.

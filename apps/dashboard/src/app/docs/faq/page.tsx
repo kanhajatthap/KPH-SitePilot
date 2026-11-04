@@ -30,11 +30,11 @@ const FAQ = [
   },
   {
     q: 'Why did my confirmation email not arrive?',
-    a: 'This deployment sends mail through Resend. Until a sending domain is verified with SPF and DKIM, the shared sandbox sender only reaches the Resend account owner. Check the live /api/auth/status probe for the configured sender and next steps, then ask the deployment owner to verify a domain.',
+    a: 'Email transport depends on deployment configuration: app-side Resend or the Supabase mailer. Check /api/auth/status for the configured transport and next steps. A shared Resend sandbox sender only reaches the account owner; a verified sending domain and a real inbox test are needed before inviting users.',
   },
   {
     q: 'Can I undo a change?',
-    a: 'Yes, for every shipped write tool. A before-snapshot is stored, the result is read back to verify it, and the Activity timeline offers a one-click undo that restores the snapshot through the same signed job queue.',
+    a: 'Supported changes can be undone when a usable snapshot is available. Undo queues a restore job through the signed connector; queued is not restored. Follow the job outcome and verify the site. Missing snapshots, failed jobs or unavailable undo require investigation, not a claim of recovery.',
   },
   {
     q: 'Is WooCommerce / media upload / automatic publishing supported?',
@@ -42,7 +42,7 @@ const FAQ = [
   },
   {
     q: 'Is there a staging environment?',
-    a: 'A staging Supabase project and supabase test db in CI are still on the backlog. Today there is one hosted production deployment with a daily cron, a health probe and GitHub Actions checks on every PR.',
+    a: 'An isolated staging project remains an owner-side setup task. Local Supabase database tests already run in a separate workflow on matching main pushes or manual dispatch. Those tests do not certify a live staging environment or production RLS.',
   },
 ];
 
