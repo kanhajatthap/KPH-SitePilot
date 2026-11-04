@@ -353,3 +353,29 @@
   Local PHP validation used the parser; runtime verification belongs to PR CI.
 - Next: remaining connector error boundaries and preview isolation; undo completion
   bookkeeping and revocation atomicity remain separate unresolved tasks.
+
+## 2026-11-04 — signed connector route exception safety
+
+- Branch `arena/93c318cd-kph-sitepilot`. Hardened heartbeat, job claim, job result
+  and unpair route adapters: thrown handler, body-read and dependency-setup errors
+  now return fixed INTERNAL_ERROR/500 messages with no-store headers, never raw
+  exception details. Result parameter resolution is also inside the boundary.
+- Explicit dependency/configuration failures and successful handler output remain
+  unchanged. Exact raw request bytes, headers and result path id still reach the
+  authentication handlers; no authentication or replay policy was relaxed.
+- Added 24 tests: four failure shapes plus configuration and success cases for
+  each route. Before fix: 16 failed / 8 passed; after fix all 24 pass.
+- Verification in `/home/user/KPH-SitePilot`:
+  - `pnpm install --frozen-lockfile` and dependency build via
+    `pnpm exec turbo run build --filter='@wp-agent/dashboard^...'`: exit 0.
+  - `pnpm --filter @wp-agent/dashboard test tests/connector-signed-errors.test.ts`:
+    pre-fix exit 1, 16 failed / 8 passed.
+  - `pnpm --filter @wp-agent/dashboard test tests/connector-signed-errors.test.ts tests/connector-auth.test.ts tests/connector-routes.test.ts tests/security-docs.test.mjs`:
+    post-fix exit 0, 65 tests / 4 files.
+  - `pnpm release:check`: exit 0, 8/8 gates; 881 tests / 95 files
+    (dashboard 521 / 54), typecheck 22/22, lint 12/12, build 12/12,
+    governance 35/35, secret audit 306 tracked files / zero findings, diff clean.
+- Scope: thrown exceptions in these adapters, not a blanket scrubber for all
+  handler-returned data. Keys/projects/pairing/activity/plans/job enqueue routes
+  still require follow-up. No production or live WordPress changes performed.
+  PHP runtime validation remains for CI; local lint used the PHP parser.

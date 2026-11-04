@@ -10,16 +10,15 @@ export const dynamic = 'force-dynamic';
  * platform stops queueing work for a site that no longer holds credentials.
  */
 export async function POST(req: Request) {
-  const rawBody = await req.text();
-  const built = buildConnectorDeps();
-  if (!built.ok) return connectorJson(built.output);
-
   try {
+    const rawBody = await req.text();
+    const built = buildConnectorDeps();
+    if (!built.ok) return connectorJson(built.output);
     return connectorJson(await handleUnpair(req.headers, rawBody, built.deps));
-  } catch (error) {
+  } catch {
     return connectorJson({
       status: 500,
-      body: { error: 'INTERNAL_ERROR', message: (error as Error).message },
+      body: { error: 'INTERNAL_ERROR', message: 'Connector request could not be confirmed. Check site activity before trying again.' },
     });
   }
 }

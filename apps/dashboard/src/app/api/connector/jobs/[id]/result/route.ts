@@ -10,18 +10,17 @@ export const dynamic = 'force-dynamic';
  * agree. Reporting twice is a no-op, so a network retry cannot double-apply.
  */
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
-  const { id } = await context.params;
-  const rawBody = await req.text();
-
-  const built = buildConnectorDeps();
-  if (!built.ok) return connectorJson(built.output);
-
   try {
+    const { id } = await context.params;
+    const rawBody = await req.text();
+
+    const built = buildConnectorDeps();
+    if (!built.ok) return connectorJson(built.output);
     return connectorJson(await handleJobResult(id, req.headers, rawBody, built.deps));
-  } catch (error) {
+  } catch {
     return connectorJson({
       status: 500,
-      body: { error: 'INTERNAL_ERROR', message: (error as Error).message },
+      body: { error: 'INTERNAL_ERROR', message: 'Connector request could not be confirmed. Check site activity before trying again.' },
     });
   }
 }
