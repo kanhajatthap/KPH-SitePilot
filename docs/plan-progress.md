@@ -195,3 +195,32 @@
 | 2026-11-03 | 22/22 | **750 pass / 0 fail** | 12/12 | E1-05: six typed injectable `@wp-agent/supabase` repositories, fake client + adapter, audit redaction, service-role integration point; 37 new tests (dashboard 408/408 in 42 files, 81 files total) |
 | 2026-11-03 | 22/22 | **800 pass / 0 fail** | 12/12 | E1-08 / E11-01 / E11-03 / E11-09 / E9-15: ownership guards, executable secret audit, failure-injection suite, fail-closed release check, ⌘K palette; 50 new tests (dashboard 451/451 in 47 files, 87 files total) |
 | 2026-11-03 | 22/22 | **821 pass / 0 fail** | 12/12 | E11-02: per-IP/site/user sliding-window abuse limits, typed 429s, one shared counter, `pnpm abuse:load` simulation, release gate #5; 21 new tests (dashboard 461/461 in 48 files, 90 files total) |
+
+## 2026-11-04 — E11-02 gate hardening / E11-08 entry-point cleanup
+
+- Starting evidence: clean tree at `c14f987` on `arena/0c602a1a-kph-sitepilot`;
+  `gh pr list` showed no open PRs; latest main CI run `41624057958` succeeded.
+  This is repository/CI evidence, not a fresh live deployment audit.
+- E11-02 follow-up: fixed a false-positive simulation verdict (zero denials could
+  pass even if all traffic was allowed). Pin default policy, assert exact counts,
+  test reset-boundary recovery, and inject broken policies for regression tests.
+  No runtime limiter policy changed; no deployed throughput/job-loss claim.
+- E11-08 partial: added `docs/README.md` source map; corrected release gates,
+  publish/BYOK/production safety and evidence-based sign-off; added explicit scope
+  corrections to four legacy runbooks and linked the map from the root README.
+  Full runbook/API/FAQ sweep remains open rather than declaring unsupported completion.
+- Verification, working directory `/home/user/KPH-SitePilot`, all exit 0:
+  - `pnpm install --frozen-lockfile` — 197 packages installed, lockfile unchanged.
+  - `pnpm exec turbo run build --filter='@wp-agent/dashboard^...'` — dependency builds.
+  - `pnpm --filter @wp-agent/dashboard test tests/abuse-load.test.mjs tests/release-check.test.mjs`
+    — final targeted run: 16 tests in 2 files.
+  - `pnpm --filter @wp-agent/dashboard test` — intermediate package run: 466 tests;
+    two later docs regressions included in the full gate run below.
+  - `pnpm release:check` — **8/8 gates**: typecheck 22/22, lint 12/12,
+    `pnpm test --force` **828 tests / 90 files**, dashboard 468 tests / 49 files,
+    build 12/12, abuse simulation three scenarios, governance 35/35,
+    secret audit 305 tracked files / 0 findings, `git diff --check` clean.
+- Not verified here: PHP runtime (binary absent), real auth/email/WordPress E2E,
+  live RLS, deployed p95/job accounting, mobile Lighthouse and restore rehearsal.
+- Next: finish E11-08 detailed hosted runbooks; E11-04 needs authorised staging;
+  E1-12/E9-20 need owner-side account/inbox/site access. No production changes.

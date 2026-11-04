@@ -69,6 +69,30 @@ describe('E11-09 executable release checklist', () => {
     expect(blocked).not.toContain('sk-');
   });
 
+  it('keeps the documented gate count aligned with the executable plan', () => {
+    const checklist = fs.readFileSync(path.join(ROOT, 'docs/release-checklist.md'), 'utf8');
+    expect(checklist).toContain(`runs all ${RELEASE_CHECKS.length}`);
+    for (const check of RELEASE_CHECKS) {
+      expect(checklist).toContain(`${check.command} ${check.args.join(' ')}`);
+    }
+    expect(checklist).not.toContain('**VERIFIED**');
+    expect(checklist).toContain('content.publish');
+    expect(checklist).toContain('CONFIRM');
+    expect(checklist).toContain('not a standing sign-off');
+  });
+
+  it('links existing documentation entry points and labels mixed-scope runbooks', () => {
+    const index = fs.readFileSync(path.join(ROOT, 'docs/README.md'), 'utf8');
+    for (const match of index.matchAll(/\]\((\.\.?\/[^)#]+)(?:#[^)]*)?\)/g)) {
+      expect(fs.existsSync(path.resolve(ROOT, 'docs', match[1])), match[1]).toBe(true);
+    }
+    for (const file of ['deployment-guide.md', 'security-review.md', 'backup-restore-strategy.md', 'incident-response-and-rollback.md']) {
+      const text = fs.readFileSync(path.join(ROOT, 'docs', file), 'utf8');
+      expect(text).toContain('Scope correction (2026-11-04)');
+      expect(text).toContain('./release-checklist.md');
+    }
+  });
+
   it('documents the one-command flow and ships a release-notes template', () => {
     const checklist = fs.readFileSync(path.join(ROOT, 'docs/release-checklist.md'), 'utf8');
     expect(checklist).toContain('pnpm release:check');

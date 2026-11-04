@@ -1,5 +1,7 @@
 # KPH SitePilot — Production Deployment Guide
 
+> **Scope correction (2026-11-04):** This is a mixed historical/local-API deployment guide. The diagram and Application Password/provider configuration below describe the legacy standalone API, not the hosted connector transport. Hosted production runs Next.js on Vercel with Supabase, encrypted optional BYOK keys and a deterministic fallback; WordPress traffic uses only the signed connector queue. Main merges auto-deploy via the Vercel Git integration. Do not deploy the legacy REST transport as the hosted architecture. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+
 This guide details the deployment procedures, environment variables, security configurations, and operational runbooks for hosting KPH SitePilot across production, staging, and local environments.
 
 ---

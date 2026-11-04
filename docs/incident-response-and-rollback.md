@@ -1,5 +1,7 @@
 # KPH SitePilot — Incident Response & Rollback Runbook
 
+> **Scope correction (2026-11-04):** This runbook contains legacy Application Password/local-API procedures. For a hosted connector incident, pause or revoke the affected connection through the owner dashboard; Application Password revocation alone does not revoke the connector secret. Re-pair through the supported flow when credentials are compromised. Use the current release checklist for app delivery, and do not run legacy SQL or restore commands against production without verifying schema, scope, backup and approval. The timing targets below are operational goals, not measured SLAs. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+
 This runbook outlines incident response classifications, containment protocols, secret rotation procedures, and rollback workflows for KPH SitePilot.
 
 ---
