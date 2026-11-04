@@ -79,6 +79,11 @@ exploit was reproduced merely from source inspection.
    Snapshot lookup and ownership failures are included in the undo error boundary;
    no restore is queued when those checks throw. Undo failure copy tells the owner
    to inspect Activity first because enqueue may already have succeeded.
+   The six-task follow-up also hardens key CRUD/test, projects, pairing/code
+   creation, rotation, activity, plan history and direct read-job enqueue. Store
+   factories and selected ownership/query failures are inside safe boundaries.
+   Rotation uses a typed configuration error, not matching backend message text;
+   unreadable pairing-code bodies fail before project/code creation.
    Other connector handlers still require review for raw caught error messages;
    this scoped fix does not certify all runtime errors as scrubbed.
 5. **Recovery bookkeeping:** undo marks snapshot restoration metadata at enqueue,

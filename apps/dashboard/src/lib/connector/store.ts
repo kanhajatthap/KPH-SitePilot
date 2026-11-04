@@ -1,3 +1,4 @@
+import { ConnectorConfigError } from './crypto';
 import { createHash } from 'node:crypto';
 import type { PairingCodeRow, PairingStore } from './pairing';
 import { createSupabaseAdminClient } from '../supabase/admin';
@@ -830,7 +831,7 @@ export async function rotateSiteCredentials(
   try {
     encryptionKey = getEncryptionKey();
   } catch {
-    throw new Error('SITEPILOT_ENCRYPTION_KEY is not configured.');
+    throw new ConnectorConfigError('SITEPILOT_ENCRYPTION_KEY is not configured.');
   }
 
   const owned = await findOwnedSite(ownerId, siteId);

@@ -53,15 +53,15 @@ export async function GET() {
     );
   }
 
-  const store = createSupabaseUserKeyStore();
-  if (!store) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
-      503
-    );
-  }
-
   try {
+    const store = createSupabaseUserKeyStore();
+    if (!store) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
+        503
+      );
+    }
+
     const keys = await listUserKeys(auth.context.user.id, store);
     const quotas = resolveQuotaLimits(process.env);
     return json({
@@ -69,8 +69,8 @@ export async function GET() {
       encryptionReady: isEncryptionReady(),
       quotas,
     });
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Model key operation could not be confirmed. Refresh key status before trying again.' }, 503);
   }
 }
 
@@ -120,17 +120,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const store = createSupabaseUserKeyStore();
-  if (!store) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
-      503
-    );
-  }
-
-  const action = parsed.data.action ?? 'save';
-
   try {
+    const store = createSupabaseUserKeyStore();
+    if (!store) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
+        503
+      );
+    }
+
+    const action = parsed.data.action ?? 'save';
+
     if (action === 'test') {
       const tested = await testUserKey(
         {
@@ -174,8 +174,8 @@ export async function POST(req: Request) {
       },
       201
     );
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Model key operation could not be confirmed. Refresh key status before trying again.' }, 503);
   }
 }
 
@@ -204,18 +204,18 @@ export async function DELETE(req: Request) {
     );
   }
 
-  const store = createSupabaseUserKeyStore();
-  if (!store) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
-      503
-    );
-  }
-
   try {
+    const store = createSupabaseUserKeyStore();
+    if (!store) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Key storage is not configured on this deployment.' },
+        503
+      );
+    }
+
     const deleted = await store.deleteKey(auth.context.user.id, provider);
     return json({ provider, deleted });
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Model key operation could not be confirmed. Refresh key status before trying again.' }, 503);
   }
 }

@@ -379,3 +379,44 @@
   handler-returned data. Keys/projects/pairing/activity/plans/job enqueue routes
   still require follow-up. No production or live WordPress changes performed.
   PHP runtime validation remains for CI; local lint used the PHP parser.
+
+## 2026-11-04 — six-task connector error-hardening batch (local, not pushed)
+
+Branch: `arena/893aaba0-kph-sitepilot`. Per owner request, this batch stays local:
+no commit, push, PR, merge or production deployment was performed.
+
+| Task | Completed scope |
+|---|---|
+| 1. Keys API | Fixed client-safe messages for list/save/test/delete exceptions; store factory construction is inside each storage boundary. Existing validation/provider results retained. |
+| 2. Projects API | Safe list/create exceptions and admin-client construction; creation failures advise refreshing before retry. |
+| 3. Pairing | Pair-store/final pairing exceptions handled without raw errors; configuration error text is fixed. Pairing-code persistence errors no longer append backend text. Unreadable request bodies fail with 400 before project/code creation instead of becoming an empty request. Bootstrap-job failure still preserves successful pairing. |
+| 4. Rotation | Typed ConnectorConfigError replaces backend-message substring classification; arbitrary errors/objects/null return safe storage failure. Store raises the corresponding typed configuration error. |
+| 5. Activity/plans/jobs | Safe activity error copy, returned/thrown plan-history query failures, plan ownership failures and direct R0 enqueue/client/query failures. Ownership denial still prevents enqueue. |
+| 6. Tests/docs/gates | 67 new parameterized tests, updated typed rotation fixture, security evidence update and full release checks. |
+
+Evidence (working directory `/home/user/KPH-SitePilot`):
+- `pnpm install --frozen-lockfile` and
+  `pnpm exec turbo run build --filter='@wp-agent/dashboard^...'`: exit 0.
+- First targeted run: 81 passed / 1 failed (exit 1). Existing rotation fixture
+  still threw an untyped Error; updated it to the new typed configuration contract.
+  Added separate tests proving arbitrary backend text cannot impersonate that type.
+- Final `pnpm --filter @wp-agent/dashboard test tests/connector-batch-errors.test.ts tests/connector-keys.test.ts tests/connector-sites-api.test.ts tests/connector-routes.test.ts tests/connector-projects-and-terms.test.ts tests/security-docs.test.mjs`:
+  exit 0, **102 tests / 6 files**, including **67 new tests**. Error, plain-object
+  and null failures tested; session/ownership, query/factory failures, body-read
+  refusal and pairing/bootstrap compatibility covered.
+- `pnpm release:check`: exit 0, **8/8 gates**; `pnpm test --force` **948 tests /
+  96 files**, dashboard **588 / 55**; typecheck 22/22, lint 12/12, build 12/12,
+  governance 35/35, tracked-file secret audit 306 files / zero findings, diff clean.
+- `git diff --check`: exit 0. Node/PHP parsing and mock tests only; no local PHP
+  binary available. No fresh remote CI or deployment checks because nothing pushed.
+
+Limits: this is the scoped route error batch, not a global exception wrapper or
+proof that every returned handler payload is safe. Plan creation/approval/execution,
+job-status reads, provider-returned failures and auth infrastructure remain separate
+review surfaces. No changes to undo completion, revocation atomicity, rotation
+reactivation or pairing transaction semantics. Live provider/WordPress/inbox tests
+and production security verification remain unverified.
+
+Delivery update: the owner subsequently requested a pull request for this batch.
+The local-only status above records the completion checkpoint; commit/push and PR
+creation are now authorised. Merge and production deployment remain unrequested.

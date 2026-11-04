@@ -84,11 +84,11 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(activity, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         error: 'ACTIVITY_LOAD_FAILED',
-        message: (error as Error).message || 'Activity timeline could not be loaded.',
+        message: 'Activity could not be loaded. Refresh the timeline to try again.',
       },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );

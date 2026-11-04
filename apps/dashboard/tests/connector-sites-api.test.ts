@@ -1,3 +1,4 @@
+import { ConnectorConfigError } from '../src/lib/connector/crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { authenticateApiRequest, findOwnedSite, updateOwnedSite, revokeSiteForUser, rotateSiteCredentials } =
@@ -193,7 +194,7 @@ describe('secret rotation (E2-15)', () => {
   });
 
   it('says CONFIG_MISSING when the encryption key is absent', async () => {
-    rotateSiteCredentials.mockRejectedValue(new Error('SITEPILOT_ENCRYPTION_KEY is not configured.'));
+    rotateSiteCredentials.mockRejectedValue(new ConnectorConfigError('SITEPILOT_ENCRYPTION_KEY is not configured.'));
 
     const response = await ROTATE(new Request('https://x', { method: 'POST' }), params());
     const body = await response.json();

@@ -44,7 +44,15 @@ export async function POST(req: Request) {
 
   let requestedProjectId: string | undefined;
   if (req) {
-    const rawText = await req.text().catch(() => '');
+    let rawText: string;
+    try {
+      rawText = await req.text();
+    } catch {
+      return NextResponse.json(
+        { error: 'VALIDATION_FAILED', message: 'Request body could not be read. Send a new request.' },
+        { status: 400, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
     if (rawText.trim().length > 0) {
       let parsedJson: unknown;
       try {
@@ -112,13 +120,12 @@ export async function POST(req: Request) {
       },
       { status: 201, headers: { 'Cache-Control': 'no-store' } }
     );
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         error: 'CONNECTOR_STORAGE_UNAVAILABLE',
         message:
-          'Pairing codes cannot be stored right now. Check that the Supabase service role key is configured for this deployment. ' +
-          (error as Error).message,
+          'Pairing code creation could not be confirmed. Request a new code before connecting.',
       },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );
