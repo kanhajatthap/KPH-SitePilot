@@ -9,6 +9,7 @@ not promises about the current deployment.
 | Need | Source |
 |---|---|
 | Product safety and architecture boundaries | [Workspace policy](../AGENTS.md) |
+| Hosted deployment, environment and post-deploy checks | [Deployment guide](./deployment-guide.md) |
 | Setup and repository commands | [Repository README](../README.md), [environment template](../.env.example) |
 | Release gates, live blockers and sign-off | [Release checklist](./release-checklist.md) |
 | Burst protection and limitations | [Abuse limits](./abuse-limits.md) |
@@ -42,7 +43,7 @@ claiming support. A successful handler test is not a real WordPress E2E recordin
 
 - [Master plan](./sitepilot-master-plan.md) and [architecture decisions](./architecture-decisions.md)
   retain design history and proposed scope; they do not prove every capability shipped.
-- [Deployment guide](./deployment-guide.md), [security review](./security-review.md),
+- [Security review](./security-review.md),
   [backup strategy](./backup-restore-strategy.md) and
   [incident runbook](./incident-response-and-rollback.md) contain legacy local-API
   procedures. Their scope notices distinguish those from hosted operations.
