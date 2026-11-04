@@ -12,6 +12,8 @@ not promises about the current deployment.
 | Hosted deployment, environment and post-deploy checks | [Deployment guide](./deployment-guide.md) |
 | Setup and repository commands | [Repository README](../README.md), [environment template](../.env.example) |
 | Release gates, live blockers and sign-off | [Release checklist](./release-checklist.md) |
+| Incident containment and credential recovery | [Incident runbook](./incident-response-and-rollback.md) |
+| Resource undo and pending platform restore rehearsal | [Backup and restore](./backup-restore-strategy.md) |
 | Burst protection and limitations | [Abuse limits](./abuse-limits.md) |
 | Auth/email troubleshooting | [Email deliverability](./email-deliverability.md) |
 | User guides, tools, safety, troubleshooting, FAQ | Public dashboard `/docs` (source: `apps/dashboard/src/app/docs/`) |
@@ -43,10 +45,8 @@ claiming support. A successful handler test is not a real WordPress E2E recordin
 
 - [Master plan](./sitepilot-master-plan.md) and [architecture decisions](./architecture-decisions.md)
   retain design history and proposed scope; they do not prove every capability shipped.
-- [Security review](./security-review.md),
-  [backup strategy](./backup-restore-strategy.md) and
-  [incident runbook](./incident-response-and-rollback.md) contain legacy local-API
-  procedures. Their scope notices distinguish those from hosted operations.
+- [Security review](./security-review.md) still contains legacy local-API
+  assertions. Its scope notice distinguishes those from hosted operations.
 - Phase acceptance files, QA reports, screenshots and dated status reports are
   point-in-time evidence. Do not relabel their old counts as current results.
 - A backup plan is not a rehearsed platform restore; resource-level undo is not

@@ -1,102 +1,118 @@
-# KPH SitePilot — Incident Response & Rollback Runbook
+# KPH SitePilot — hosted incident response
 
-> **Scope correction (2026-11-04):** This runbook contains legacy Application Password/local-API procedures. For a hosted connector incident, pause or revoke the affected connection through the owner dashboard; Application Password revocation alone does not revoke the connector secret. Re-pair through the supported flow when credentials are compromised. Use the current release checklist for app delivery, and do not run legacy SQL or restore commands against production without verifying schema, scope, backup and approval. The timing targets below are operational goals, not measured SLAs. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+> **Scope correction (2026-11-04):** This replaces legacy Application Password,
+> direct SQL and standalone-server recovery recipes with the shipped connector
+> workflow. See the [release checklist](./release-checklist.md). This runbook is
+> not evidence of a completed incident drill or a production change authorisation.
 
-This runbook outlines incident response classifications, containment protocols, secret rotation procedures, and rollback workflows for KPH SitePilot.
+## 1. Triage and evidence
 
----
+Treat suspected credential compromise, unauthorised writes and tenant isolation
+failures as critical. Widespread outages or persistent job failures are major;
+isolated display issues are minor. Escalate to the project owner/operator; do not
+publish an unmeasured response-time SLA.
 
-## 1. Incident Severity Levels
+Record UTC times, deployment commit, affected project/site and job identifiers,
+observed status codes, last known good state and actions taken. Use `/activity`
+and owner-scoped job history. Keep evidence access-controlled and redact site
+content where necessary. Never include keys, pairing codes, signed requests,
+auth links, cookies or decrypted snapshot data in public issues or chat.
 
-| Severity | Definition | Examples | SLA (Containment) |
-|---|---|---|---|
-| **P1 — Critical** | Security breach, credential compromise, unauthorized write operation, or severe data corruption. | Exposed Application Password, unintended bulk page deletion, SSRF bypass. | < 15 minutes |
-| **P2 — Major** | Partial service degradation, model provider outage, rate-limit blockage affecting all users. | Gemini 429 quota exhaustion, database connection pool exhaustion. | < 1 hour |
-| **P3 — Minor** | Isolated bug, non-fatal parsing error, single-tenant UI glitch. | Unrecognized third-party block causing fallback warning. | < 24 hours |
+## 2. Contain an affected connector
 
----
+1. Verify the signed-in owner and intended site at `/connect`. Use **Pause** to
+   block subsequent signed connector requests while investigating. Authentication
+   rejects paused and revoked sites with `SITE_PAUSED` / `SITE_REVOKED`.
+2. For compromise, use **Disconnect** and confirm the site name. This soft-revokes
+   the site and attempts to cancel queued jobs while retaining history. Verify
+   queue state separately: the cancellation update is not atomic with revocation,
+   and its database error is not checked by the current store implementation.
+3. Pause/revoke is not an emergency stop for already-claimed or running work.
+   Inspect WordPress state directly through the authorised owner's admin interface
+   and reconcile in-flight jobs. A blocked result submission is not proof that a
+   WordPress write never happened. If the dashboard is unavailable, have the owner
+   disable the plugin through WordPress admin; this also does not undo completed work.
+4. Do not resume until the cause and queued/in-flight work have been reviewed.
+   Do not clear audit history to make a connection look healthy.
 
-## 2. Emergency Containment Playbooks
+Application Password revocation does not revoke a SitePilot connector secret.
+Do not use legacy `wordpress_connections` SQL against the hosted `sites` workflow.
 
-### Playbook A: WordPress Credential Compromise
-1. **Immediate Revocation in WordPress**:
-   - Log into WordPress Admin (`/wp-admin`).
-   - Navigate to **Users $\to$ Profile**.
-   - Scroll to **Application Passwords**.
-   - Locate the compromised application name (e.g. `KPH-SitePilot`) and click **Revoke**.
-2. **Mark Connection Revoked in Supabase**:
-   ```sql
-   UPDATE public.wordpress_connections
-   SET status = 'revoked', updated_at = now()
-   WHERE id = '<connection_id>';
-   ```
-3. **Audit Inspection**:
-   - Query `audit_events` filtered by correlation ID or timestamp to inspect all actions executed during the compromise window:
-   ```sql
-   SELECT * FROM public.audit_events
-   WHERE project_id = '<project_id>'
-     AND created_at >= '<incident_start_time>'
-   ORDER BY created_at DESC;
-   ```
+## 3. Rotate the right credential
 
-### Playbook B: Rogue Mutation or Content Corruption
-1. **Trigger Automated Rollback via Mutation Controller**:
-   - The Mutation Controller retains snapshots of the pre-change state (`before` in `StagedChangeOperation`).
-   - Invoke `rollbackPlan(executedPlan)` to invert the applied operations:
-     - `create_page` $\to$ delete or draft page.
-     - `update_page` $\to$ restore previous title/content/status from snapshot.
-     - `update_option` $\to$ revert option value.
-2. **WordPress Native Revisions**:
-   - If the Mutation Controller is offline, navigate to WordPress Admin $\to$ **Pages** $\to$ select affected page $\to$ **Revisions** (in block editor sidebar) $\to$ **Restore This Revision**.
+### Site connector credentials
 
-### Playbook C: Gemini API Key Compromise or Quota Exhaustion
-1. **Key Rotation in Google Cloud Console**:
-   - Go to Google Cloud Console $\to$ **APIs & Services** $\to$ **Credentials**.
-   - Create a replacement API key.
-   - Update `.env.production` or cloud secret store:
-     ```bash
-     GEMINI_API_KEY="AIzaSyNewKey..."
-     ```
-   - Restart the backend API:
-     ```bash
-     sudo systemctl restart sitepilot-api
-     ```
-   - Delete the old key in Google Cloud Console.
+The owner-facing **Rotate credentials** action at `/connect` calls
+`POST /api/connector/sites/{id}/rotate-secret`. It replaces the token hash and
+encrypted secret and returns new credentials once. Old credentials stop working.
 
----
+**Rotation sets the site status to active**, including a paused or revoked site.
+Do not rotate during containment unless reactivation is intended. Review queued
+work first. Transfer the one-time values directly to WordPress **SitePilot → Apply
+rotated credentials**, not to chat or logs, then verify fresh signed traffic. If
+values are lost, use the supported rotation/pairing flow again; they cannot be
+recovered from the token hash. Re-pair only after verifying ownership and site identity.
 
-## 3. Secret Rotation Procedures
+### User model keys
 
-### Rotating `VAULT_MASTER_KEY`
-When rotating the 256-bit symmetric encryption key used for credential storage:
-1. Generate a new 256-bit key:
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-2. Execute the re-encryption script:
-   - Read all records from `public.wordpress_connections`.
-   - Decrypt `encrypted_credentials` using `OLD_VAULT_MASTER_KEY`.
-   - Re-encrypt `encrypted_credentials` using `NEW_VAULT_MASTER_KEY`.
-   - Update `encrypted_credentials` and `updated_at` in transaction.
-3. Update `VAULT_MASTER_KEY` in Supabase Edge Secrets:
-   ```bash
-   supabase secrets set VAULT_MASTER_KEY="<new_key>"
-   ```
+For a leaked Gemini/OpenRouter/Groq BYOK key, revoke it at the provider, then
+replace or remove the saved key via `/settings/keys`. Removing the saved copy does
+not revoke the provider's key. Inspect provider usage and affected user activity.
+Do not install a platform-wide model key as a workaround. Deterministic planning
+remains available without BYOK; provider quota exhaustion is not itself compromise.
 
----
+### Platform secrets
 
-## 4. Disaster Recovery & Database Restoration
+Handle service-role, email and cron credentials in the authorised platform secret
+manager and deploy through the approved workflow. Verify affected integrations
+without exposing values. A service-role compromise needs broader data-access and
+session review; rotating one site secret is not sufficient containment.
 
-### LocalWP Environment
-- LocalWP stores database dumps and site files in `%USERPROFILE%\Local Sites\<site-name>\`.
-- To restore from a LocalWP backup:
-  1. Stop the site in LocalWP.
-  2. Restore MySQL dump using WP-CLI:
-     ```powershell
-     wp db import backup.sql --path="C:\Users\india\Local Sites\plugin-test\app\public"
-     ```
-  3. Start the site in LocalWP.
+`SITEPILOT_ENCRYPTION_KEY` is different: changing it alone makes existing encrypted
+connector secrets and BYOK keys unreadable. No production re-encryption utility or
+rehearsed key-rotation procedure is certified by this runbook. Require a reviewed,
+backed-up and isolated rehearsal before migration. Do not use legacy `VAULT_MASTER_KEY`
+instructions as a substitute.
 
-### Supabase Cloud Environment
-- Point-in-Time Recovery (PITR) allows database state restoration to any second within the retention window (up to 7 days).
-- In Supabase Dashboard: **Project Settings** $\to$ **Database** $\to$ **Backups** $\to$ **Point in Time Recovery** $\to$ select timestamp immediately preceding incident.
+## 4. Recover an unintended WordPress change
+
+Use the [backup and restore runbook](./backup-restore-strategy.md). Identify the
+specific snapshot and compare current content, including legitimate edits made
+since the incident. Do not blindly undo an entire site or replay failed jobs.
+
+An undo response of **202 queued is not restored**. The route marks snapshot
+metadata when the undo job is enqueued, before WordPress executes it. Follow the
+returned job and verify the resulting WordPress state; `restored_at` alone is not
+proof. If `ALREADY_RESTORED` appears after a failed job, inspect that job rather
+than resetting metadata or resubmitting repeatedly.
+
+A paused/revoked connector cannot execute the recovery queue. Resume only after
+containment review, or use an authorised manual WordPress recovery with its own
+backup and verification. Missing snapshots and unsupported undo require explicit
+manual recovery; never claim restoration based on a button click.
+
+## 5. Recover a bad application release
+
+Identify the bad and last known good commits. Prepare a reviewed revert PR on the
+current working branch; run release gates, obtain merge authorisation and let the
+Git integration deploy `main`. Do not push directly to `main` or create a redundant
+manual production deployment. Emergency hosting rollback requires separately
+approved operator scope and follow-up reconciliation with Git.
+
+An app rollback does not revert database migrations, WordPress writes, external
+emails or leaked credentials. Check schema compatibility before redeploying old
+code. Verify `/api/health` commit/mode/component checks and an authorised end-to-end
+flow. HTTP 200 alone does not establish database or connector correctness.
+
+## 6. Exit criteria and follow-up
+
+- Cause, scope and possible data exposure assessed; required owner notifications sent.
+- Compromised credentials revoked; intended connections and jobs reconciled.
+- Recovery verified against the actual resource, with unresolved losses stated.
+- Release/health evidence recorded; monitoring and recurrence tests assigned.
+- Incident timeline and residual risks reviewed by the owner/operator.
+
+Implementation references: `src/lib/connector/auth.ts`, `store.ts`, the site
+route/rotate-secret route and snapshot undo route under
+`apps/dashboard/src/app/api/connector/`. These are behaviour references, not
+permission to bypass owner checks with ad hoc administrative SQL.

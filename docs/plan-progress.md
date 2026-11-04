@@ -250,3 +250,29 @@
   checks are left to CI; local lint used the PHP parser.
 - Next: E11-08 security, incident and backup runbooks, followed by API/FAQ audit.
   The umbrella docs task remains open; this completes only the deployment slice.
+
+## 2026-11-04 — E11-08 incident and backup runbooks
+
+- Completed two consecutive documentation slices on `arena/7ae3911d-kph-sitepilot`:
+  hosted incident response, then backup/restore. Updated the documentation map and
+  backlog; the broader security/API/FAQ sweep remains open.
+- Verified code paths for pause/revoke, credential rotation, snapshot resolution,
+  undo enqueue and daily housekeeping. Documented important limitations: rotation
+  reactivates sites; revoke/cancel is not atomic; in-flight work can still finish;
+  undo metadata is marked at enqueue, not verified completion; cloud snapshot
+  recording may fail after a write. These behaviours were documented, not changed.
+- Removed obsolete SQL, standalone-server, WP-CLI and assumed PITR recipes.
+  Added isolated restore acceptance, encryption-material requirements and stale
+  queue/revocation reconciliation. E11-06 remains open; no backup was performed.
+- Evidence, working directory `/home/user/KPH-SitePilot`, exit 0 for each:
+  - `pnpm install --frozen-lockfile`: 197 packages, unchanged lockfile.
+  - `pnpm --filter @wp-agent/dashboard test tests/recovery-docs.test.mjs tests/release-check.test.mjs`:
+    14 tests / 2 files, including five new recovery-doc regressions.
+  - `pnpm release:check`: 8/8 gates; typecheck 22/22, lint 12/12,
+    tests 838 / 92 files (dashboard 478 / 51), build 12/12,
+    governance 35/35, secret audit 306 tracked files / zero findings, diff clean.
+- Not verified: production health/settings, real WordPress restore, inbox flow,
+  isolated platform restore or PITR availability. No runtime/production change,
+  credential rotation, database operation or manual deployment executed.
+- Follow-up: security review and API/FAQ audit; separately harden undo completion
+  bookkeeping and revoke/cancel error handling rather than implying docs fixed them.
