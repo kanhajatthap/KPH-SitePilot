@@ -74,6 +74,8 @@ exploit was reproduced merely from source inspection.
    `route-helpers.ts`; do not claim all endpoints report the actual reset time.
 4. **Error disclosure (partially hardened, 2026-11-04):** site GET/PATCH/DELETE
    and snapshot undo now convert backend exceptions to fixed client-safe messages.
+   Signed heartbeat, claim, result and unpair routes also mask thrown handler,
+   request-read and dependency-setup failures, preserving explicit config errors.
    Snapshot lookup and ownership failures are included in the undo error boundary;
    no restore is queued when those checks throw. Undo failure copy tells the owner
    to inspect Activity first because enqueue may already have succeeded.

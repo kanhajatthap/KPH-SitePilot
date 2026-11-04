@@ -10,16 +10,15 @@ export const dynamic = 'force-dynamic';
  * so two connectors polling at the same moment can never run the same job.
  */
 export async function POST(req: Request) {
-  const rawBody = await req.text();
-  const built = buildConnectorDeps();
-  if (!built.ok) return connectorJson(built.output);
-
   try {
+    const rawBody = await req.text();
+    const built = buildConnectorDeps();
+    if (!built.ok) return connectorJson(built.output);
     return connectorJson(await handleClaim(req.headers, rawBody, built.deps));
-  } catch (error) {
+  } catch {
     return connectorJson({
       status: 500,
-      body: { error: 'INTERNAL_ERROR', message: (error as Error).message },
+      body: { error: 'INTERNAL_ERROR', message: 'Connector request could not be confirmed. Check site activity before trying again.' },
     });
   }
 }
