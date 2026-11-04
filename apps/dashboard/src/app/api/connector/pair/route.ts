@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getEncryptionKey, ConnectorConfigError } from '../../../../lib/connector/crypto';
+import { getEncryptionKey } from '../../../../lib/connector/crypto';
 import { pairSite } from '../../../../lib/connector/pairing';
 import {
   createSupabasePairingStore,
@@ -65,65 +65,66 @@ export async function POST(req: Request) {
   let encryptionKey: Buffer;
   try {
     encryptionKey = getEncryptionKey();
-  } catch (error) {
-    if (error instanceof ConnectorConfigError) {
-      return json({ error: 'CONFIG_MISSING', message: error.message }, 503);
-    }
+  } catch {
     return json({ error: 'CONFIG_MISSING', message: 'Connector encryption is misconfigured.' }, 503);
   }
 
-  const store = createSupabasePairingStore();
-  if (!store) {
+  try {
+    const store = createSupabasePairingStore();
+    if (!store) {
+      return json(
+        {
+          error: 'STORAGE_UNAVAILABLE',
+          message: 'Connector storage is not configured for this deployment.',
+        },
+        503
+      );
+    }
+
+    const result = await pairSite(parsed.data, { store, encryptionKey });
+    if (!result.ok) {
+      return json({ error: result.code, message: result.message }, result.status);
+    }
+
+    const { credentials } = result;
+
+    // Kick off the first job immediately so the connector can prove the pipeline
+    // (and upload its capability manifest) without waiting for a scheduled poll.
+    let firstJobId: string | null = null;
+    try {
+      firstJobId = await enqueueConnectorJob({
+        projectId: credentials.projectId,
+        siteId: credentials.siteId,
+        tool: 'site.info',
+        args: {},
+        risk: 'R0',
+        idempotencyKey: `site.info:${credentials.siteId}:bootstrap`,
+      });
+    } catch {
+      // Pairing succeeded; a missing first job is recoverable via heartbeat.
+      firstJobId = null;
+    }
+
     return json(
       {
-        error: 'STORAGE_UNAVAILABLE',
-        message: 'Connector storage is not configured for this deployment.',
+        status: 'paired',
+        site: {
+          id: credentials.siteId,
+          projectId: credentials.projectId,
+          url: credentials.siteUrl,
+          environment: credentials.environment,
+          scopes: credentials.scopes,
+        },
+        credentials: {
+          token: credentials.token,
+          secret: credentials.secret,
+        },
+        firstJobId,
+        note: 'Store these credentials in WordPress now — they are not retrievable later.',
       },
-      503
+      201
     );
-  }
-
-  const result = await pairSite(parsed.data, { store, encryptionKey });
-  if (!result.ok) {
-    return json({ error: result.code, message: result.message }, result.status);
-  }
-
-  const { credentials } = result;
-
-  // Kick off the first job immediately so the connector can prove the pipeline
-  // (and upload its capability manifest) without waiting for a scheduled poll.
-  let firstJobId: string | null = null;
-  try {
-    firstJobId = await enqueueConnectorJob({
-      projectId: credentials.projectId,
-      siteId: credentials.siteId,
-      tool: 'site.info',
-      args: {},
-      risk: 'R0',
-      idempotencyKey: `site.info:${credentials.siteId}:bootstrap`,
-    });
   } catch {
-    // Pairing succeeded; a missing first job is recoverable via heartbeat.
-    firstJobId = null;
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Pairing could not be confirmed. Check the connection status before requesting a new code.' }, 503);
   }
-
-  return json(
-    {
-      status: 'paired',
-      site: {
-        id: credentials.siteId,
-        projectId: credentials.projectId,
-        url: credentials.siteUrl,
-        environment: credentials.environment,
-        scopes: credentials.scopes,
-      },
-      credentials: {
-        token: credentials.token,
-        secret: credentials.secret,
-      },
-      firstJobId,
-      note: 'Store these credentials in WordPress now — they are not retrievable later.',
-    },
-    201
-  );
 }

@@ -122,47 +122,47 @@ export async function POST(req: Request) {
     );
   }
 
-  const supabase = createSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json(
-      {
-        error: 'STORAGE_UNAVAILABLE',
-        message: 'Connector storage is not configured for this deployment.',
-      },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  // Ownership is enforced in SQL, not by trusting the request body.
-  const { data: site, error } = await supabase
-    .from('sites')
-    .select('id, project_id, status, projects!inner(owner_id)')
-    .eq('id', parsed.data.siteId)
-    .maybeSingle();
-
-  if (error || !site) {
-    return NextResponse.json(
-      { error: 'SITE_NOT_FOUND', message: 'No such site for your account.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  const owner = (site as { projects?: { owner_id?: string } }).projects?.owner_id;
-  if (owner !== auth.context.user.id) {
-    return NextResponse.json(
-      { error: 'SITE_NOT_FOUND', message: 'No such site for your account.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  if ((site as { status?: string }).status !== 'active') {
-    return NextResponse.json(
-      { error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked. Resume it first.' },
-      { status: 409, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
   try {
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        {
+          error: 'STORAGE_UNAVAILABLE',
+          message: 'Connector storage is not configured for this deployment.',
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    // Ownership is enforced in SQL, not by trusting the request body.
+    const { data: site, error } = await supabase
+      .from('sites')
+      .select('id, project_id, status, projects!inner(owner_id)')
+      .eq('id', parsed.data.siteId)
+      .maybeSingle();
+
+    if (error || !site) {
+      return NextResponse.json(
+        { error: 'SITE_NOT_FOUND', message: 'No such site for your account.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const owner = (site as { projects?: { owner_id?: string } }).projects?.owner_id;
+    if (owner !== auth.context.user.id) {
+      return NextResponse.json(
+        { error: 'SITE_NOT_FOUND', message: 'No such site for your account.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    if ((site as { status?: string }).status !== 'active') {
+      return NextResponse.json(
+        { error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked. Resume it first.' },
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     const jobId = await enqueueConnectorJob({
       projectId: (site as { project_id: string }).project_id,
       siteId: parsed.data.siteId,
@@ -175,9 +175,9 @@ export async function POST(req: Request) {
       { status: 'queued', jobId, tool: parsed.data.tool },
       { status: 202, headers: { 'Cache-Control': 'no-store' } }
     );
-  } catch (enqueueError) {
+  } catch {
     return NextResponse.json(
-      { error: 'ENQUEUE_FAILED', message: (enqueueError as Error).message },
+      { error: 'ENQUEUE_FAILED', message: 'Job submission could not be confirmed. Check Activity before submitting another job.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );
   }

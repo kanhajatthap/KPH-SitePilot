@@ -32,18 +32,18 @@ export async function GET() {
     );
   }
 
-  if (!createSupabaseAdminClient()) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Project storage is not configured.' },
-      503
-    );
-  }
-
   try {
+    if (!createSupabaseAdminClient()) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Project storage is not configured.' },
+        503
+      );
+    }
+
     const projects = await listOwnedProjects(auth.context.user.id, auth.context.user.email);
     return json({ projects });
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Project operation could not be confirmed. Refresh the project list before trying again.' }, 503);
   }
 }
 
@@ -79,14 +79,14 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!createSupabaseAdminClient()) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Project storage is not configured.' },
-      503
-    );
-  }
-
   try {
+    if (!createSupabaseAdminClient()) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Project storage is not configured.' },
+        503
+      );
+    }
+
     const project = await createOwnedProject(
       auth.context.user.id,
       parsed.data,
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       return json({ error: 'STORAGE_UNAVAILABLE', message: 'Project could not be created.' }, 503);
     }
     return json({ project }, 201);
-  } catch (error) {
-    return json({ error: 'STORAGE_UNAVAILABLE', message: (error as Error).message }, 503);
+  } catch {
+    return json({ error: 'STORAGE_UNAVAILABLE', message: 'Project operation could not be confirmed. Refresh the project list before trying again.' }, 503);
   }
 }

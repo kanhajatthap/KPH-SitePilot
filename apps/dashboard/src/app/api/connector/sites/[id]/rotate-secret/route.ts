@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authenticateApiRequest } from '../../../../../../lib/auth/api';
+import { ConnectorConfigError } from '../../../../../../lib/connector/crypto';
 import { rotateSiteCredentials } from '../../../../../../lib/connector/store';
 
 export const dynamic = 'force-dynamic';
@@ -55,14 +56,13 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       { status: 201, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    const message = (error as Error).message;
-    const encryptionMissing = message.includes('SITEPILOT_ENCRYPTION_KEY');
+    const encryptionMissing = error instanceof ConnectorConfigError;
     return NextResponse.json(
       {
         error: encryptionMissing ? 'CONFIG_MISSING' : 'CONNECTOR_STORAGE_UNAVAILABLE',
         message: encryptionMissing
           ? 'Site secrets cannot be re-issued because SITEPILOT_ENCRYPTION_KEY is not set.'
-          : message,
+          : 'Credential rotation could not be confirmed. Check the connection status before rotating again.',
       },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );

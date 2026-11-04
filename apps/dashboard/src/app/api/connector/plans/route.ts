@@ -259,20 +259,24 @@ export async function GET(req: Request) {
 
   const siteId = new URL(req.url).searchParams.get('siteId');
   if (!siteId) return json({ error: 'VALIDATION_FAILED', message: 'siteId is required.' }, 400);
-  if (!(await siteBelongsToUser(siteId, auth.context.user.id))) {
-    return json({ error: 'SITE_NOT_FOUND', message: 'No such site for your account.' }, 404);
+  try {
+    if (!(await siteBelongsToUser(siteId, auth.context.user.id))) {
+      return json({ error: 'SITE_NOT_FOUND', message: 'No such site for your account.' }, 404);
+    }
+
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) return json({ error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' }, 503);
+
+    const { data, error } = await supabase
+      .from('plans')
+      .select('id, summary, risk, status, steps, created_at')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) return json({ error: 'PLAN_LIST_FAILED', message: 'Plan history could not be loaded. Refresh the plan list to try again.' }, 503);
+    return json({ plans: data ?? [] }, 200);
+  } catch {
+    return json({ error: 'PLAN_LIST_FAILED', message: 'Plan history could not be loaded. Refresh the plan list to try again.' }, 503);
   }
-
-  const supabase = createSupabaseAdminClient();
-  if (!supabase) return json({ error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' }, 503);
-
-  const { data, error } = await supabase
-    .from('plans')
-    .select('id, summary, risk, status, steps, created_at')
-    .eq('site_id', siteId)
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (error) return json({ error: 'PLAN_LIST_FAILED', message: error.message }, 503);
-  return json({ plans: data ?? [] }, 200);
 }
