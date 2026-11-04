@@ -105,148 +105,153 @@ export async function POST(req: Request) {
     prevalidatedSteps = cleanedSteps;
   }
 
-  if (!(await siteBelongsToUser(parsed.data.siteId, auth.context.user.id))) {
-    return json({ error: 'SITE_NOT_FOUND', message: 'No such site for your account.' }, 404);
-  }
-
-  const site = await getSiteContext(parsed.data.siteId);
-  if (!site || site.status !== 'active') {
-    return json({ error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked.' }, 409);
-  }
-
-  let planned: PlannerResult;
-  let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode: 'structured' };
-  let effectivePrompt = parsed.data.prompt ?? '';
-
-  if (prevalidatedSteps) {
-    const worstRisk = prevalidatedSteps.reduce<Risk>(
-      (worst, step) => (RISK_ORDER.indexOf(step.risk) > RISK_ORDER.indexOf(worst) ? step.risk : worst),
-      'R0'
-    );
-    const summary =
-      parsed.data.summary?.trim() || prevalidatedSteps.map((s) => s.summary).join(' · ').slice(0, 200);
-    effectivePrompt = effectivePrompt || `Structured canvas plan: ${summary}`;
-    planned = {
-      ok: true,
-      summary,
-      risk: worstRisk,
-      steps: prevalidatedSteps,
-    };
-  } else if (prevalidatedSettings) {
-    const keys = Object.keys(prevalidatedSettings);
-    const summary = `Update site settings (${keys.join(', ')})`;
-    effectivePrompt = effectivePrompt || `Structured settings update: ${keys.join(', ')}`;
-    planned = {
-      ok: true,
-      summary,
-      risk: 'R1',
-      steps: [
-        {
-          tool: 'settings.update',
-          args: { values: prevalidatedSettings },
-          risk: 'R1',
-          summary,
-        },
-      ],
-    };
-  } else {
-    const promptText = parsed.data.prompt as string;
-    effectivePrompt = promptText;
-
-    // Planner selection. `auto` (default) uses the caller's own model key when
-    // they have one and quietly falls back to the deterministic grammar; `model`
-    // refuses instead of guessing; `deterministic` never calls a provider.
-    const mode = (process.env.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
-    if (!['auto', 'model', 'deterministic'].includes(mode)) {
-      return json({ error: 'PLANNER_MISCONFIGURED', message: 'SITEPILOT_PLANNER must be auto, model or deterministic.' }, 500);
+  try {
+    if (!(await siteBelongsToUser(parsed.data.siteId, auth.context.user.id))) {
+      return json({ error: 'SITE_NOT_FOUND', message: 'No such site for your account.' }, 404);
     }
 
-    plannerMeta = { kind: 'deterministic', mode };
-    const modelKey = mode === 'deterministic' ? null : await getUserApiKey(auth.context.user.id);
+    const site = await getSiteContext(parsed.data.siteId);
+    if (!site || site.status !== 'active') {
+      return json({ error: 'SITE_NOT_ACTIVE', message: 'This site is paused or revoked.' }, 409);
+    }
 
-    if (mode !== 'deterministic' && !modelKey && mode === 'model') {
-      return json(
-        {
-          error: 'PLANNER_KEY_MISSING',
-          message: 'The model planner is required on this deployment, but no model key is stored for your account.',
-        },
-        400
+    let planned: PlannerResult;
+    let plannerMeta: Record<string, unknown> = { kind: 'deterministic', mode: 'structured' };
+    let effectivePrompt = parsed.data.prompt ?? '';
+
+    if (prevalidatedSteps) {
+      const worstRisk = prevalidatedSteps.reduce<Risk>(
+        (worst, step) => (RISK_ORDER.indexOf(step.risk) > RISK_ORDER.indexOf(worst) ? step.risk : worst),
+        'R0'
       );
-    }
+      const summary =
+        parsed.data.summary?.trim() || prevalidatedSteps.map((s) => s.summary).join(' · ').slice(0, 200);
+      effectivePrompt = effectivePrompt || `Structured canvas plan: ${summary}`;
+      planned = {
+        ok: true,
+        summary,
+        risk: worstRisk,
+        steps: prevalidatedSteps,
+      };
+    } else if (prevalidatedSettings) {
+      const keys = Object.keys(prevalidatedSettings);
+      const summary = `Update site settings (${keys.join(', ')})`;
+      effectivePrompt = effectivePrompt || `Structured settings update: ${keys.join(', ')}`;
+      planned = {
+        ok: true,
+        summary,
+        risk: 'R1',
+        steps: [
+          {
+            tool: 'settings.update',
+            args: { values: prevalidatedSettings },
+            risk: 'R1',
+            summary,
+          },
+        ],
+      };
+    } else {
+      const promptText = parsed.data.prompt as string;
+      effectivePrompt = promptText;
 
-    if (mode !== 'deterministic' && modelKey) {
-      const modelled = await planWithModel(
-        promptText,
-        { url: site.url, name: site.name, capabilities: site.capabilities },
-        {
-          provider: modelKey.provider,
-          apiKey: modelKey.key,
-          timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? PLANNER_TIMEOUT_MS),
+      // Planner selection. `auto` (default) uses the caller's own model key when
+      // they have one and quietly falls back to the deterministic grammar; `model`
+      // refuses instead of guessing; `deterministic` never calls a provider.
+      const mode = (process.env.SITEPILOT_PLANNER ?? 'auto').trim().toLowerCase();
+      if (!['auto', 'model', 'deterministic'].includes(mode)) {
+        return json({ error: 'PLANNER_MISCONFIGURED', message: 'SITEPILOT_PLANNER must be auto, model or deterministic.' }, 500);
+      }
+
+      plannerMeta = { kind: 'deterministic', mode };
+      const modelKey = mode === 'deterministic' ? null : await getUserApiKey(auth.context.user.id);
+
+      if (mode !== 'deterministic' && !modelKey && mode === 'model') {
+        return json(
+          {
+            error: 'PLANNER_KEY_MISSING',
+            message: 'The model planner is required on this deployment, but no model key is stored for your account.',
+          },
+          400
+        );
+      }
+
+      if (mode !== 'deterministic' && modelKey) {
+        const modelled = await planWithModel(
+          promptText,
+          { url: site.url, name: site.name, capabilities: site.capabilities },
+          {
+            provider: modelKey.provider,
+            apiKey: modelKey.key,
+            timeoutMs: Number(process.env.SITEPILOT_PLANNER_TIMEOUT_MS ?? PLANNER_TIMEOUT_MS),
+          }
+        );
+
+        if (modelled.ok) {
+          planned = toPlannerResult(modelled.plan);
+          plannerMeta = {
+            kind: 'model',
+            mode,
+            provider: modelled.provider,
+            model: modelled.model,
+            droppedSteps: modelled.dropped,
+          };
+        } else if (mode === 'model') {
+          return json({ error: 'PLANNER_FAILED', message: modelled.reason }, 502);
+        } else {
+          planned = planFromPrompt(promptText);
+          plannerMeta = { kind: 'deterministic', mode, fallbackReason: modelled.reason };
         }
-      );
-
-      if (modelled.ok) {
-        planned = toPlannerResult(modelled.plan);
-        plannerMeta = {
-          kind: 'model',
-          mode,
-          provider: modelled.provider,
-          model: modelled.model,
-          droppedSteps: modelled.dropped,
-        };
-      } else if (mode === 'model') {
-        return json({ error: 'PLANNER_FAILED', message: modelled.reason }, 502);
       } else {
         planned = planFromPrompt(promptText);
-        plannerMeta = { kind: 'deterministic', mode, fallbackReason: modelled.reason };
       }
-    } else {
-      planned = planFromPrompt(promptText);
     }
-  }
 
-  if (!planned.ok) {
-    return json({ error: 'PLAN_NOT_UNDERSTOOD', message: planned.reason, planner: plannerMeta }, 422);
-  }
+    if (!planned.ok) {
+      return json({ error: 'PLAN_NOT_UNDERSTOOD', message: planned.reason, planner: plannerMeta }, 422);
+    }
 
-  const store = createSupabasePlanStore();
-  if (!store) {
-    return json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Connector storage is not configured.' },
-      503
-    );
-  }
+    const store = createSupabasePlanStore();
+    if (!store) {
+      return json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Connector storage is not configured.' },
+        503
+      );
+    }
 
-  const created = await createPlan(
-    {
-      projectId: site.projectId,
-      siteId: site.id,
-      createdBy: auth.context.user.id,
-      prompt: effectivePrompt,
-      summary: planned.summary,
-      steps: planned.steps,
-      risk: planned.risk,
-    },
-    { store }
-  );
-
-  if (!created.ok) return json({ error: created.code, message: created.message }, created.status);
-
-  return json(
-    {
-      plan: {
-        id: created.plan.id,
-        summary: created.plan.summary,
-        risk: created.plan.risk,
-        status: created.plan.status,
-        hash: created.plan.hash,
-        steps: created.plan.steps,
+    const created = await createPlan(
+      {
+        projectId: site.projectId,
+        siteId: site.id,
+        createdBy: auth.context.user.id,
+        prompt: effectivePrompt,
+        summary: planned.summary,
+        steps: planned.steps,
+        risk: planned.risk,
       },
-      planner: plannerMeta,
-      next: 'Review the steps, then approve the plan. Nothing has been written yet.',
-    },
-    201
-  );
+      { store }
+    );
+
+    if (!created.ok) return json({ error: created.code, message: created.message }, created.status);
+
+    return json(
+      {
+        plan: {
+          id: created.plan.id,
+          summary: created.plan.summary,
+          risk: created.plan.risk,
+          status: created.plan.status,
+          hash: created.plan.hash,
+          steps: created.plan.steps,
+        },
+        planner: plannerMeta,
+        next: 'Review the steps, then approve the plan. Nothing has been written yet.',
+      },
+      201
+    );
+  } catch {
+    return NextResponse.json({ error: 'PLAN_CREATE_FAILED', message: 'The operation could not be confirmed. Check Activity before trying again.' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
 }
 
 /** GET /api/connector/plans?siteId=… — plan history for one site. */

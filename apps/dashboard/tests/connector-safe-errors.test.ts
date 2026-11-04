@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   authenticateApiRequest: vi.fn(), findOwnedSite: vi.fn(), updateOwnedSite: vi.fn(),
   revokeSiteForUser: vi.fn(), getSnapshot: vi.fn(), siteBelongsToUser: vi.fn(),
-  enqueueConnectorJob: vi.fn(), markSnapshotRestored: vi.fn(), createSupabaseAdminClient: vi.fn(),
+  enqueueConnectorJob: vi.fn(), createSupabaseAdminClient: vi.fn(),
 }));
 vi.mock('../src/lib/auth/api', () => ({ authenticateApiRequest: mocks.authenticateApiRequest }));
 vi.mock('../src/lib/connector/store', () => mocks);
@@ -45,7 +45,7 @@ describe('connector client-safe storage failures', () => {
     await assertSafe(await handler(request(), context()), 'STORAGE_UNAVAILABLE');
   });
 
-  it.each(['getSnapshot', 'siteBelongsToUser', 'enqueueConnectorJob', 'markSnapshotRestored'] as const)(
+  it.each(['getSnapshot', 'siteBelongsToUser', 'enqueueConnectorJob'] as const)(
     'undo safely handles failure from %s', async (dependency) => {
       mocks[dependency].mockRejectedValue(new Error(internal));
       const response = await POST(request(), context());

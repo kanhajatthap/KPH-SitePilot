@@ -23,7 +23,7 @@ describe('E11-08 hosted recovery runbooks', () => {
       expect(doc).toContain('ALREADY_RESTORED');
     }
     const route = read('apps/dashboard/src/app/api/connector/snapshots/[id]/undo/route.ts');
-    expect(route).toContain('markSnapshotRestored(snapshot.id, jobId)');
+    expect(route).not.toContain('markSnapshotRestored');
     expect(route).toContain("status: 'queued'");
   });
 

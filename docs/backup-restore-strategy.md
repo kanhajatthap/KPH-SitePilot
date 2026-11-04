@@ -55,8 +55,8 @@ plugin code rollback, schema changes or permanent file recovery.
    `POST /api/connector/snapshots/{id}/undo` returns 202 with `status: queued` and
    a job id. **202 queued is not restored**.
 5. Follow that job to its actual outcome and verify the resource in WordPress.
-   The current route marks `restored_at` at enqueue time, not after read-back
-   verification. Do not use that timestamp or `ALREADY_RESTORED` as restoration proof.
+   The recovery migration marks `restored_at` only after a succeeded restore
+   job with boolean verified=true. Older enqueue-time timestamps require a separate audit. Do not use that timestamp or `ALREADY_RESTORED` as restoration proof.
 6. If the job fails, snapshot is unusable or read-back is unverified, report that
    state explicitly. Investigate before retrying; do not clear restored metadata,
    force duplicate jobs or claim the site was restored.

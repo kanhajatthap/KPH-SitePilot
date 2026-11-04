@@ -6,14 +6,12 @@ const {
   createSupabaseAdminClient,
   enqueueConnectorJob,
   getSnapshot,
-  markSnapshotRestored,
   siteBelongsToUser,
 } = vi.hoisted(() => ({
   authenticateApiRequest: vi.fn(),
   createSupabaseAdminClient: vi.fn(),
   enqueueConnectorJob: vi.fn(),
   getSnapshot: vi.fn(),
-  markSnapshotRestored: vi.fn(),
   siteBelongsToUser: vi.fn(),
 }));
 
@@ -22,7 +20,6 @@ vi.mock('../src/lib/supabase/admin', () => ({ createSupabaseAdminClient }));
 vi.mock('../src/lib/connector/store', () => ({
   enqueueConnectorJob,
   getSnapshot,
-  markSnapshotRestored,
   siteBelongsToUser,
 }));
 
@@ -190,7 +187,7 @@ describe('POST /api/connector/snapshots/[id]/undo route (E3-09 / E6-01)', () => 
     siteBelongsToUser.mockResolvedValue(true);
   });
 
-  it('enqueues settings.restore for a settings snapshot and marks it restored', async () => {
+  it('enqueues settings.restore for a settings snapshot without marking it restored', async () => {
     getSnapshot.mockResolvedValue({
       id: SNAPSHOT_ID,
       project_id: PROJECT_ID,
@@ -218,7 +215,7 @@ describe('POST /api/connector/snapshots/[id]/undo route (E3-09 / E6-01)', () => 
       risk: 'R1',
       idempotencyKey: `undo:${SNAPSHOT_ID}`,
     });
-    expect(markSnapshotRestored).toHaveBeenCalledWith(SNAPSHOT_ID, 'undo-job-1');
+
     expect(body).toEqual({
       status: 'queued',
       jobId: 'undo-job-1',
