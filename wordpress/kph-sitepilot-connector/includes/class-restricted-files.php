@@ -22,7 +22,7 @@ final class KPH_SP_Restricted_Files {
 		if ( ! defined( 'KPH_SP_RESTRICTED_FILES_ENABLED' ) || true !== KPH_SP_RESTRICTED_FILES_ENABLED ) {
 			self::fail( 'FILE_EDITOR_DISABLED' );
 		}
-		if ( ! current_user_can( 'manage_options' ) || is_multisite() ||
+		if ( get_current_user_id() <= 0 || ! current_user_can( 'manage_options' ) || is_multisite() ||
 			( defined( 'DISALLOW_FILE_EDIT' ) && DISALLOW_FILE_EDIT ) ||
 			( defined( 'DISALLOW_FILE_MODS' ) && DISALLOW_FILE_MODS ) ) {
 			self::fail( 'FILE_EDITOR_FORBIDDEN' );
@@ -47,8 +47,9 @@ final class KPH_SP_Restricted_Files {
 		if ( ! current_user_can( $scope ) ) {
 			self::fail( 'FILE_EDITOR_FORBIDDEN' );
 		}
+		clearstatcache();
 		$root = realpath( WP_CONTENT_DIR );
-		if ( false === $root || is_link( WP_CONTENT_DIR ) ) {
+		if ( false === $root || is_link( WP_CONTENT_DIR ) || ( @fileperms( $root ) & 0002 ) ) {
 			self::fail( 'FILE_PATH_DENIED' );
 		}
 		$walk = $root;
@@ -82,8 +83,22 @@ final class KPH_SP_Restricted_Files {
 
 	public static function read( $relative ) {
 		$path = self::resolve( $relative );
-		$text = @file_get_contents( $path );
-		self::inspect( $text );
+		$handle = @fopen( $path, 'rb' );
+		if ( false === $handle ) { self::fail( 'FILE_READ_FAILED' ); }
+		try {
+			$opened = fstat( $handle );
+			clearstatcache( true, $path );
+			$live = @stat( $path );
+			if ( ! $opened || ! $live || $opened['ino'] !== $live['ino'] || $opened['dev'] !== $live['dev'] || 1 !== $opened['nlink'] ) { self::fail( 'FILE_CHANGED' ); }
+			// Bound allocation even if a non-cooperative writer grows the file after stat.
+			$text = stream_get_contents( $handle, self::MAX_BYTES + 1 );
+			self::inspect( $text );
+			if ( self::resolve( $relative ) !== $path ) { self::fail( 'FILE_CHANGED' ); }
+			$live = @stat( $path );
+			if ( ! $live || $opened['ino'] !== $live['ino'] || $opened['dev'] !== $live['dev'] ) { self::fail( 'FILE_CHANGED' ); }
+		} finally {
+			fclose( $handle );
+		}
 		return array( 'path' => $relative, 'content' => $text, 'sha256' => hash( 'sha256', $text ) );
 	}
 

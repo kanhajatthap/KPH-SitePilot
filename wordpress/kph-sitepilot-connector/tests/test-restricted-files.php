@@ -20,7 +20,8 @@ function wp_get_environment_type() { global $env; return $env; }
 function current_user_can( $cap ) { global $allowed, $denied_cap; return $allowed && $cap !== $denied_cap; }
 function is_multisite() { global $multisite; return $multisite; }
 function get_current_user_id() { global $user; return $user; }
-function wp_salt( $scheme ) { return str_repeat( 'fixture-only-salt-', 4 ); }
+$salt = str_repeat( 'fixture-only-salt-', 4 );
+function wp_salt( $scheme ) { global $salt; return $salt; }
 function wp_json_encode( $data ) { return json_encode( $data ); }
 function add_option( $name, $value, $deprecated = '', $autoload = null ) {
  global $options, $backup_fail;
@@ -63,6 +64,19 @@ try {
   foreach ( array( 'production', 'local', 'development' ) as $environment ) {
    $env = $environment; denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_EDITOR_STAGING_REQUIRED' );
   }
+  $env = 'staging'; $user = 0;
+  denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_EDITOR_FORBIDDEN' );
+  $user = 1;
+  chmod( $root, 0777 );
+  denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_PATH_DENIED' );
+  chmod( $root, 0700 );
+  file_put_contents( $root . '/' . $file, str_repeat( 'a', 65537 ) );
+  denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_UNSUPPORTED' );
+  file_put_contents( $root . '/' . $file, str_repeat( 'a', 65536 ) );
+  check( strlen( KPH_SP_Restricted_Files::read( $file )['content'] ) === 65536, 'exact size limit accepted' );
+  file_put_contents( $root . '/' . $file, "\xff" );
+  denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_CONTENT_UNSUPPORTED' );
+  file_put_contents( $root . '/' . $file, $before );
   $env = 'staging'; $allowed = false;
   denied( function() use ( $file ) { KPH_SP_Restricted_Files::read( $file ); }, 'FILE_EDITOR_FORBIDDEN' );
   $allowed = true; $multisite = true;
@@ -128,6 +142,14 @@ try {
   check( true === $result['verified'] && $after === file_get_contents( $root . '/' . $file ), 'write verified' );
   check( false === strpos( $options['kph_sp_file_backup_' . $id], $before ), 'backup encrypted' );
   denied( function() use ( $id ) { KPH_SP_Restricted_Files::apply( $id, $id ); }, 'FILE_RECORD_UNUSABLE' );
+  $old_salt = $salt; $salt = 'rotated-fixture-salt';
+  denied( function() use ( $id ) { KPH_SP_Restricted_Files::restore( $id, $id ); }, 'FILE_RECORD_UNUSABLE' );
+  check( $after === file_get_contents( $root . '/' . $file ), 'salt loss does not mutate file' );
+  $salt = $old_salt;
+  $user = 2;
+  denied( function() use ( $id ) { KPH_SP_Restricted_Files::restore( $id, $id ); }, 'FILE_EDITOR_FORBIDDEN' );
+  $user = 1;
+  denied( function() use ( $id ) { KPH_SP_Restricted_Files::restore( $id, 'CONFIRM' ); }, 'FILE_CONFIRMATION_REQUIRED' );
   file_put_contents( $root . '/' . $file, 'new legitimate edit' );
   denied( function() use ( $id ) { KPH_SP_Restricted_Files::restore( $id, $id ); }, 'FILE_CHANGED' );
   file_put_contents( $root . '/' . $file, $after );
