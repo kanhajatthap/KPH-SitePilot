@@ -1,5 +1,7 @@
 # KPH SitePilot — Backup, Restore, and Disaster Recovery Strategy
 
+> **Scope correction (2026-11-04):** This document describes Phase 5 local-API snapshots and proposed disaster-recovery procedures. Its local-only write restriction does not apply to the shipped hosted connector: production sites are permitted with ownership, pairing and risk-based approval gates. Resource undo is not a platform backup. E11-06 remains open until an isolated platform restore is rehearsed; do not assume the scripts or backup facilities discussed below have been deployed. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+
 **Scope**: Phase 5 (Controlled WordPress Editing & Safe Mutations)  
 **Security Mandate**: Never execute mutating operations on WordPress without verified rollback snapshots or automated transactional rollback capability.
 

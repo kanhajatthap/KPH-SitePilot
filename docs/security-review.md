@@ -1,5 +1,7 @@
 # KPH SitePilot — Comprehensive Security Review & Audit
 
+> **Scope correction (2026-11-04):** This dated review records earlier local-API scope, not a current hosted security certification. Its REST transport, global headers/limits and verification assertions must not be extrapolated to hosted routes. The hosted product uses the signed connector queue, catalog risk floors, owner-side checks and optional encrypted BYOK keys. Re-run release gates and collect live tenancy evidence before sign-off. See the [documentation map](./README.md) and [current release checklist](./release-checklist.md).
+
 **Date:** 2026-10-22  
 **Status:** COMPLETED & VERIFIED  
 **Frameworks:** OWASP Top 10 for LLMs (2025), CWE Top 25, WordPress Defensive Coding Standards

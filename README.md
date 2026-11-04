@@ -441,12 +441,14 @@ The same gates run in CI on every push and pull request to `main`.
 
 ## Documentation index
 
+Start with the [documentation map](./docs/README.md) for current sources and legacy-scope warnings.
+
 | Document | What it answers |
 |---|---|
 | [`docs/sitepilot-master-plan.md`](./docs/sitepilot-master-plan.md) | A–Z plan: audit, architecture, connector spec, tool catalog, free-tier constraints, roadmap |
 | [`docs/sitepilot-backlog.md`](./docs/sitepilot-backlog.md) | Micro-task execution backlog (`E0-01` … `E11-12`) |
 | [`docs/plan-progress.md`](./docs/plan-progress.md) | Evidence log for every executed task |
-| [`docs/status-2026-11-03.md`](./docs/status-2026-11-03.md) | **Current status audit**: what is shipped/live, owner-side checklist, forward plan |
+| [`docs/status-2026-11-03.md`](./docs/status-2026-11-03.md) | **Dated status audit**: recorded deployment evidence, owner-side checklist, forward plan |
 | [`docs/architecture-decisions.md`](./docs/architecture-decisions.md) | Why the system is shaped this way (ADRs) |
 | [`docs/environment-setup.md`](./docs/environment-setup.md) | Verified toolchain inventory and setup record |
 | [`docs/deployment-guide.md`](./docs/deployment-guide.md) | Production deployment prerequisites |

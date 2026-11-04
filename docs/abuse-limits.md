@@ -64,6 +64,8 @@ PASS 50 concurrent plan requests:   30 allowed / 20 graceful 429 (limit 30/min)
 PASS 1,000 job-result events:      240 allowed / 760 graceful 429 (limit 240/min)
 ```
 
+The simulation pins the default limits (deployment overrides are intentionally ignored), asserts exact allow/deny counts and checks recovery at the window boundary. This prevents an always-allow limiter from falsely passing with zero denials. It does not exercise real concurrency or job persistence.
+
 Every denial is `RATE_LIMIT_EXCEEDED` with a `Retry-After >= 1`, a future `resetAt` and no leaked subject id; the window rolls over cleanly afterwards.
 
 ## Honest scope

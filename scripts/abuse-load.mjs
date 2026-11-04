@@ -4,7 +4,7 @@
  *
  * Runs the SAME pure sliding-window policy that the routes use, with a fixed
  * clock and no network. It proves that overload produces graceful, typed 429s
- * (with a real Retry-After) instead of an outage or lost events. This is an
+ * (with a real Retry-After) instead of untyped denials. It does not measure job delivery. This is an
  * in-process simulation, not a deployed load test — E11-04 still owes p95 and
  * job-loss measurements against a running deployment.
  *
@@ -27,8 +27,8 @@ async function loadPolicy() {
 }
 
 /** Every scenario returns the same shape so the report is machine-checkable. */
-export async function runSimulation() {
-  const policy = await loadPolicy();
+export async function runSimulation(injectedPolicy) {
+  const policy = injectedPolicy ?? await loadPolicy();
   const {
     createMemoryAbuseStore,
     enforceAbuse,
@@ -37,7 +37,7 @@ export async function runSimulation() {
     DEFAULT_ABUSE_LIMITS,
   } = policy;
 
-  function scenario({ name, total, action, dimension, subject, at }) {
+  function scenario({ name, total, expectedAllowed, action, dimension, subject, at }) {
     const store = createMemoryAbuseStore({ now: () => NOW });
     let allowed = 0;
     const denials = [];
@@ -45,7 +45,7 @@ export async function runSimulation() {
       const decision = enforceAbuse(
         store,
         { action, dimension, subjectId: subject(index) },
-        { now: at(index) }
+        { now: at(index), limits: DEFAULT_ABUSE_LIMITS }
       );
       if (decision.allowed) {
         allowed += 1;
@@ -60,8 +60,20 @@ export async function runSimulation() {
         denials.push(graceful);
       }
     }
+    // Retry at the exact window boundary; denied attempts must not extend it.
+    const recovery = enforceAbuse(
+      store,
+      { action, dimension, subjectId: subject(0) },
+      { now: new Date(NOW.getTime() + DEFAULT_ABUSE_LIMITS[action].windowSeconds * 1000), limits: DEFAULT_ABUSE_LIMITS }
+    );
+    const countsMatch = allowed === expectedAllowed && denials.length === total - expectedAllowed;
+    const recovered = recovery.allowed === true;
     return {
       name,
+      ok: countsMatch && recovered && denials.every(Boolean),
+      expectedAllowed,
+      countsMatch,
+      recovered,
       total,
       allowed,
       limited: denials.length,
@@ -74,6 +86,7 @@ export async function runSimulation() {
     scenario({
       name: '10 sites x 60s polling (1 Hz)',
       total: 600,
+      expectedAllowed: 600,
       action: 'connector',
       dimension: 'site',
       subject: (index) => `site-${Math.floor(index / 60)}`,
@@ -82,6 +95,7 @@ export async function runSimulation() {
     scenario({
       name: '50 concurrent plan requests',
       total: 50,
+      expectedAllowed: 30,
       action: 'plan',
       dimension: 'user',
       subject: () => 'user-1',
@@ -90,6 +104,7 @@ export async function runSimulation() {
     scenario({
       name: '1,000 job-result events from one site',
       total: 1_000,
+      expectedAllowed: 240,
       action: 'connector',
       dimension: 'site',
       subject: () => 'site-hot',
@@ -98,7 +113,7 @@ export async function runSimulation() {
   ];
 
   return {
-    ok: scenarios.every((item) => item.allGraceful),
+    ok: scenarios.every((item) => item.ok),
     scenarios,
   };
 }
@@ -107,13 +122,13 @@ export function formatSimulation(report) {
   const lines = ['E11-02 deterministic abuse load simulation (fixed clock, zero network):'];
   for (const item of report.scenarios) {
     lines.push(
-      `  ${item.allGraceful ? 'PASS' : 'FAIL'} ${item.name}: ${item.allowed} allowed / ${item.limited} graceful 429 (limit ${item.limit}/min)`
+      `  ${item.ok ? 'PASS' : 'FAIL'} ${item.name}: ${item.allowed} allowed / ${item.limited} graceful 429 (limit ${item.limit}/min; counts ${item.countsMatch ? 'ok' : 'FAIL'}; recovery ${item.recovered ? 'ok' : 'FAIL'})`
     );
   }
   lines.push(
     report.ok
       ? 'All denials typed RATE_LIMIT_EXCEEDED with a real Retry-After; no subject id leaked.'
-      : 'Simulation FAILED: a denial was not graceful.'
+      : 'Simulation FAILED: unexpected counts, failed recovery or a non-graceful denial.'
   );
   return lines.join('\n');
 }

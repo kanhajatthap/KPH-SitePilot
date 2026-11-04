@@ -1,111 +1,111 @@
-# KPH SitePilot — Pre-Release Security & Production Readiness Checklist
+# KPH SitePilot — release checklist
 
-This document specifies the mandatory release gating criteria, critical/high-risk blockers, remediation procedures, and sign-off requirements prior to any production deployment or general availability launch of KPH SitePilot.
+Updated 2026-11-04. This is an operational checklist, **not a standing sign-off**.
+Past green tests do not certify a new commit or a live environment. Record the
+commit, command, exit code and evidence for each release in the
+[release notes template](./release-notes-template.md).
 
----
-
-## 1. Automated Verification Gates
-
-Every item in this section must pass in automated CI before any production release build is tagged or deployed.
-
-| Gate | Verification Command | Required Outcome | Status |
-|---|---|---|---|
-| **TypeScript Typecheck** | `pnpm typecheck` | 0 errors across all 12 workspace packages & Supabase Edge Functions (22/22 tasks) | **PASS** |
-| **Monorepo Linting** | `pnpm lint` | 0 lint or formatting errors (12/12 tasks + 15 PHP files via php-parser + product-phase governance audit 35/35 + credential-literal audit 305 files/0 findings; real `php -l` in CI) | **PASS** |
-| **Unit & Security Tests** | `pnpm test` | 100% pass rate in mock zero-quota isolation (**821 tests**, 22/22 tasks, dashboard 461/461) | **PASS** |
-| **Production Build** | `pnpm build` | Clean Next.js 15 App Router production bundle (`.next`) and compiled API (`dist/`) | **PASS** |
-| **Dependency Licensing** | `pnpm licenses list` | 100% permissive licenses (MIT, Apache-2.0, BSD-3-Clause, ISC); zero GPL or restricted copyleft | **PASS** |
-| **Secret Leak Check** | `git ls-files \| grep -E "^\.env(\.local)?$"` | Zero `.env` files tracked in git; all credentials confined to `.env.local` | **PASS** |
-
-### 1.1 One-command execution (E11-09)
-
-The checklist above is executable by one person, in order, with no manual interpretation:
+## 1. Automated repository gates
 
 ```bash
-pnpm release:plan     # prints the 8 gates below and the exact commands
-pnpm release:check    # runs all 7 gates and exits 1 if any gate fails
+pnpm install --frozen-lockfile
+pnpm release:plan     # lists the 8 ordered gates
+pnpm release:check    # runs all 8, collects failures, exits nonzero if any fail
 ```
 
-`scripts/release-check.mjs` is fail-closed: a missing result counts as a failure, and a nonzero exit cannot be masked by an `ok` flag. The eight gates are `pnpm typecheck`, `pnpm lint` (which also runs `scripts/governance-audit.mjs` and `scripts/secret-audit.mjs`), `pnpm test --force`, `pnpm build`, `pnpm abuse:load` (E11-02 deterministic 429 simulation), the standalone governance audit, the standalone credential-literal audit, and `git diff --check`. `--json` emits a machine-readable verdict for automation. Release notes are written from [`docs/release-notes-template.md`](./release-notes-template.md); `main` auto-deploys, so there is no manual redeploy step.
+The source of truth is `scripts/release-check.mjs`:
 
----
+| Gate | Command | Required result |
+|---|---|---|
+| Strict types, including Edge functions | `pnpm typecheck` | Exit 0 |
+| Workspace lint, PHP parsing, governance and secret audits, Edge types | `pnpm lint` | Exit 0; no audit findings |
+| Unit/security tests | `pnpm test --force` | Exit 0; record actual counts |
+| Production bundle | `pnpm build` | Exit 0 |
+| Deterministic abuse policy simulation | `pnpm abuse:load` | Expected allow/deny counts, typed denials and reset recovery |
+| Governance audit | `node scripts/governance-audit.mjs` | Exit 0 |
+| Credential-literal audit | `node scripts/secret-audit.mjs` | Exit 0 |
+| Diff hygiene | `git diff --check` | Exit 0 |
 
-## 2. Critical & High-Risk Release Blockers
+A missing gate result fails closed. `pnpm release:check --json` appends a JSON
+verdict after command logs; the whole stdout stream is not a JSON document.
+The simulation is not a deployed performance or job-delivery test.
 
-The following items represent **Hard Release Blockers**. If any blocker remains unresolved, production rollout must be **HALTED**.
+CI additionally runs real PHP connector tests and a production dependency audit;
+the dependency audit currently logs warnings without failing CI, so review its output explicitly. Inspect the actual PR checks rather than assuming a local parser proves PHP runtime
+behaviour. The migration workflow runs a local Supabase database test on matching
+`main` pushes. It does not certify a staging or production database.
+Dependency/license review and live checks below are separate from the eight gates.
+Do not mark them passed merely because `release:check` is green.
 
-### Blocker 1: Hosted Supabase & Remote RLS Execution
-* **Severity**: **HIGH** (SaaS multi-tenancy only; local mode unaffected)
-* **Risk**: Multi-tenant isolation has been verified via unit tests and SQL schema analysis, but live pgTAP tests (`supabase/tests/database/rls.test.sql`) require Docker and Supabase CLI, which are absent in the local development environment.
-* **Remediation**:
-  1. Provision an isolated staging Supabase project.
-  2. Run `supabase migration up` and `supabase test db`.
-  3. Verify cross-tenant isolation by attempting unauthorized cross-project reads via Supabase Auth JWTs.
+## 2. Hosted product safety requirements
 
-### Blocker 2: Production Provider API Keys & Insecure Mock Fallback
-* **Severity**: **CRITICAL**
-* **Risk**: Running in production mode (`NODE_ENV=production`) without active model API keys or falling back to mock responses.
-* **Remediation**:
-  1. `loadConfig()` enforces fail-safe checks: In `production`, missing `GEMINI_API_KEY` or `OPENROUTER_API_KEY` immediately throws `AgentError(ErrorCode.CONFIGURATION_ERROR)`.
-  2. `AI_PROVIDER=mock` is rejected in production unless explicitly overridden with `ALLOW_MOCK_IN_PRODUCTION=true`.
-  3. Verify production keys are injected via secure secret managers (e.g. Doppler, AWS Secrets Manager, Vercel) and never committed to source control.
+- WordPress transport is the signed connector queue only. Never call arbitrary
+  WordPress REST/XML-RPC/admin URLs from the cloud.
+- Every tool must exist in `WP_TOOL_SPECS`, validate its arguments, and satisfy
+  the site's scopes/capability graph. No arbitrary PHP, SQL, shell, plugin uploads,
+  file edits or runtime tool invention.
+- R0 reads need no approval. R1–R3 writes require an approved immutable plan;
+  changing the plan invalidates its SHA-256 hash. Default content is draft/private.
+  Publishing is supported by explicit R2 `content.publish`, with typed `CONFIRM`.
+  R3 requires a fresh snapshot and plan-id confirmation. Model suggestions cannot
+  lower the catalog risk floor.
+- Writes follow snapshot → write → read-back verify. An unverified write is not
+  success. Undo uses the signed queue and must not claim restoration without proof.
+- Production sites are allowed with explicit production registration, single-use
+  pairing and owner-side checks. Staging is recommended for high-risk changes,
+  not an undocumented ban on production use.
+- RLS, the secret-free `site_metadata` view and handler ownership checks isolate
+  tenants. Unknown or unauthorised targets fail closed.
+- Hosted model keys are optional encrypted BYOK keys. The deterministic planner
+  works without them. Do not require platform-wide model keys on Vercel.
+- Keep server credentials server-only, enforce TLS verification, redact errors
+  and audit data, and never include secrets in release evidence.
 
-> **2026-11-03 note:** this blocker describes the **local-only API** (`apps/api`). The hosted SaaS deliberately has **no platform-level model key**: each user brings an encrypted BYOK Gemini / OpenRouter / Groq key via `/settings/keys`, and the deterministic planner works without one. A production `GEMINI_API_KEY` in Vercel would be a regression, not a requirement. Owner-side launch gates are tracked in [`docs/status-2026-11-03.md`](./status-2026-11-03.md) §3.
+The legacy local API (`apps/api`) has its own provider configuration and target
+policy. Its mock/provider startup requirements are **not hosted SaaS requirements**.
+See [AGENTS.md](../AGENTS.md) for the enforced product policy and
+[abuse limits](./abuse-limits.md) for route-specific limits and known limitations.
+Do not extrapolate a local API header, payload cap or rate limit to every hosted route.
 
-### Blocker 3: Non-HTTPS WordPress Target in Production
-* **Severity**: **CRITICAL**
-* **Risk**: Man-in-the-middle (MitM) credential interception or request tampering if connecting to remote WordPress over unencrypted HTTP.
-* **Remediation**:
-  1. `validateWordPressTarget()` restricts targets to explicitly configured allowlists or local test environments (`*.local`, `localhost`, `127.0.0.1`).
-  2. `loadConfig()` enforces that in `NODE_ENV=production`, any non-local `WP_SITE_URL` must use `https://`.
-  3. Never disable TLS certificate validation (`--insecure`, `curl -k`, or `NODE_TLS_REJECT_UNAUTHORIZED=0` remain strictly forbidden).
+## 3. Live readiness and outstanding owner-side evidence
 
-### Blocker 4: Unapproved WordPress Mutations
-* **Severity**: **CRITICAL**
-* **Risk**: Automated or model-driven execution modifying WordPress live state without human approval.
-* **Remediation**:
-  1. Deny-by-default permission guard is enforced at both package (`AgentCore`) and API layer (`MutationController`).
-  2. Phase 5 & Phase 6 approval workflows enforce SHA-256 integrity hash verification between proposal and execution.
-  3. Post status is restricted to `draft` only; `publish`, `delete`, and arbitrary PHP or shell commands are strictly disabled.
+These remain **unverified by repository gates**. Historical access/sender findings
+are in the [2026-11-03 audit](./status-2026-11-03.md); recheck them before launch.
 
----
+- [ ] Owner access to the intended Supabase project confirmed through the connected app.
+- [ ] Isolated staging Supabase project created; migrations and cross-tenant RLS checks verified.
+- [ ] Verified email sending domain (SPF/DKIM) and intended sender configured;
+  real signup → email confirmation → login and password reset tested with a non-owner inbox.
+- [ ] Real WordPress connect → plan → approve → snapshot → write → read-back → undo recorded.
+- [ ] Mobile/device and accessibility acceptance recorded (do not infer Lighthouse scores).
+- [ ] Authorised staging load run records p95 and job accounting (E11-04); the
+  deterministic abuse simulation does not establish p95 < 800 ms or no job loss.
+- [ ] Platform backup restore rehearsed in isolation; a written runbook alone is not evidence.
+- [ ] Dependency/security findings reviewed for this release; exceptions documented.
 
-## 3. Security Hardening & Compliance Checklist
+Never run destructive QA or load tests against production as a substitute for
+missing staging access. Never ask for credentials in chat.
 
-- [x] **SSRF Protection**: Target URL allowlisting and blocking of cloud metadata IP addresses (`169.254.169.254`, `169.254.169.253`, `metadata.google.internal`, `0.0.0.0`, `::1`).
-- [x] **Rate Limiting**: Sliding-window rate limiter implemented on API server (120 req/min general, 429 response with `Retry-After`).
-- [x] **Correlation Tracking**: `X-Correlation-ID` header emitted on 100% of API responses and logged in audit trails.
-- [x] **Defense-in-Depth Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
-- [x] **Payload Size Limits**: Request body size strictly capped at 64 KB to prevent buffer exhaustion and DoS.
-- [x] **Secret Redaction**: Structured audit logger automatically redacts passwords, tokens, bearer headers, Application Passwords, OpenRouter keys (`sk-or-v1-*`), Gemini keys (`AIzaSy*`), and Groq keys (`gsk_*`).
-- [x] **Credentials Vault Encryption**: Stored credentials encrypted with AES-256-GCM using authenticated encryption and 96-bit random IVs.
-- [x] **Safe Error Handling**: Error messages sanitized to prevent leaking stack traces or internal server file paths.
+## 4. Delivery and rollback
 
----
+1. Work on the current Arena session branch; never switch to or push directly to `main`.
+2. Run the gates and record evidence. Open a PR from that branch and inspect CI.
+3. Merge only through the approved PR workflow. Vercel Git integration auto-deploys
+   `main`; do not create a redundant manual production deployment.
+4. Verify the resulting deployment's health/version and intended user flow.
+   A successful local build does not prove a production deployment is healthy.
+5. For rollback, follow [incident response](./incident-response-and-rollback.md)
+   and [backup/restore](./backup-restore-strategy.md); distinguish reverting app
+   code from restoring WordPress content or database state.
 
-## 4. Staged Rollout Plan
+## 5. Release-specific sign-off
 
-```text
-[ Staged Rollout Pipeline ]
-  Stage 0: Local Developer Sandbox (LocalWP test sites, mock AI, read-only default)
-      │  (Passes 100% automated tests, typecheck, lint, build)
-      ▼
-  Stage 1: Internal Staging Environment (Isolated staging WordPress + Supabase staging)
-      │  (Verify live RLS, email auth flows, rate limiting, and draft post approval)
-      ▼
-  Stage 2: Controlled Alpha (Limited to 5 trusted internal users, controlled writes mode)
-      │  (Monitor audit logs, token usage, error rates, and response latency)
-      ▼
-  Stage 3: General Availability (Multi-tenant SaaS with per-user rate limits & quotas)
-```
+| Area | Evidence required | Status for a new release |
+|---|---|---|
+| Engineering | Commit + all eight gate results + PR CI | Pending |
+| Security/tenancy | Findings review + isolated RLS evidence | Pending |
+| Product QA | Real auth/email and WordPress workflow recording | Pending |
+| Operations | Deployment health + rollback/restore evidence | Pending |
 
----
-
-## 5. Sign-Off Matrix
-
-| Role | Responsibility | Verification Method | Sign-Off Status |
-|---|---|---|---|
-| **Security Engineer** | Threat modeling, SSRF, prompt injection, secret leak audit | Security review report & penetration check analysis | **VERIFIED** |
-| **Backend Engineer** | API contracts, rate limiting, error handling, builder adapters | Automated unit test suite & typecheck | **VERIFIED** |
-| **Frontend Engineer** | Dashboard UI, preview canvas, Next.js build optimization | Production build verification on port 3002 | **VERIFIED** |
-| **DevOps / SRE** | Deployment runbooks, incident response, rollback playbooks | Runbook review & backup verification | **VERIFIED** |
+Replace Pending only with attributable evidence for the particular release.
+Repository tests do not provide human sign-off or general-availability approval.
