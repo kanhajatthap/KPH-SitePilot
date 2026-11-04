@@ -31,41 +31,41 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
 
   const { id } = await context.params;
 
-  const snapshot = await getSnapshot(id);
-  if (!snapshot || !(await siteBelongsToUser(snapshot.site_id, auth.context.user.id))) {
-    return NextResponse.json(
-      { error: 'SNAPSHOT_NOT_FOUND', message: 'No such snapshot.' },
-      { status: 404, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  if (snapshot.restored_at) {
-    return NextResponse.json(
-      { error: 'ALREADY_RESTORED', message: 'This change was already undone.' },
-      { status: 409, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  const resolved = resolveUndoJob({
-    resource: snapshot.resource,
-    before: snapshot.before,
-  });
-  if (!resolved.ok) {
-    return NextResponse.json(
-      { error: resolved.code, message: resolved.message },
-      { status: 422, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
-  const supabase = createSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json(
-      { error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } }
-    );
-  }
-
   try {
+    const snapshot = await getSnapshot(id);
+    if (!snapshot || !(await siteBelongsToUser(snapshot.site_id, auth.context.user.id))) {
+      return NextResponse.json(
+        { error: 'SNAPSHOT_NOT_FOUND', message: 'No such snapshot.' },
+        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    if (snapshot.restored_at) {
+      return NextResponse.json(
+        { error: 'ALREADY_RESTORED', message: 'This change was already undone.' },
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const resolved = resolveUndoJob({
+      resource: snapshot.resource,
+      before: snapshot.before,
+    });
+    if (!resolved.ok) {
+      return NextResponse.json(
+        { error: resolved.code, message: resolved.message },
+        { status: 422, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'STORAGE_UNAVAILABLE', message: 'Storage unavailable.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     const jobId = await enqueueConnectorJob({
       projectId: snapshot.project_id,
       siteId: snapshot.site_id,
@@ -81,9 +81,9 @@ export async function POST(_req: Request, context: { params: Promise<{ id: strin
       { status: 'queued', jobId, tool: resolved.tool, resource: snapshot.resource },
       { status: 202, headers: { 'Cache-Control': 'no-store' } }
     );
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: 'UNDO_FAILED', message: (error as Error).message },
+      { error: 'UNDO_FAILED', message: 'Undo could not be confirmed. Check Activity for an existing restore job before trying again.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );
   }

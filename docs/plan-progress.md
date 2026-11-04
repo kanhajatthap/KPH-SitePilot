@@ -324,3 +324,32 @@
   parser; runtime PHP checks are left to PR CI.
 - Next: typed safe errors at connector boundaries; preview isolation review and
   full connector API documentation remain pending.
+
+## 2026-11-04 — scoped connector client-safe error boundaries
+
+- On `arena/d585fd64-kph-sitepilot`, replaced raw backend exception messages in
+  site GET/PATCH and snapshot undo with fixed client-safe error responses.
+  Added safe handling for thrown DELETE failures and expanded the undo boundary
+  to include snapshot lookup, ownership and admin-client construction.
+- Existing error codes/status/no-store semantics retained for caught failures;
+  newly caught undo lookup/ownership exceptions return UNDO_FAILED/503 and never
+  enqueue a restore. Undo copy advises inspecting Activity because enqueue may
+  already have succeeded before bookkeeping fails. No raw exception logging added.
+- Eight injected-failure cases cover site reads/updates/revocation, snapshot
+  lookup/ownership, enqueue/bookkeeping, and non-Error thrown objects. Updated
+  security review marks this partial: other routes still require review.
+- Evidence in `/home/user/KPH-SitePilot`:
+  - `pnpm install --frozen-lockfile` and
+    `pnpm exec turbo run build --filter='@wp-agent/dashboard^...'`: exit 0.
+  - Pre-fix `pnpm --filter @wp-agent/dashboard test tests/connector-safe-errors.test.ts`:
+    exit 1, 8 failed regressions.
+  - Post-fix `pnpm --filter @wp-agent/dashboard test tests/connector-safe-errors.test.ts tests/connector-sites-api.test.ts tests/connector-undo.test.ts`:
+    exit 0, 26 tests / 3 files.
+  - Final targeted safe-error/security-doc suites: exit 0, 12 tests / 2 files.
+  - `pnpm release:check`: exit 0, 8/8 gates; 857 tests / 94 files
+    (dashboard 497 / 53), typecheck 22/22, lint 12/12, build 12/12,
+    governance 35/35, tracked-file secret audit 306 / zero findings, diff clean.
+- No production deployment, database operation or live WordPress recovery test.
+  Local PHP validation used the parser; runtime verification belongs to PR CI.
+- Next: remaining connector error boundaries and preview isolation; undo completion
+  bookkeeping and revocation atomicity remain separate unresolved tasks.
