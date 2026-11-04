@@ -30,7 +30,7 @@ const FLOW = [
     step: '4',
     title: 'Snapshot before the write',
     detail:
-      'The connector captures the exact before-state of the resource — post content, meta, media, menu, featured image or site setting — and stores it for undo.',
+      'The connector captures the exact before-state of the resource — post content, meta, media, menu, featured image or site setting — for supported writes. Cloud snapshot persistence can still fail after a write; confirm an available snapshot before relying on undo.',
   },
   {
     step: '5',
@@ -42,7 +42,7 @@ const FLOW = [
     step: '6',
     title: 'Undo in one click',
     detail:
-      'Snapshots are listed in the Activity timeline and in Studio. Undo restores the before-state through the same signed job queue, then verifies again.',
+      'Snapshots are listed in the Activity timeline and in Studio. Undo queues a restore through the same signed connector. Queued is not restored: follow the job result and verify the resource.',
   },
 ];
 
@@ -77,7 +77,7 @@ export default function SafetyDocsPage() {
         <h2 className="text-sm font-semibold text-amber-950">If something goes wrong</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-[12px] leading-relaxed text-amber-900/85">
           <li>A failed verification never claims success — the activity entry says what happened.</li>
-          <li>If a snapshot is unusable, no write is applied at all (<code>SNAPSHOT_UNUSABLE</code>).</li>
+          <li>An unusable restore snapshot blocks undo (<code>SNAPSHOT_UNUSABLE</code>); it does not prove the original write never happened.</li>
           <li>If undo itself is unavailable, the UI says so instead of pretending the site is restored.</li>
           <li>Expired sessions, rate limits and offline sites each have one clear next action.</li>
         </ul>
@@ -90,8 +90,9 @@ export default function SafetyDocsPage() {
         <h2 className="text-sm font-semibold">What is deliberately not shipped</h2>
         <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
           There is no &ldquo;just do it&rdquo; button, no auto-publish from a chat message, and no
-          tool that runs a WordPress write without an approval record. WooCommerce writes, file
-          edits and code injection are roadmap items, not hidden features.
+          automatic approval bypass for planned writes. Owner-triggered undo uses its dedicated
+          snapshot flow. WooCommerce writes are not shipped. Arbitrary file edits and code
+          injection are prohibited, not roadmap features.
         </p>
         <Link href="/docs/tools" className="mt-3 inline-block text-xs font-medium text-pink-700 underline">
           See what the 34 shipped tools can actually do →
