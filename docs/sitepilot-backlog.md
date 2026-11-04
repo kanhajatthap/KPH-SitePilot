@@ -285,3 +285,19 @@ in P0 is the E1-12 hosted signup E2E plus the owner-side staging project. See th
 
 Breadth work (E5 media upload, E6 site ops, E7 SEO/perf/a11y, E8 WooCommerce, E10 automations)
 stays in P2 until a real beta site gives feedback.
+
+
+## Owner-prioritised restricted file editor (2026-11-04)
+
+- [x] **FILE-01** — Experimental, non-bootstrapped PHP backend engine and isolated
+  fixture tests: exact staging file allowlist, capability/host-disable gates,
+  expiring immutable approval, encrypted backup, private atomic write and guarded
+  restore. This is not a shipped tool or user-facing editor.
+- [ ] **FILE-02** — Canonical R3 tool definitions, server staging/owner/scope gates,
+  signed connector integration and plugin version compatibility.
+- [ ] **FILE-03** — Safe diff/editor UI, nonce/CSRF-bound explicit confirmation,
+  central audit and bounded backup retention.
+- [ ] **FILE-04** — Independent fatal-error recovery and real isolated WordPress
+  CSS/JS/PHP edit→verify→restore acceptance, concurrency/native filesystem checks.
+- [ ] **FILE-05** — Reviewed staging-only rollout; no SQL/shell/WP-CLI, unrestricted
+  files or production source editing. See [scope](./restricted-file-editor.md).

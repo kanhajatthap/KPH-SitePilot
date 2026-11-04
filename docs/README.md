@@ -15,6 +15,7 @@ not promises about the current deployment.
 | Incident containment and credential recovery | [Incident runbook](./incident-response-and-rollback.md) |
 | Resource undo and pending platform restore rehearsal | [Backup and restore](./backup-restore-strategy.md) |
 | Connector route inventory and semantics | [API reference](./connector-api-reference.md) |
+| Restricted staging source editor (experimental, not callable from chat) | [Engine scope and release gates](./restricted-file-editor.md) |
 | Security controls and open findings | [Security review](./security-review.md) |
 | Burst protection and limitations | [Abuse limits](./abuse-limits.md) |
 | Auth/email troubleshooting | [Email deliverability](./email-deliverability.md) |
