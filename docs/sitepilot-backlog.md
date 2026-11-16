@@ -315,3 +315,17 @@ stays in P2 until a real beta site gives feedback.
 - [ ] Authorised staging migration, full database/concurrency tests and source UI.
 
 These are partial FILE-02/FILE-03 foundations, not completed hosted file editing.
+
+
+### Signed restricted review batch
+
+- [x] Experimental explicit PHP proposal export over existing signed transport;
+  authenticated, purpose-bound hosted ingestion and atomic encrypted persistence.
+- [x] Fresh signed file/capability evidence (60-second window), live owner/staging/
+  scope checks and direct-RPC stale-evidence refusal.
+- [x] Owner-only source fetch, safe aligned before/after UI and typed single-use
+  review receipt integration; execution dispatch remains disabled.
+- [x] HMAC/nonce, forged/stale payload, source disclosure, rendering and database
+  regression tests; native CI and live E2E remain separate acceptance gates.
+- [ ] Automatic/bootstrap exposure, real WordPress acceptance, on-write recheck
+  and independent fatal-error recovery. Do not mark FILE-04/FILE-05 complete.

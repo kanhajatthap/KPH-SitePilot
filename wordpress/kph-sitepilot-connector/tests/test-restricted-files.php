@@ -112,6 +112,11 @@ try {
   denied( function() use ( $php ) { KPH_SP_Restricted_Files::propose( $php['path'], '<?php function {', $php['sha256'] ); }, 'FILE_PHP_SYNTAX_INVALID' );
   $plan = KPH_SP_Restricted_Files::propose( $file, $after, $view['sha256'] );
   $id = $plan['id'];
+  $payload = KPH_SP_Restricted_Files::review_payload( $id, $id );
+  check( $payload['currentHash'] === $view['sha256'] && $payload['purpose'] === 'restricted-file-review-v1', 'review payload binds fresh file hash and purpose' );
+  check( $payload['expiresAt'] === $plan['expiresAt'] * 1000 && $payload['engineVersion'] === 1, 'wire timestamps milliseconds and engine compatibility' );
+  check( $payload['allowedPaths'] === array( $file ) && $payload['canEdit'] === true, 'review rechecks file permission and exact scope' );
+
   check( $before === file_get_contents( $root . '/' . $file ), 'proposal never writes' );
   check( false === strpos( implode( '', $options ), $after ), 'candidate encrypted' );
   denied( function() use ( $id ) { KPH_SP_Restricted_Files::apply( $id, 'CONFIRM' ); }, 'FILE_CONFIRMATION_REQUIRED' );
@@ -126,6 +131,7 @@ try {
   denied( function() use ( $id ) { KPH_SP_Restricted_Files::apply( $id, $id ); }, 'FILE_PLAN_EXPIRED' );
   $options['kph_sp_file_plan_' . $id] = $saved;
   file_put_contents( $root . '/' . $file, 'changed externally' );
+  denied( function() use ( $id ) { KPH_SP_Restricted_Files::review_payload( $id, $id ); }, 'FILE_CHANGED' );
   denied( function() use ( $id ) { KPH_SP_Restricted_Files::apply( $id, $id ); }, 'FILE_CHANGED' );
   file_put_contents( $root . '/' . $file, $before );
   chmod( $workspace, 0777 ); clearstatcache();

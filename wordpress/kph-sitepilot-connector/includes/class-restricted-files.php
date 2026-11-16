@@ -228,6 +228,27 @@ final class KPH_SP_Restricted_Files {
 		}
 	}
 
+	/** Experimental explicit export; no automatic hook or job tool calls this. */
+	public static function review_payload( $id, $confirmation ) {
+		$record = self::record( 'kph_sp_file_plan_', $id, $confirmation );
+		if ( $record['expiresAt'] <= time() ) { self::fail( 'FILE_PLAN_EXPIRED' ); }
+		$current = self::read( $record['path'] );
+		if ( ! hash_equals( $record['beforeHash'], $current['sha256'] ) ) { self::fail( 'FILE_CHANGED' ); }
+		return array( 'purpose' => 'restricted-file-review-v1', 'protocol' => 'restricted-files-v1',
+			'engineVersion' => 1, 'proposalId' => $id, 'path' => $record['path'],
+			'beforeHash' => $record['beforeHash'], 'afterHash' => $record['afterHash'],
+			'currentHash' => $current['sha256'], 'before' => $record['before'], 'after' => $record['after'],
+			'observedAt' => time() * 1000, 'expiresAt' => $record['expiresAt'] * 1000,
+			'environment' => 'staging', 'operatorOptIn' => true, 'canEdit' => true,
+			'allowedPaths' => array( $record['path'] ) );
+	}
+
+	/** Uses existing HMAC/nonces; never applies the proposal. Remains unbootstrapped. */
+	public static function submit_review( $id, $confirmation ) {
+		$payload = self::review_payload( $id, $confirmation );
+		return KPH_SP_Job_Runner::request( '/api/connector/restricted-files/ingest', $payload );
+	}
+
 	public static function apply( $id, $confirmation ) {
 		$record = self::record( 'kph_sp_file_plan_', $id, $confirmation );
 		if ( $record['expiresAt'] <= time() ) { self::fail( 'FILE_PLAN_EXPIRED' ); }
