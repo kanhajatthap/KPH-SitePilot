@@ -9,6 +9,8 @@ INSERT INTO public.sites(id,project_id,url,name,environment,token_hash,secret_en
 ('30000000-0000-4000-8000-000000000041','20000000-0000-4000-8000-000000000041','https://review.example.test','Review','staging','review-test-hash','review-test-cipher');
 INSERT INTO public.restricted_file_reviews(site_id,proposal_id,owner_id,path,before_hash,after_hash,expires_at) VALUES
 ('30000000-0000-4000-8000-000000000041',repeat('a',32),'10000000-0000-4000-8000-000000000041','themes/test/style.css',repeat('b',64),repeat('c',64),now()+interval '5 minutes');
+INSERT INTO public.restricted_file_evidence VALUES
+('30000000-0000-4000-8000-000000000041',repeat('a',32),'fixture-cipher',now(),now()+interval '60 seconds');
 SELECT ok(NOT has_table_privilege('authenticated','public.restricted_file_reviews','INSERT'),'users cannot mint proposals');
 SELECT ok(NOT has_table_privilege('authenticated','public.restricted_file_reviews','UPDATE'),'users cannot alter proposals');
 SELECT ok(NOT has_function_privilege('anon','public.consume_restricted_file_review(uuid,text,text,text,text)','EXECUTE'),'anonymous cannot consume');

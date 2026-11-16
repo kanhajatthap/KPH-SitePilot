@@ -72,3 +72,18 @@ export function validateRestrictedFileReview(request: unknown, savedProposal: un
 export function restrictedFileExecutionGate(): { allowed: false; code: 'FILE_EDITOR_NOT_RELEASED' } {
   return { allowed: false, code: 'FILE_EDITOR_NOT_RELEASED' };
 }
+
+/** Purpose binds signed bodies to this endpoint; compatibility is explicit, not a version guess. */
+export const RestrictedFileIngestSchema = z.object({
+  purpose: z.literal('restricted-file-review-v1'),
+  protocol: z.literal('restricted-files-v1'),
+  engineVersion: z.literal(1),
+  proposalId: PlanId,
+  path: RestrictedFilePathSchema,
+  beforeHash: Digest, afterHash: Digest, currentHash: Digest,
+  before: z.string().max(65536), after: z.string().max(65536),
+  observedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().nonnegative(),
+  environment: z.literal('staging'), operatorOptIn: z.literal(true),
+  canEdit: z.literal(true), allowedPaths: z.array(RestrictedFilePathSchema).min(1).max(100),
+}).strict();

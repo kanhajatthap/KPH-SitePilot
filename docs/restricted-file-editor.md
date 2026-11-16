@@ -198,3 +198,71 @@ Validation for this batch:
 - 15 pgTAP database assertions added; full local Supabase/pgTAP and real concurrent
   transactions NOT run here (no Docker/Postgres executable). PR CI remains required.
 - No remote migration, WordPress request, deployment, push or merge performed.
+
+
+## Signed ingestion and source review batch
+
+This section supersedes the earlier metadata-only implementation status, not its
+execution boundary. The shipped catalog and plugin bootstrap remain unchanged.
+
+### Implemented connected review path
+
+1. The experimental PHP engine exposes `review_payload` and `submit_review`.
+   Both require the saved proposal ID/confirmation and re-run staging, opt-in,
+   permissions, path and current-hash checks. The sender uses the existing signed
+   connector transport. **No activation hook or chat tool invokes these methods.**
+2. `POST /api/connector/restricted-files/ingest` authenticates HMAC over the raw
+   bounded body, timestamp and single-use nonce, then requires files/code scopes.
+   Purpose, protocol and engine version are exact literals. Source hashes,
+   allowlist, capability assertions, opt-in and staging claims must match. Owner
+   identity is derived from the database, never the submitted payload.
+3. The new migration `20261104140000_restricted_review_ingestion.sql` atomically
+   saves immutable metadata and encrypted source evidence. Active staging and
+   project ownership are resolved under row locks. Duplicate IDs cannot replace
+   source. Browser SQL cannot read ciphertext or mint evidence.
+4. The ingestion response returns a same-origin `reviewPath`. The
+   `/restricted-review?siteId=…&proposalId=…` page loads source through an
+   authenticated owner/RLS-gated endpoint. It displays hashes, expiry, R3 warnings,
+   and text-only before/after comparison with differing aligned lines highlighted.
+   This is not a semantic diff; inserted lines shift subsequent comparisons.
+5. Typed full-ID confirmation records the existing single-use receipt. The SQL
+   RPC now additionally requires fresh signed evidence and live files/code scopes,
+   so calling it directly cannot bypass freshness. No jobs or snapshots are created.
+
+### Freshness, privacy and recovery limits
+
+- Evidence must be observed no more than **60 seconds** ago (future timestamps
+  refused). Its deadline is the earlier of observation + 60 seconds and proposal
+  expiry. A stale/used review requires a new proposal, not refreshing old authority.
+- This is the latest signed file observation, **not an on-demand read at the exact
+  approval instant**. A file can change after observation. Execution stays disabled;
+  any later execution implementation must recheck on WordPress immediately before
+  writing and independently verify recovery readiness.
+- Compatibility is the explicit `restricted-files-v1` / engine version 1 contract,
+  not a claim that every installed connector supports the experimental engine.
+- Signed connector assertions establish possession of the site secret, not proof
+  against a compromised WordPress host. Hosted ownership and staging gates still apply.
+- AES-GCM source ciphertext binds site, proposal, path and digests inside the
+  encrypted payload. Source is never placed in metadata, URL, audit or error messages.
+  Owner-only source responses are no-store. Conservative sensitive-text checks are
+  not complete DLP. Existing daily cleanup purges expired ciphertext; with healthy
+  cron, physical retention is up to approximately one day, not precisely 60 seconds.
+- Sources become unavailable immediately on expiry even before cleanup. Key loss
+  makes them unreadable. This is a review store, not independent crash recovery.
+- No remote migration or real WordPress request was performed. Apply migrations
+  only to an authorised staging target after native database CI. Without the latest
+  migration, new ingestion fails closed; coordinate deployment migration-first.
+- A new source-review page does NOT activate the PHP engine or provide a UI for
+  arbitrary candidate submission. Real-host setup/acceptance and independent
+  recovery are still release gates before enabling editor tools.
+
+### Local batch evidence
+
+- Full release check: **8/8 gates**, **1,055 tests / 105 files** passed.
+- Signed ingestion, owner-only source endpoint and safe source rendering: 28 new
+  tests; existing review endpoint tests remain passing.
+- Full migration-chain WASM smoke: **55 assertions passed**, using minimal auth
+  and assertion shims, not native Supabase/pgTAP or concurrency proof.
+- PHP 8.5 WASM: **61 engine assertions + 2 disabled-mode assertions** passed;
+  hard-link fixture explicitly skipped on that filesystem. Native PHP CI pending.
+- No browser end-to-end or real WordPress edit/restore test was performed.
