@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(18);
 
 INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
 VALUES
@@ -20,7 +20,10 @@ VALUES
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 
-SELECT is((SELECT count(*)::integer FROM public.projects), 1, 'user A can only select their project');
+-- Signup creates a default workspace in addition to the explicit fixture project.
+SELECT is((SELECT count(*)::integer FROM public.projects), 2, 'user A sees default and fixture projects');
+SELECT is((SELECT count(*)::integer FROM public.projects WHERE owner_id <> '11111111-1111-4111-8111-111111111111'), 0, 'user A cannot see another owner project');
+SELECT is((SELECT count(*)::integer FROM public.projects WHERE owner_id = '11111111-1111-4111-8111-111111111111' AND name = 'My Sites'), 1, 'user A receives exactly one default workspace');
 SELECT is((SELECT count(*)::integer FROM public.wordpress_connection_metadata), 1, 'connection metadata is tenant scoped');
 INSERT INTO public.dashboard_chat_history (owner_id, messages)
 VALUES ('11111111-1111-4111-8111-111111111111', '[{"id":"user-a-message"}]');
@@ -82,7 +85,10 @@ SELECT throws_ok(
 RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
-SELECT is((SELECT count(*)::integer FROM public.projects), 1, 'user B can only select their project');
+-- Signup creates a default workspace in addition to the explicit fixture project.
+SELECT is((SELECT count(*)::integer FROM public.projects), 2, 'user B sees default and fixture projects');
+SELECT is((SELECT count(*)::integer FROM public.projects WHERE owner_id <> '22222222-2222-4222-8222-222222222222'), 0, 'user B cannot see another owner project');
+SELECT is((SELECT count(*)::integer FROM public.projects WHERE owner_id = '22222222-2222-4222-8222-222222222222' AND name = 'My Sites'), 1, 'user B receives exactly one default workspace');
 SELECT is(
   (SELECT count(*)::integer FROM public.dashboard_chat_history),
   0,

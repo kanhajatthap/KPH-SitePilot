@@ -180,3 +180,28 @@ Passwords, local `WP_SITE_URL`, platform provider keys and Edge vault settings a
 not substitutes for connector pairing. There is no configured Next.js standalone
 output in this repository; use `pnpm start:dashboard` after a build for Node serving,
 not a nonexistent `.next/standalone/server.js`.
+
+
+### Database CI failure diagnostics
+
+CI preserves the database test command exit status with Bash `pipefail` and
+captures test output (not Supabase startup output):
+
+```bash
+set -o pipefail
+pnpm dlx supabase@2.122.0 test db --local 2>&1 | tee /tmp/sitepilot-db-tests.log
+```
+
+A failed run surfaces up to 30 assertion/error lines as GitHub check annotations,
+so a blocked log-storage download need not hide the failing test names.
+
+Optional local migration-chain smoke (requires an externally installed PGlite):
+
+```bash
+node supabase/tests/migration-chain-smoke.mjs /path/to/pglite/dist/index.js
+```
+
+This applies repository migrations to an isolated WASM database with minimal auth
+and assertion shims. It does not replace native Supabase, pgTAP or concurrency CI.
+The RLS fixtures include both the signup-created default workspace and their
+explicit test project; they also assert zero visible projects owned by anyone else.
