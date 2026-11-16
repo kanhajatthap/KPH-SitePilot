@@ -6,7 +6,7 @@ On 2026-11-04 the owner selected the restricted-file-editor option: selected
 staging theme/plugin PHP/JS/CSS files, not SQL/shell/WP-CLI or full filesystem access.
 This changes the development priority, not the live connector's allowlist.
 
-**This batch implements only the backend engine and isolated tests.**
+**The engine remains experimental. A later batch adds a metadata-only hosted review ledger/endpoint, not file execution.**
 `KPH_SP_Restricted_Files` is not required by the plugin bootstrap, has no admin UI,
 REST handler or registered job tool, and does not run on plugin activation.
 A connected WordPress site cannot use this editor from chat yet. The shipped tool
@@ -134,12 +134,12 @@ WordPress integration or proof of real-host locking/durability.
   bootstrap, catalog, endpoint or activation changes are included.
 - Follow-up full `pnpm release:check`: **8/8 gates passed**, **974 tests / 100 files**.
 
-## Experimental hosted review contract (not integrated)
+## Experimental hosted review contract (initial foundation)
 
 `packages/contracts/src/restricted-editor.ts` defines strict source-free approval
 and persisted-proposal shapes and a pure review preflight. It is deliberately not
-exported from the package entrypoint, registered in the tool catalog or imported
-by a route. An unconditional execution gate returns `FILE_EDITOR_NOT_RELEASED`.
+exported from the default package entrypoint or registered in the tool catalog.
+The later metadata review endpoint imports its schema through an explicit experimental subpath. An unconditional execution gate returns `FILE_EDITOR_NOT_RELEASED`.
 
 The preflight binds site/owner/proposal IDs, exact path allowlist, R3 risk,
 before/after digests, typed proposal confirmation, current digest and a maximum
@@ -162,3 +162,39 @@ the owner's local WordPress site and no database or deployment was changed.
 Local validation: full `pnpm release:check` **8/8 gates passed**,
 **1013 tests / 101 files**, including **39 new review-contract tests**.
 These are contract/unit checks, not real WordPress or hosted approval E2E evidence.
+
+
+## Metadata review persistence and endpoint
+
+Migration `20261104130000_restricted_file_reviews.sql` adds a source-free ledger:
+immutable proposal metadata, R3-only risk, ten-minute maximum TTL, owner/site RLS,
+and terminal consumed/revoked states. Authenticated users cannot insert or update
+rows directly. Trusted ingestion is **not implemented**; no real proposals are
+created by the application yet. Do not seed real proposals manually to enable editing.
+
+`POST /api/connector/restricted-files/review` requires a hosted session, explicit
+same-origin JSON request, strict approval schema and a body of at most 2 KiB.
+The session-bound RPC checks live ownership, active staging status, matching hashes,
+confirmation and expiry, then consumes the pending record atomically. A replay
+returns a conflict. The RPC serializes against site/project changes and the same
+proposal update. Review success explicitly returns `executionAllowed: false`.
+
+**This is a review receipt, not operational file approval.** The endpoint does not
+run the full review preflight or attest operator opt-in, connector version, allowed
+paths or current filesystem hashes. Those require future signed connector ingestion
+and revalidation before any write. No job/snapshot is created, no source is exposed,
+and the PHP engine stays unbootstrapped. UI, source retention, external recovery and
+real WordPress E2E remain pending. The ledger is not a complete central audit trail.
+
+The migration has NOT been applied remotely. Without it the endpoint fails closed
+with a generic 503. It must be tested/applied on an authorised staging database
+before use. Supabase database CI now also runs on PRs touching migrations/tests.
+
+Validation for this batch:
+- 14 endpoint unit tests passed (mocked session/RPC, not live authentication).
+- Full release check: 8/8 gates passed; 1,027 tests / 102 files.
+- Optional isolated PGlite 0.3.14 smoke: 12 assertions passed on a minimal schema,
+  including role privileges, RLS isolation and single-use consumption.
+- 15 pgTAP database assertions added; full local Supabase/pgTAP and real concurrent
+  transactions NOT run here (no Docker/Postgres executable). PR CI remains required.
+- No remote migration, WordPress request, deployment, push or merge performed.
