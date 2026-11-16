@@ -48,7 +48,28 @@ jobs:
         run: pnpm dlx supabase@2.122.0 migration up --local
 
       - name: Run local database and RLS tests
-        run: pnpm dlx supabase@2.122.0 test db --local
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm dlx supabase@2.122.0 test db --local 2>&1 | tee /tmp/sitepilot-db-tests.log
+
+      # Surface assertion failures through the GitHub checks API when log-storage
+      # downloads are unavailable. Only test output is read, not stack startup logs.
+      - name: Annotate database test failures
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          log = Path('/tmp/sitepilot-db-tests.log')
+          if log.exists():
+              lines = [line for line in log.read_text(errors='replace').splitlines()
+                       if re.search(r'not ok|Failed test|Failed:|ERROR:|Parse errors:', line, re.I)]
+              for line in lines[:30]:
+                  escaped = line[:1000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::error title=Database assertion failure::{escaped}')
+          PY
 
       - name: Stop local Supabase stack
         if: always()
