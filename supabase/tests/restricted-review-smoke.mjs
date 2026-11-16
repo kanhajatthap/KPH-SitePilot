@@ -1,0 +1,43 @@
+// Optional minimal-schema smoke test; not full Supabase/pgTAP.
+// Usage: node supabase/tests/restricted-review-smoke.mjs /path/to/pglite/dist/index.js
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+const { PGlite } = await import(pathToFileURL(path.resolve(process.argv[2])).href);
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const db = new PGlite();
+await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+GRANT USAGE ON SCHEMA auth TO authenticated; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
+CREATE TABLE public.profiles(id uuid PRIMARY KEY);
+CREATE TABLE public.projects(id uuid PRIMARY KEY,owner_id uuid);
+CREATE TABLE public.sites(id uuid PRIMARY KEY,project_id uuid,environment text,status text);
+CREATE VIEW public.site_metadata WITH (security_barrier=true) AS SELECT s.id FROM public.sites s JOIN public.projects p ON p.id=s.project_id WHERE p.owner_id=auth.uid();
+GRANT SELECT ON public.site_metadata TO authenticated;
+INSERT INTO public.profiles VALUES ('10000000-0000-4000-8000-000000000041');
+INSERT INTO public.projects VALUES ('20000000-0000-4000-8000-000000000041','10000000-0000-4000-8000-000000000041');
+INSERT INTO public.sites VALUES ('30000000-0000-4000-8000-000000000041','20000000-0000-4000-8000-000000000041','staging','active');`);
+await db.exec(readFileSync('supabase/migrations/20261104130000_restricted_file_reviews.sql','utf8'));
+await db.exec(`INSERT INTO public.restricted_file_reviews(site_id,proposal_id,owner_id,path,before_hash,after_hash,expires_at) VALUES ('30000000-0000-4000-8000-000000000041',repeat('a',32),'10000000-0000-4000-8000-000000000041','themes/test/style.css',repeat('b',64),repeat('c',64),now()+interval '5 minutes')`);
+let n=0;
+async function check(sql, expected) { const r=await db.query(sql); assert.equal(Object.values(r.rows[0])[0],expected); n++; }
+const call = `SELECT public.consume_restricted_file_review('30000000-0000-4000-8000-000000000041',repeat('a',32),repeat('a',32),repeat('b',64),repeat('c',64))`;
+await check(`SELECT has_table_privilege('authenticated','public.restricted_file_reviews','UPDATE')`,false);
+await check(`SELECT has_table_privilege('authenticated','public.restricted_file_reviews','INSERT')`,false);
+await check(`SELECT has_function_privilege('anon','public.consume_restricted_file_review(uuid,text,text,text,text)','EXECUTE')`,false);
+await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000042',false)`);
+await check('SELECT count(*)::int FROM public.restricted_file_reviews',0);
+await check(call,false);
+await db.exec(`SELECT set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000041',false)`);
+await check('SELECT count(*)::int FROM public.restricted_file_reviews',1);
+await check(call.replace("repeat('c',64)","repeat('d',64)"),false);
+await db.exec(`RESET ROLE; UPDATE public.sites SET environment='production'; SET ROLE authenticated`);
+await check(call,false);
+await db.exec(`RESET ROLE; UPDATE public.sites SET environment='staging'; SET ROLE authenticated`);
+await check(call,true); await check(call,false);
+await check(`SELECT status FROM public.restricted_file_reviews`,'consumed');
+await db.exec('RESET ROLE');
+await assert.rejects(db.exec(`UPDATE public.restricted_file_reviews SET status='pending',consumed_at=null`),/Review immutable/);n++;
+console.log(`${n} minimal-schema PGlite assertions passed; NOT full Supabase/pgTAP or concurrency proof.`);
+await db.close();

@@ -301,3 +301,17 @@ stays in P2 until a real beta site gives feedback.
   CSS/JS/PHP edit→verify→restore acceptance, concurrency/native filesystem checks.
 - [ ] **FILE-05** — Reviewed staging-only rollout; no SQL/shell/WP-CLI, unrestricted
   files or production source editing. See [scope](./restricted-file-editor.md).
+
+
+### Restricted editor — hosted review progress
+
+- [x] Metadata-only immutable review ledger migration and session-bound atomic
+  consume RPC; owner/site isolation, expiry, revocation and replay guards.
+- [x] Same-origin authenticated review endpoint with strict bounded JSON payload;
+  returns review-only receipt, never dispatches a write.
+- [x] 14 endpoint tests; optional 12-assertion minimal SQL smoke; 15 pgTAP tests
+  authored and PR database CI wired (full pgTAP execution still pending).
+- [ ] Signed connector proposal ingestion and live capability/current-hash validation.
+- [ ] Authorised staging migration, full database/concurrency tests and source UI.
+
+These are partial FILE-02/FILE-03 foundations, not completed hosted file editing.
