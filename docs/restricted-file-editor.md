@@ -133,3 +133,32 @@ WordPress integration or proof of real-host locking/durability.
 - Hosted integration and independent runtime-fatal recovery remain pending; no
   bootstrap, catalog, endpoint or activation changes are included.
 - Follow-up full `pnpm release:check`: **8/8 gates passed**, **974 tests / 100 files**.
+
+## Experimental hosted review contract (not integrated)
+
+`packages/contracts/src/restricted-editor.ts` defines strict source-free approval
+and persisted-proposal shapes and a pure review preflight. It is deliberately not
+exported from the package entrypoint, registered in the tool catalog or imported
+by a route. An unconditional execution gate returns `FILE_EDITOR_NOT_RELEASED`.
+
+The preflight binds site/owner/proposal IDs, exact path allowlist, R3 risk,
+before/after digests, typed proposal confirmation, current digest and a maximum
+ten-minute lifetime. Timestamps in this hosted contract are epoch milliseconds
+(the PHP engine uses epoch seconds; a future adapter must explicitly convert).
+Consumed/revoked/expired/future proposals and unknown request fields are refused.
+A successful preflight means **review only**, never permission to enqueue a job.
+
+The context must be assembled from authenticated server-side lookups and trusted
+connector state, not deserialized from a client request. The experimental protocol
+label is a required contract version, not proof of attestation or an existing plugin
+capability. This module does not provide RLS, CSRF, HMAC verification, connector
+capability discovery, database persistence, atomic approval consumption, snapshot
+creation, backup freshness or independent recovery. All remain integration gates.
+
+Source content is excluded from these request shapes; source review still needs a
+separate owner-authorized escaped UI and encrypted storage. No request was sent to
+the owner's local WordPress site and no database or deployment was changed.
+
+Local validation: full `pnpm release:check` **8/8 gates passed**,
+**1013 tests / 101 files**, including **39 new review-contract tests**.
+These are contract/unit checks, not real WordPress or hosted approval E2E evidence.
