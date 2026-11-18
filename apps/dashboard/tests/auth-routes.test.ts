@@ -6,6 +6,7 @@ describe('signed connector paths', () => {
     for (const path of [
       '/api/connector/pair',
       '/api/connector/heartbeat',
+      '/api/connector/restricted-files/ingest',
       '/api/connector/unpair',
       '/api/connector/events',
       '/api/connector/jobs/claim',
@@ -18,6 +19,10 @@ describe('signed connector paths', () => {
   it('keeps every browser-facing connector route session-protected', () => {
     for (const path of [
       '/api/connector/jobs',
+      '/api/connector/restricted-files/review',
+      '/api/connector/restricted-files/proposal',
+      '/restricted-review',
+      '/api/connector/restricted-files/ingest/extra',
       '/api/connector/sites',
       '/api/connector/sites/33333333-3333-4333-8333-333333333333',
       '/api/connector/pairing-codes',

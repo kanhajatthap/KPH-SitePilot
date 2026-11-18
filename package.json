@@ -20,7 +20,8 @@
     "test:php": "php wordpress/kph-sitepilot-connector/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-protocol.php && php wordpress/wp-agent-bridge/tests/test-plugin.php && php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php && KPH_TEST_MODE=disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php && KPH_TEST_MODE=mods-disabled php wordpress/kph-sitepilot-connector/tests/test-restricted-files.php",
     "release:check": "node scripts/release-check.mjs",
     "release:plan": "node scripts/release-check.mjs --plan",
-    "abuse:load": "node scripts/abuse-load.mjs"
+    "abuse:load": "node scripts/abuse-load.mjs",
+    "test:recovery": "node --test tools/recovery/recovery.test.mjs"
   },
   "devDependencies": {
     "php-parser": "^3.7.0",

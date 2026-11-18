@@ -11,6 +11,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  host-recovery:
+    name: Host-only recovery fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Recovery and fixed fatal-PHP fixture (not live WordPress)
+        run: REQUIRE_PHP_RECOVERY_TEST=1 node --test tools/recovery/recovery.test.mjs
+
   wordpress-plugin:
     name: WordPress Connector Checks
     runs-on: ubuntu-latest
@@ -118,3 +134,14 @@ jobs:
 
       - name: Monorepo Build
         run: pnpm build
+      - name: Install isolated browser test runtime
+        run: npm install --prefix "$RUNNER_TEMP/review-browser" --ignore-scripts --no-audit --no-fund playwright-core@1.65.1 @sparticuz/chromium@153.0.0
+
+      - name: Browser review fixtures (not hosted auth E2E)
+        shell: bash
+        run: |
+          pnpm --filter @wp-agent/dashboard start --hostname 0.0.0.0 > /tmp/review-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          node -e "const end=Date.now()+30000; async function wait(){try{const r=await fetch('http://127.0.0.1:3002/api/health');if(r.ok)return;}catch{}if(Date.now()>end)process.exit(1);setTimeout(wait,500)}wait()"
+          node tests/browser/restricted-review.mjs "$RUNNER_TEMP/review-browser/node_modules" http://127.0.0.1:3002

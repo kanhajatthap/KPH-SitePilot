@@ -21,7 +21,7 @@ export default function RestrictedReviewPage() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { abort.abort(); clearInterval(timer); };
   }, []);
-  const expired = !review || Date.parse(review.validUntil) <= now || Date.parse(review.expiresAt) <= now;
+  const expired = !review || !Number.isFinite(Date.parse(review.validUntil)) || !Number.isFinite(Date.parse(review.expiresAt)) || Date.parse(review.validUntil) <= now || Date.parse(review.expiresAt) <= now;
   async function approve() {
     if (!review || expired || busy || done || confirmation !== review.proposalId) return;
     setBusy(true);

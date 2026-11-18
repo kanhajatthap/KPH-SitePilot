@@ -329,3 +329,16 @@ These are partial FILE-02/FILE-03 foundations, not completed hosted file editing
   regression tests; native CI and live E2E remain separate acceptance gates.
 - [ ] Automatic/bootstrap exposure, real WordPress acceptance, on-write recheck
   and independent fatal-error recovery. Do not mark FILE-04/FILE-05 complete.
+
+
+### Recovery foundation batch (not production activation)
+
+- [x] Read-only deployment diagnosis: Vercel fair-use CPU soft block; configured
+  Supabase target refuses migration-list access (403); no remote changes.
+- [x] Local Linux host-only AES-GCM recovery snapshot/restore helper, default dry-run,
+  hash/root/allowlist binding, failure fixtures and native-PHP CI requirement.
+- [x] Seven compiled-page Chromium scenarios with fixture APIs; real hosted sign-in
+  and ownership E2E are not claimed.
+- [x] Signed ingestion middleware inventory fix and malformed-expiry refusal.
+- [ ] Real isolated WordPress edit→restore→OPcache restart→health acceptance,
+  automatic recovery orchestration and execution activation remain gated.
