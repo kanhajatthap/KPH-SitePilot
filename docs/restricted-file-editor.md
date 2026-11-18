@@ -266,3 +266,18 @@ execution boundary. The shipped catalog and plugin bootstrap remain unchanged.
 - PHP 8.5 WASM: **61 engine assertions + 2 disabled-mode assertions** passed;
   hard-link fixture explicitly skipped on that filesystem. Native PHP CI pending.
 - No browser end-to-end or real WordPress edit/restore test was performed.
+
+
+## Independent recovery foundation and browser fixtures
+
+A separate local Linux/Node helper now exists under `tools/recovery`; it must
+prepare its own encrypted backup before a test change and does not use WordPress
+or the hosted service during restore. It is not an automatic supervisor or a
+replacement for hosting backups. The editor engine and write dispatch remain off.
+See [operator runbook](./host-recovery-runbook.md) and
+[deployment/test evidence](./recovery-batch-status.md).
+
+The compiled source review page now has Chromium fixture coverage. Hosted sign-in,
+real site connectivity and real WordPress recovery are still unverified. The exact
+signed ingestion route is now included in the middleware machine-route inventory;
+this fixes an omission that would otherwise require a browser session in SaaS mode.

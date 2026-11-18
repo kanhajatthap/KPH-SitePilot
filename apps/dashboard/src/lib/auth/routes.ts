@@ -40,6 +40,7 @@ export const PUBLIC_API_PATHS = ['/api/health', '/api/auth/me', '/api/auth/statu
 export function isSignedConnectorPath(pathname: string): boolean {
   if (pathname === '/api/connector/pair') return true;
   if (pathname === '/api/connector/heartbeat') return true;
+  if (pathname === '/api/connector/restricted-files/ingest') return true;
   if (pathname === '/api/connector/unpair') return true;
   if (pathname === '/api/connector/events') return true;
   if (pathname === '/api/connector/jobs/claim') return true;
