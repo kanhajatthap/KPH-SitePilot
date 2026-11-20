@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { prepare, restore } from './recovery.mjs';
+import { preflight, prepare, restore } from './recovery.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 function fixture(fn) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kph-recovery-'));
@@ -95,4 +95,39 @@ test('fixed runtime-fatal PHP fixture recovered without booting WordPress', { sk
   assert.equal(restore(f.policy,p.id,p.id,true).verified,true);
   const healthy = spawnSync(php,[f.file],{encoding:'utf8',timeout:10000});
   assert.match(healthy.stdout,/healthy fixture/);
+}));
+
+test('preflight reports limited readiness without filesystem writes or source leakage', () => fixture(f => {
+  const initial = fs.readdirSync(f.vault); const write = fs.writeSync; const mkdir = fs.mkdirSync;
+  let report;
+  try {
+    fs.writeSync = () => { throw new Error('unexpected write'); };
+    fs.mkdirSync = () => { throw new Error('unexpected directory write'); };
+    report = preflight(f.policy,f.relative);
+  } finally { fs.writeSync = write; fs.mkdirSync = mkdir; }
+  assert.equal(report.readyForBackup,true); assert.equal(report.backupCreated,false);
+  assert.equal(report.executionAllowed,false); assert.equal(report.sha256,sha(f.before));
+  assert.ok(report.unverified.includes('wordpress-health'));
+  assert.deepEqual(fs.readdirSync(f.vault),initial); assert.equal(fs.readFileSync(f.file,'utf8'),f.before);
+  assert.equal(JSON.stringify(report).includes(f.root),false); assert.equal(JSON.stringify(report).includes(f.before),false);
+}));
+test('preflight refuses active or dangling recovery lock', () => fixture(f => {
+  const lock=path.join(f.vault,'.recovery-lock'); fs.symlinkSync(path.join(f.base,'missing'),lock);
+  assert.throws(() => preflight(f.policy,f.relative), /RECOVERY_BUSY/);
+}));
+test('preflight cannot accept a non-allowlisted file', () => fixture(f => {
+  assert.throws(() => preflight(f.policy,'wp-config.php'), /FILE_NOT_ALLOWED/);
+}));
+test('preflight fails closed on invalid key without creating a backup', () => fixture(f => {
+  fs.writeFileSync(path.join(f.vault,'key'),Buffer.alloc(4));
+  assert.throws(() => preflight(f.policy,f.relative), /KEY_INVALID/);
+  assert.deepEqual(fs.readdirSync(f.vault),['key']);
+}));
+test('CLI preflight is read-only and rejects an apply flag', () => fixture(f => {
+  const cli=path.resolve('tools/recovery/recovery.mjs');
+  const good=spawnSync(process.execPath,[cli,'preflight',f.policy,f.relative],{encoding:'utf8'});
+  assert.equal(good.status,0); assert.equal(JSON.parse(good.stdout).readyForBackup,true);
+  const bad=spawnSync(process.execPath,[cli,'preflight',f.policy,f.relative,'--apply'],{encoding:'utf8'});
+  assert.equal(bad.status,1); assert.equal(JSON.parse(bad.stderr).error,'USAGE');
+  assert.deepEqual(fs.readdirSync(f.vault),['key']);
 }));
