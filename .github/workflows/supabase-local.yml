@@ -6,12 +6,14 @@ on:
       - ".github/workflows/supabase-local.yml"
       - "supabase/migrations/**"
       - "supabase/tests/database/**"
+      - "tests/database/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/supabase-local.yml"
       - "supabase/migrations/**"
       - "supabase/tests/database/**"
+      - "tests/database/**"
   workflow_dispatch:
 
 permissions:
@@ -70,6 +72,12 @@ jobs:
                   escaped = line[:1000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
                   print(f'::error title=Database assertion failure::{escaped}')
           PY
+
+      - name: Install isolated native concurrency runtime
+        run: npm install --prefix "$RUNNER_TEMP/pilot-runtime" --ignore-scripts --no-audit --no-fund embedded-postgres@18.7.0-beta.19 pg@8.16.3
+
+      - name: Native concurrent review and lock-wait expiry acceptance
+        run: node tests/database/native-review.mjs "$RUNNER_TEMP/pilot-runtime/node_modules"
 
       - name: Stop local Supabase stack
         if: always()
