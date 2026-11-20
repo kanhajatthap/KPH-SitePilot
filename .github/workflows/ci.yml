@@ -24,6 +24,16 @@ jobs:
         with:
           php-version: '8.2'
           coverage: none
+      - name: Install SQLite extension
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite
+          coverage: none
+      - name: Disposable WordPress database recovery acceptance
+        run: |
+          node tests/wordpress/fetch-sources.mjs > "$RUNNER_TEMP/wp-test-sources.json"
+          WP_TEST_SOURCES="$RUNNER_TEMP/wp-test-sources.json" node tests/wordpress/recovery-acceptance.mjs
       - name: Recovery and fixed fatal-PHP fixture (not live WordPress)
         run: REQUIRE_PHP_RECOVERY_TEST=1 node --test tools/recovery/recovery.test.mjs
 

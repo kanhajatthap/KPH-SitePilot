@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     const admin = createSupabaseAdminClient(); if (!admin) return json({ error: 'STORAGE_UNAVAILABLE' }, 503);
     const { data: evidence, error: evidenceError } = await admin.from('restricted_file_evidence').select('*').eq('site_id', siteId).eq('proposal_id', proposalId).maybeSingle();
     if (evidenceError) return json({ error: 'REVIEW_UNAVAILABLE' }, 503);
-    if (!evidence || Date.parse(evidence.valid_until) <= Date.now() || row.status !== 'pending' || Date.parse(row.expires_at) <= Date.now()) return json({ error: 'STALE_OR_USED_PROPOSAL' }, 409);
+    if (!evidence || !Number.isFinite(Date.parse(evidence.valid_until)) || !Number.isFinite(Date.parse(row.expires_at)) || Date.parse(evidence.valid_until) <= Date.now() || row.status !== 'pending' || Date.parse(row.expires_at) <= Date.now()) return json({ error: 'STALE_OR_USED_PROPOSAL' }, 409);
     const raw = JSON.parse(decryptSecret(evidence.source_encrypted, getEncryptionKey()));
     const { siteId: boundSite, ...rest } = raw;
     const p = RestrictedFileIngestSchema.parse(rest);
