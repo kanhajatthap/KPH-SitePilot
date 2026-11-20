@@ -58,6 +58,32 @@ Do not commit or upload the policy, key, vault, source backup or database creden
 Do not put the helper behind a web handler. This runbook does not enable SitePilot
 file-editing tools or bypass their release gates.
 
+## Read-only preflight before creating backups
+
+After provisioning the private key, policy and allowlist, run on the test host:
+
+```bash
+node tools/recovery/recovery.mjs preflight /srv/private-policy.json wp-content/themes/test-child/functions.php
+```
+
+This command reads only. It checks policy/key permissions, known public roots,
+regular-file/path restrictions, same-device storage, current target uid/gid,
+cooperative lock absence, current directory access and an in-memory AES-GCM
+round-trip. It reads the target again to detect observed identity/hash changes.
+No backup, lock, temporary file, candidate edit, network request or PHP process is
+created. It refuses `--apply` and never prints source, keys or absolute host paths.
+
+A successful JSON report means **readyForBackup**, not ready for execution or
+verified recovery. It explicitly lists unresolved checks: actual staging isolation,
+web-server aliases/vault exposure, actual write/fsync behaviour, WordPress health
+and OPcache restart. OS access checks cannot detect disk-full conditions or prove
+future write success. A concurrent external writer can still race after preflight;
+prepare/restore must perform their own checks.
+
+A failed report exits nonzero with a generic safe code. Do not remove a recovery
+lock merely to obtain a green result. Native CI exercises this command on fixtures;
+the real host still needs its own preflight and end-to-end acceptance.
+
 ## Capture and validate BEFORE any test edit
 
 Obtain the SHA-256 of the reviewed candidate bytes without executing them. Then:

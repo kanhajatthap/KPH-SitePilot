@@ -70,6 +70,27 @@ function locked(p, action) {
   try { fs.mkdirSync(lock, { mode: 0o700 }); } catch { fail('RECOVERY_BUSY'); }
   try { return action(); } finally { fs.rmdirSync(lock); }
 }
+/** Read-only admission check. Does not create a lock, backup or temporary file. */
+export function preflight(policyPath, relative) {
+  const { p, key } = load(policyPath);
+  try { fs.lstatSync(path.join(p.vault, '.recovery-lock')); fail('RECOVERY_BUSY'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const file = target(p, relative); const first = readRegular(file);
+  const vault = fs.statSync(p.vault);
+  if (first.stat.dev !== vault.dev) fail('CROSS_DEVICE');
+  if (first.stat.uid !== process.getuid() || first.stat.gid !== process.getgid() || (vault.mode & 0o2000)) fail('RESTORE_OWNERSHIP_MISMATCH');
+  // access() is only a current permissions check, not a write/durability test.
+  fs.accessSync(p.vault, fs.constants.W_OK | fs.constants.X_OK);
+  fs.accessSync(path.dirname(file), fs.constants.W_OK | fs.constants.X_OK);
+  const probe = { probe: 'host-recovery-preflight-v1' };
+  if (open(seal(probe, key), key).probe !== probe.probe) fail('ENCRYPTION_UNAVAILABLE');
+  const second = readRegular(target(p, relative));
+  if (first.stat.ino !== second.stat.ino || first.stat.dev !== second.stat.dev || hash(first.bytes) !== hash(second.bytes)) fail('FILE_CHANGED');
+  return { version: 1, readyForBackup: true, fileChanged: false, backupCreated: false,
+    executionAllowed: false, file: relative, sha256: hash(second.bytes), bytes: second.bytes.length,
+    unverified: ['staging-isolation', 'web-server-vault-exposure', 'actual-write-and-fsync', 'wordpress-health', 'opcache-restart'] };
+}
+
 export function prepare(policyPath, relative, afterHash) {
   if (typeof afterHash !== 'string' || !/^[a-f0-9]{64}$/.test(afterHash) || afterHash.length !== 64) fail('AFTER_HASH_REQUIRED');
   const { p, key } = load(policyPath);
@@ -119,7 +140,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const [command, policy, value, confirmation, flag] = process.argv.slice(2);
     if (!policy || process.argv.length > 7) fail('USAGE');
     let result;
-    if (command === 'prepare' && !flag) result = prepare(policy, value, confirmation);
+    if (command === 'preflight' && value && !confirmation && !flag) result = preflight(policy, value);
+    else if (command === 'prepare' && !flag) result = prepare(policy, value, confirmation);
     else if (command === 'restore' && (!flag || flag === '--apply')) result = restore(policy, value, confirmation, flag === '--apply');
     else fail('USAGE');
     console.log(JSON.stringify(result));
