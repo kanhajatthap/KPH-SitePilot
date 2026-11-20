@@ -8,3 +8,5 @@ describe('independent host recovery', () => {
     expect(run.stdout).toContain('# fail 0');
   });
 });
+
+describe('pilot evidence gate', () => { it('never activates and refuses missing mandatory evidence', () => { const run=spawnSync(process.execPath,['--test','tools/pilot/readiness.test.mjs'],{cwd:path.resolve(__dirname,'../../..'),encoding:'utf8',timeout:30000}); expect(run.status,run.stdout+run.stderr).toBe(0); }); });

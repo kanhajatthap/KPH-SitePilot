@@ -13,7 +13,7 @@ SELECT ok(NOT public.ingest_restricted_file_review('30000000-0000-4000-8000-0000
 RESET ROLE;
 SELECT is((SELECT owner_id::text FROM public.restricted_file_reviews WHERE proposal_id=repeat('a',32) AND site_id='30000000-0000-4000-8000-000000000061'),'10000000-0000-4000-8000-000000000061','owner derived from project');
 -- Stale evidence cannot authorize even direct RPC consumption.
-UPDATE public.restricted_file_evidence SET observed_at=clock_timestamp()-interval '2 minutes',valid_until=clock_timestamp()-interval '1 minute';
+UPDATE public.restricted_file_evidence SET observed_at=statement_timestamp()-interval '2 minutes',valid_until=statement_timestamp()-interval '1 minute';
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000061',true);
 SELECT ok(NOT public.consume_restricted_file_review('30000000-0000-4000-8000-000000000061',repeat('a',32),repeat('a',32),repeat('b',64),repeat('c',64)),'stale direct RPC refused');
