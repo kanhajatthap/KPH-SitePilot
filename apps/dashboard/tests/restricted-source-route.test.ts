@@ -26,3 +26,5 @@ describe('owner-only source disclosure', () => {
   it('rejects ciphertext substitution', async () => { m.evidence.mockResolvedValue({ data: { valid_until: new Date(Date.now()+60000).toISOString(), source_encrypted: encryptSecret(JSON.stringify({ siteId: 'other-site', ...p }), key) }, error: null }); expect((await GET(request())).status).toBe(503); });
   it('does not leak decryption errors', async () => { m.evidence.mockResolvedValue({ data: { valid_until: new Date(Date.now()+60000).toISOString(), source_encrypted: 'broken' }, error: null }); const r = await GET(request()); expect(await r.json()).toEqual({ error: 'REVIEW_UNAVAILABLE' }); });
 });
+
+it('rejects malformed freshness before decrypting source', async () => { m.evidence.mockResolvedValue({ data: { valid_until: 'invalid' }, error: null }); expect((await GET(request())).status).toBe(409); });

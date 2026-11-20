@@ -14,11 +14,12 @@ const browser = await chromium.launch({ env: { ...process.env, LD_LIBRARY_PATH: 
 const id = 'a'.repeat(32); const siteId = '11111111-1111-4111-8111-111111111111'; let passed = 0;
 async function scenario(name, options, check) {
   const context = await browser.newContext(); const page = await context.newPage(); const posts = [];
-  const data = { siteId, proposalId:id, path:'themes/test/style.css', before:'<script>window.sourceExecuted=true</script>',after:'<img src=x onerror="window.sourceExecuted=true">', beforeHash:'b'.repeat(64),afterHash:'c'.repeat(64),validUntil:new Date(Date.now()+60000).toISOString(),expiresAt:new Date(Date.now()+600000).toISOString(),...options.data };
+  const data = { risk:'R3',executionAllowed:false,siteId, proposalId:id, path:'themes/test/style.css', before:'<script>window.sourceExecuted=true</script>',after:'<img src=x onerror="window.sourceExecuted=true">', beforeHash:'b'.repeat(64),afterHash:'c'.repeat(64),validUntil:new Date(Date.now()+60000).toISOString(),expiresAt:new Date(Date.now()+600000).toISOString(),...options.data };
   await page.route('**/*', async route => {
     const u = new URL(route.request().url());
     if (u.origin !== origin) return route.abort();
     if (u.pathname.endsWith('/restricted-files/proposal')) return route.fulfill({ status:options.readStatus || 200, json:options.readStatus ? {error:'REFUSED'} : data });
+    if (u.pathname.endsWith('/restricted-files/status')) return route.fulfill({json:{siteId,proposalId:id,status:'consumed',expired:false,reviewOnly:true,executionAllowed:false}});
     if (u.pathname.endsWith('/restricted-files/review')) { posts.push(route.request().postDataJSON()); return route.fulfill({status: options.writeStatus || 200,json: options.writeStatus ? {error:'REFUSED'} : { status:'review_recorded',executionAllowed:false }}); }
     return route.continue();
   });
@@ -36,12 +37,12 @@ try {
     assert.equal(await page.getByRole('button',{name:'Review recorded',exact:true}).isDisabled(),true);
   });
   for (const [status,name] of [[401,'signed-out response'],[404,'cross-owner response']]) {
-    await scenario(name,{readStatus:status},async(page,posts)=>{await page.getByText('Review unavailable. Sign in as the site owner and request a fresh connector proposal.').waitFor();assert.equal(await page.locator('#proposal-confirmation').count(),0);assert.equal(posts.length,0);});
+    await scenario(name,{readStatus:status},async(page,posts)=>{await page.getByText(status === 401 ? /Your session has expired/ : /no longer own this site/).waitFor();assert.equal(await page.locator('#proposal-confirmation').count(),0);assert.equal(posts.length,0);});
   }
   for (const [validUntil,name] of [[new Date(0).toISOString(),'expired evidence'],['invalid','malformed expiry']]) {
-    await scenario(name,{data:{validUntil}},async(page,posts)=>{await page.getByText('Evidence expired. Request a fresh proposal from the connector.').waitFor();assert.equal(await page.locator('#proposal-confirmation').isDisabled(),true);assert.equal(posts.length,0);});
+    await scenario(name,{data:{validUntil}},async(page,posts)=>{await page.getByText(validUntil === 'invalid' ? /Invalid review response/ : 'Evidence expired. Request a fresh proposal from the connector.').waitFor();if(validUntil !== 'invalid') assert.equal(await page.locator('#proposal-confirmation').isDisabled(),true);assert.equal(posts.length,0);});
   }
-  await scenario('replayed or changed approval refusal',{writeStatus:409},async(page,posts)=>{const input=page.locator('#proposal-confirmation');await input.fill(id);await page.getByRole('button',{name:'Record review — no execution'}).click();await page.getByText(/Review not confirmed/).waitFor();assert.equal(posts.length,1);assert.equal(await page.getByRole('button',{name:'Review recorded',exact:true}).count(),0);});
+  await scenario('replayed or changed approval refusal',{writeStatus:409},async(page,posts)=>{const input=page.locator('#proposal-confirmation');await input.fill(id);await page.getByRole('button',{name:'Record review — no execution'}).click();await page.getByText(/The review result could not be confirmed/).waitFor();assert.equal(posts.length,1);assert.equal(await page.locator('#proposal-confirmation').count(),0);await page.getByRole('button',{name:'Reload status'}).click();await page.getByText(/Review already recorded/).waitFor();assert.equal(posts.length,1);});
   await scenario('expiry timer disables an open review',{data:{validUntil:new Date(Date.now()+3000).toISOString()}},async(page)=>{await page.locator('#proposal-confirmation').waitFor();await page.waitForFunction(()=>document.querySelector('#proposal-confirmation')?.disabled);});
   console.log(`${passed} browser fixture scenarios passed. Hosted sign-in and live ownership E2E remain unverified.`);
 } finally { await browser.close(); }

@@ -1,0 +1,8 @@
+import { expect, it } from 'vitest';
+import { ReviewSourceSchema, ReceiptStatusSchema, readFailureMessage } from '../src/lib/restricted-review-client';
+const review={siteId:'11111111-1111-4111-8111-111111111111',proposalId:'a'.repeat(32),path:'themes/test/style.css',before:'body{}',after:'body{color:red}',beforeHash:'b'.repeat(64),afterHash:'c'.repeat(64),validUntil:new Date().toISOString(),expiresAt:new Date().toISOString(),risk:'R3',executionAllowed:false};
+it('accepts only bounded review-only source envelopes',()=>{expect(ReviewSourceSchema.safeParse(review).success).toBe(true);for(const patch of [{executionAllowed:true},{risk:'R1'},{path:'../wp-config.php'},{validUntil:'invalid'},{before:'a'.repeat(65537)},{unexpected:true}])expect(ReviewSourceSchema.safeParse({...review,...patch}).success).toBe(false);});
+it('status reconciliation is not execution permission',()=>{const status={siteId:review.siteId,proposalId:review.proposalId,status:'consumed',expired:false,reviewOnly:true,executionAllowed:false};expect(ReceiptStatusSchema.safeParse(status).success).toBe(true);expect(ReceiptStatusSchema.safeParse({...status,executionAllowed:true}).success).toBe(false);});
+it('gives actionable session and service messages',()=>{expect(readFailureMessage(401)).toMatch(/Sign in/);expect(readFailureMessage(404)).toMatch(/cleared/);expect(readFailureMessage(409)).toMatch(/fresh/);expect(readFailureMessage(503)).toMatch(/Reload/);});
+
+it('accepts PostgreSQL UTC offset timestamps',()=>{expect(ReviewSourceSchema.safeParse({...review,validUntil:'2026-11-04T12:00:00+00:00'}).success).toBe(true);});

@@ -1,0 +1,4 @@
+{
+  "wordpress": { "version": "6.8.3", "commit": "ba9e7f97f08a7fbb88fbfa35641bcc230500b37a", "url": "https://codeload.github.com/WordPress/WordPress/tar.gz/ba9e7f97f08a7fbb88fbfa35641bcc230500b37a", "sha256": "d91fb6a1fe7b779398421a270fcbd9d2abcce6f917a51553a1bb0fa2731aaaea" },
+  "sqlite": { "version": "2.2.23", "commit": "f3ea1a43ba525be382c7a9c17735b6b4d4b11d49", "repo": "https://github.com/WordPress/sqlite-database-integration.git" }
+}

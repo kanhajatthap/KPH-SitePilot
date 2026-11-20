@@ -139,3 +139,41 @@ Real acceptance still pending: perform CSS/JS/PHP edit → host restore → PHP 
 restart → site health checks on an accessible authorised isolated WordPress host.
 `http://test.local` on the owner's machine is not reachable from Arena. Do not
 expose wp-admin publicly just to run this fixture suite.
+
+## Actionable failures
+
+CLI failures now include `error`, `verified:false`, `executionAllowed:false`, and
+`nextAction`. Missing policy/key, invalid JSON, denied permissions, unsafe paths,
+locks, ownership and filesystem mismatches receive redacted operator guidance.
+Never regenerate a lost key for existing snapshots, clear a lock without checking
+active processes, or automatically chmod/chown an existing installation. Preflight
+does not change permissions. The restore helper still restores the snapshot's mode
+on its newly created temporary file, as before.
+
+`RESTORE_UNVERIFIED` after replacement means bytes may already have changed: stop
+blind retries and inspect through trusted host controls. It does not mean rollback
+occurred or WordPress is healthy.
+
+## Disposable WordPress acceptance
+
+Requirements: Linux, Node 22, git, curl, tar, native PHP 8.2 with PDO SQLite. No
+existing WordPress URL or credentials are used. Run from the repository root:
+
+```sh
+node tests/wordpress/fetch-sources.mjs > /tmp/sitepilot-wp-sources.json
+WP_TEST_SOURCES=/tmp/sitepilot-wp-sources.json node tests/wordpress/recovery-acceptance.mjs
+```
+
+The fetcher checks a pinned WordPress archive SHA-256 and SQLite Git revision.
+The harness copies pristine sources into a fresh temporary directory, generates
+local-only credentials, blocks WordPress HTTP/mail/cron, installs a SQLite database,
+and checks CSS/JS/PHP edit → host restore → original hash → fresh-process WordPress
+health. It also runs the experimental engine directly in this fixture and recovers
+from a fixed runtime-fatal theme. The generated site/database/vault are removed in
+`finally`; downloaded source caches remain at `temporaryRoot` in the fetcher JSON
+for operator cleanup. Never point this harness at an existing site.
+
+`PHP_BIN` can select PHP WASM for portable smoke testing, but that result is **not**
+native PHP/FPM, MySQL, HTTP, OPcache, hosted authentication or production acceptance.
+CI now includes the native PHP/SQLite variant; configuration alone is not evidence
+that an unpushed CI run passed. The connector's normal dispatch stays disabled.

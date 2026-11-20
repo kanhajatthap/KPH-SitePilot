@@ -131,3 +131,16 @@ test('CLI preflight is read-only and rejects an apply flag', () => fixture(f => 
   assert.equal(bad.status,1); assert.equal(JSON.parse(bad.stderr).error,'USAGE');
   assert.deepEqual(fs.readdirSync(f.vault),['key']);
 }));
+test('missing key yields actionable redacted CLI error without modifying vault', () => fixture(f => {
+  fs.unlinkSync(path.join(f.vault,'key'));
+  const result = spawnSync(process.execPath,['tools/recovery/recovery.mjs','preflight',f.policy,f.relative],{encoding:'utf8'});
+  const error = JSON.parse(result.stderr);
+  assert.equal(result.status,1); assert.equal(error.error,'KEY_MISSING'); assert.equal(error.executionAllowed,false);
+  assert.match(error.nextAction,/original/); assert.equal(result.stderr.includes(f.base),false);
+  assert.deepEqual(fs.readdirSync(f.vault),[]);
+}));
+test('invalid JSON policy reports safe guidance', () => fixture(f => {
+  fs.writeFileSync(f.policy,'{bad JSON');
+  const result = spawnSync(process.execPath,['tools/recovery/recovery.mjs','preflight',f.policy,f.relative],{encoding:'utf8'});
+  assert.equal(JSON.parse(result.stderr).error,'POLICY_INVALID');
+}));

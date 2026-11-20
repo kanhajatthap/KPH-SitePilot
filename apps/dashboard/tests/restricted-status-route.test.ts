@@ -1,0 +1,14 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+const m=vi.hoisted(()=>({session:vi.fn(),user:vi.fn(),row:vi.fn(),eq:vi.fn()}));
+vi.mock('../src/lib/supabase/server',()=>({createSupabaseServerClient:m.session}));
+import { GET } from '../src/app/api/connector/restricted-files/status/route';
+const siteId='11111111-1111-4111-8111-111111111111', proposalId='a'.repeat(32);
+const req=()=>new Request(`https://fixture.invalid/api/connector/restricted-files/status?siteId=${siteId}&proposalId=${proposalId}`);
+beforeEach(()=>{vi.resetAllMocks();const q={select:vi.fn(),eq:m.eq,maybeSingle:m.row};q.select.mockReturnValue(q);m.eq.mockReturnValue(q);m.session.mockResolvedValue({auth:{getUser:m.user},from:()=>q});m.user.mockResolvedValue({data:{user:{id:'owner'}},error:null});m.row.mockResolvedValue({data:{status:'consumed',expires_at:new Date(Date.now()+60000).toISOString()},error:null});});
+it('reconciles consumed status without source and scopes owner',async()=>{const r=await GET(req());expect(r.status).toBe(200);expect(r.headers.get('cache-control')).toBe('no-store');expect(await r.json()).toEqual({siteId,proposalId,status:'consumed',expired:false,reviewOnly:true,executionAllowed:false});expect(m.eq).toHaveBeenCalledWith('owner_id','owner');});
+it('requires session',async()=>{m.user.mockResolvedValue({data:{user:null},error:null});expect((await GET(req())).status).toBe(401);expect(m.row).not.toHaveBeenCalled();});
+it('hides absent or cross-owner receipts',async()=>{m.row.mockResolvedValue({data:null,error:null});expect((await GET(req())).status).toBe(404);});
+it('fails closed on database outage',async()=>{m.row.mockRejectedValue(new Error('private detail'));const r=await GET(req());expect(r.status).toBe(503);expect(await r.json()).toEqual({error:'REVIEW_UNAVAILABLE'});});
+it('rejects malformed database expiry',async()=>{m.row.mockResolvedValue({data:{status:'pending',expires_at:'invalid'},error:null});expect((await GET(req())).status).toBe(503);});
+it('reports revoked receipt',async()=>{m.row.mockResolvedValue({data:{status:'revoked',expires_at:new Date(0).toISOString()},error:null});expect(await (await GET(req())).json()).toMatchObject({status:'revoked',expired:true,executionAllowed:false});});
+it('rejects unexpected query keys',async()=>{expect((await GET(new Request(req().url+'&source=true'))).status).toBe(400);expect(m.session).not.toHaveBeenCalled();});
