@@ -33,3 +33,10 @@ The concurrency regression was observed failing before migration
 receipt row, but the old function consumed it. The new function acquires receipt
 and evidence locks before evaluating wall-clock freshness. Separate connections
 also test evidence-row waiting and single-use competition. Execution stays off.
+
+Additional disable ordering checks distinguish two cases: a consumer waiting behind
+a revocation must refuse after that revocation commits; an already-consumed receipt
+transaction can commit before a waiting revocation. Revocation then blocks later
+requests, but does not undo the earlier receipt. This is metadata-only transactional
+behavior, not cancellation of a filesystem write or executable job. Current custom
+suite has 29 checks, or 33 aggregate checks including four pgTAP files (55 assertions).

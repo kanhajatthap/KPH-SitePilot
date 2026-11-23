@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "testedCommit": "30d1bb1127ea3a160c2ce0177a671ccec0be806d",
+  "recordedAtSandboxClock": "2026-11-20T12:25:05.286037+00:00",
+  "checks": {
+    "release": {
+      "status": "PASS",
+      "gates": 8
+    },
+    "unit": {
+      "status": "PASS",
+      "tests": 1070,
+      "files": 108
+    },
+    "nativeSql": {
+      "status": "PASS",
+      "pgTapAssertions": 55,
+      "customChecks": 29,
+      "identity": "shim, not JWT Auth"
+    },
+    "wordpressSqliteWasm": {
+      "status": "PASS",
+      "assertions": 25
+    },
+    "compiledBrowserFixtures": {
+      "status": "PASS",
+      "scenarios": 11,
+      "processExitCode": 0,
+      "hostListeningPorts": [],
+      "toolProcessId": "isolated-final-browser-verificat-1904b584"
+    },
+    "mysqlFpmHttp": {
+      "status": "BLOCKED",
+      "reason": "Docker executable absent"
+    },
+    "realAuthBrowser": {
+      "status": "BLOCKED",
+      "reason": "Disposable Supabase Auth/PostgREST unavailable"
+    },
+    "httpsSessionRefresh": {
+      "status": "NOT TESTED"
+    },
+    "pilot": "NO-GO"
+  }
+}

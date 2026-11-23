@@ -32,3 +32,8 @@ receipt reconciliation, revocation after opening, lost cookies, and no dispatch.
 Not covered by this runner: timed JWT expiry/refresh rotation, TLS production
 cookies, slow backend under load, hosting outage, WordPress admin authentication.
 These remain separate acceptance gates. Syntax checking is not execution evidence.
+
+Cleanup now attempts every generated resource even if one context close/project
+removal fails. Only generated IDs are used. Failures are reported as redacted
+labels/statuses with nonzero exit status; they must not be mistaken for successful
+cleanup. The helper is unit-tested; full provider cleanup remains runtime-unverified.

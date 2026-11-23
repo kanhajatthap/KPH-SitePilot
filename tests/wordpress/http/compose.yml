@@ -18,7 +18,11 @@ services:
   php:
     build: .
     user: "${FIXTURE_UID}:${FIXTURE_GID}"
-    volumes: ["${FIXTURE_DIR}:/fixture"]
+    volumes:
+      - "${FIXTURE_DIR}/site:/fixture/site"
+      - "${FIXTURE_DIR}/db-password:/fixture/db-password:ro"
+      - "${FIXTURE_DIR}/install.php:/fixture/install.php:ro"
+      - "${FIXTURE_DIR}/runtime:/fixture/runtime"
     networks: [isolated]
     depends_on:
       db: {condition: service_healthy}
@@ -27,7 +31,7 @@ services:
     user: "${FIXTURE_UID}:${FIXTURE_GID}"
     entrypoint: [nginx, -g, "daemon off;"]
     volumes:
-      - "${FIXTURE_DIR}:/fixture:ro"
+      - "${FIXTURE_DIR}/site:/fixture/site:ro"
       - "./nginx.conf:/etc/nginx/nginx.conf:ro"
     networks: [isolated]
     depends_on: [php]

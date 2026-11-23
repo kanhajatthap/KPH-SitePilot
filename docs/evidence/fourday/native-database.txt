@@ -1,0 +1,34 @@
+PASS all repository migrations apply on fresh native PostgreSQL
+PASS recovery.test.sql: 11 pgTAP assertions
+PASS restricted-file-reviews.test.sql: 15 pgTAP assertions
+PASS restricted-ingestion.test.sql: 11 pgTAP assertions
+PASS rls.test.sql: 18 pgTAP assertions
+PASS service ingests evidence
+PASS duplicate ingestion refused
+PASS RLS hides receipt from non-owner
+PASS non-owner cannot consume
+PASS ciphertext SQL access denied to browser role
+PASS two native connections consume exactly once
+PASS replay refused
+PASS expired evidence refused
+PASS expired ciphertext purged
+PASS purge retains metadata
+PASS revocation prevents consumption
+PASS revocation prevents ingestion
+PASS old owner cannot consume after transfer
+PASS old owner loses receipt visibility
+PASS evidence expiring during receipt lock wait cannot be consumed
+PASS evidence lock wait also rechecks wall-clock expiry
+PASS wrong current hash refuses consumption
+PASS typed confirmation mismatch refuses consumption
+PASS scope removal refuses consumption
+PASS anonymous role has no consume privilege
+PASS browser cannot invoke source purge
+PASS purge retains fresh evidence
+PASS site revoked while consumer waits cannot be consumed
+PASS in-flight receipt can consume before disable acquires lock
+PASS disable waits for already-authorized transaction
+PASS after disable commit all pending consumption refused
+PASS disable does not pretend to undo an earlier committed receipt
+PASS no execution jobs created
+NATIVE_REVIEW_OK 33 assertions; native PostgreSQL, identity shim, NOT Auth/PostgREST/hosted E2E

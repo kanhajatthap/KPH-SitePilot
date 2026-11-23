@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "scope": "host-bytes-only",
+  "httpHealth": "NOT TESTED",
+  "phpRuntime": "NOT TESTED",
+  "cases": [
+    {
+      "file": "style.css",
+      "status": "PASS",
+      "originalHash": "7ada5a1234b13c6cafa63c438ae59e1a35173601906230c4b7508722aa1597f6",
+      "changedHash": "fab4811e9952068575a0c8966147458c2b6a74d3ce49dc8d5a45b226067ea74f",
+      "restoredHash": "7ada5a1234b13c6cafa63c438ae59e1a35173601906230c4b7508722aa1597f6",
+      "dryRunPreservedBytes": true
+    },
+    {
+      "file": "script.js",
+      "status": "PASS",
+      "originalHash": "16e895b69e0785335101f0fedd0eda77cb75ae5c0833736c2d19c78718ba053c",
+      "changedHash": "4ebd538b1c72401a823c60d8141af9a291aefad7e37a370f91464f51785320cd",
+      "restoredHash": "16e895b69e0785335101f0fedd0eda77cb75ae5c0833736c2d19c78718ba053c",
+      "dryRunPreservedBytes": true
+    },
+    {
+      "file": "functions.php",
+      "status": "PASS",
+      "originalHash": "44a806e8343b91de1e70521e7b7c87646a1076a212060d4e05eda4c8e1e09a22",
+      "changedHash": "fb8eee105989c109f2b2f512c218a12e90199d781dab5cd5a61353b7cdb54571",
+      "restoredHash": "44a806e8343b91de1e70521e7b7c87646a1076a212060d4e05eda4c8e1e09a22",
+      "dryRunPreservedBytes": true
+    }
+  ]
+}

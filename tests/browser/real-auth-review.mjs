@@ -1,6 +1,7 @@
 // Requires an already-running DISPOSABLE local Supabase + dashboard using the same env.
 // No auth/API mocks. Lost-response scenario forwards the real mutation then drops response.
 // node tests/browser/real-auth-review.mjs /tmp/review-browser/node_modules http://127.0.0.1:3002
+import {cleanupResources} from './cleanup.mjs';
 import assert from 'node:assert/strict';import path from 'node:path';import os from 'node:os';
 import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {randomUUID,randomBytes,createHash,createHmac,createCipheriv} from 'node:crypto';
 const require=createRequire(path.resolve('apps/dashboard/package.json'));const {createClient}=require('@supabase/supabase-js');
@@ -13,7 +14,7 @@ const modules=path.resolve(process.argv[2]);const {chromium}=await import(pathTo
 const {default:binary,inflate}=await import(pathToFileURL(path.join(modules,'@sparticuz/chromium/build/index.js')));
 await inflate(path.join(modules,'@sparticuz/chromium/bin/al2023.tar.br'));
 const browser=await chromium.launch({env:{...process.env,LD_LIBRARY_PATH:`${path.join(os.tmpdir(),'al2023/lib')}:${process.env.LD_LIBRARY_PATH||''}`},executablePath:await binary.executablePath(),args:binary.args.filter(a=>!['--single-process','--disable-web-security','--allow-running-insecure-content','--disable-site-isolation-trials'].includes(a)),headless:true});
-const users=[];const contexts=[];let projectId;let siteId;let checks=0;
+const users=[];const contexts=[];let projectId;let projectCreated=false;let siteId;let checks=0;
 const check=(v,label)=>{assert.ok(v,label);checks++;console.log(`PASS ${label}`);};
 const sha=s=>createHash('sha256').update(s).digest('hex');const secret=randomBytes(32).toString('hex');
 function encrypted(s){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',Buffer.from(process.env.SITEPILOT_ENCRYPTION_KEY,'hex'),iv);const bytes=Buffer.concat([c.update(s,'utf8'),c.final()]);return ['v1',iv.toString('base64url'),c.getAuthTag().toString('base64url'),bytes.toString('base64url')].join('.');}
@@ -25,7 +26,7 @@ async function login(u,id){const context=await browser.newContext();contexts.pus
 async function submit(page,id){await page.locator('#proposal-confirmation').fill(id);await page.getByRole('button',{name:'Record review — no execution'}).click();}
 try{
  const owner=await user(),other=await user();projectId=randomUUID();siteId=randomUUID();
- ok(await admin.from('projects').insert({id:projectId,owner_id:owner.id,name:'Disposable real-auth acceptance'}),'PROJECT_CREATE_FAILED');
+ ok(await admin.from('projects').insert({id:projectId,owner_id:owner.id,name:'Disposable real-auth acceptance'}),'PROJECT_CREATE_FAILED');projectCreated=true;
  ok(await admin.from('sites').insert({id:siteId,project_id:projectId,url:'https://fixture.invalid',name:'Disposable',environment:'staging',token_hash:sha(randomBytes(32).toString('hex')),secret_encrypted:encrypted(secret),scopes:['files','code']}),'SITE_CREATE_FAILED');
  const id=await ingest();const a=await login(owner,id);await a.page.locator('#proposal-confirmation').waitFor();check(true,'real owner login and source disclosure');
  const b=await login(other,id);await b.page.getByText(/no longer own this site/).waitFor();check(await b.page.locator('main pre').count()===0,'real non-owner sees no source');
@@ -38,8 +39,12 @@ try{
  const jobs=ok(await admin.from('jobs').select('id').eq('site_id',siteId),'JOBS_READ_FAILED');check(jobs.length===0,'no execution dispatched');
  console.log(`REAL_AUTH_REVIEW_OK ${checks} checks; disposable Auth/PostgREST only; response-loss fault injection; no production claim`);
 }finally{
- await Promise.all(contexts.map(c=>c.close()));await browser.close();
- // Delete only IDs created by this run. Never reset a database or delete existing users.
- if(projectId)ok(await admin.from('projects').delete().eq('id',projectId),'FIXTURE_PROJECT_CLEANUP_FAILED');
- for(const id of users)ok(await admin.auth.admin.deleteUser(id),'FIXTURE_USER_CLEANUP_FAILED');
+ // Continue cleaning only this run's generated IDs even if one close/delete fails.
+ const cleanup=await cleanupResources([
+  ...contexts.map((context,i)=>({label:`context-${i}`,run:()=>context.close()})),
+  {label:'browser',run:()=>browser.close()},
+  ...(projectCreated?[{label:'fixture-project',run:async()=>{ok(await admin.from('projects').delete().eq('id',projectId),'FIXTURE_PROJECT_CLEANUP_FAILED');}}]:[]),
+  ...users.map((id,i)=>({label:`fixture-user-${i}`,run:async()=>{ok(await admin.auth.admin.deleteUser(id),'FIXTURE_USER_CLEANUP_FAILED');}})),
+ ]);
+ if(cleanup.some(r=>r.status==='FAIL')){process.exitCode=1;console.error(JSON.stringify({status:'FAIL',cleanup}));}
 }

@@ -1,0 +1,26 @@
+PASS real WordPress installation into isolated SQLite
+PASS WordPress bootstrap/database/theme healthy
+PASS style.css preflight
+PASS style.css changed bytes verified
+PASS style.css WordPress health after fixture change
+PASS style.css independent host restore
+PASS style.css original hash restored
+PASS style.css WordPress health after restore
+PASS script.js preflight
+PASS script.js changed bytes verified
+PASS script.js WordPress health after fixture change
+PASS script.js independent host restore
+PASS script.js original hash restored
+PASS script.js WordPress health after restore
+PASS functions.php preflight
+PASS functions.php changed bytes verified
+PASS functions.php WordPress health after fixture change
+PASS functions.php independent host restore
+PASS functions.php original hash restored
+PASS functions.php WordPress health after restore
+PASS experimental PHP engine proposal/export/apply/restore uses real WordPress options and capabilities in fixture only
+PASS WordPress healthy after engine fixture round-trip
+PASS runtime-fatal theme prevents WordPress bootstrap
+PASS host restore succeeds while WordPress cannot bootstrap
+PASS fresh PHP process boots WordPress after fatal recovery
+WORDPRESS_ACCEPTANCE_OK 25 assertions; WordPress 6.8.3 + SQLite; PHP=WASM; not MySQL/FPM/HTTP/browser acceptance.

@@ -1,0 +1,26 @@
+{
+  "status": "BLOCKED",
+  "reason": "Docker unavailable; declared tags only, no runtime digest inventory",
+  "images": [
+    {
+      "name": "php-base",
+      "declaredTag": "php:8.2.29-fpm-bookworm",
+      "immutableDigest": null
+    },
+    {
+      "name": "mysql",
+      "declaredTag": "mysql:8.4.5",
+      "immutableDigest": null
+    },
+    {
+      "name": "nginx",
+      "declaredTag": "nginx:1.28.0-alpine",
+      "immutableDigest": null
+    },
+    {
+      "name": "runner",
+      "declaredTag": "node:22.16.0-bookworm-slim",
+      "immutableDigest": null
+    }
+  ]
+}

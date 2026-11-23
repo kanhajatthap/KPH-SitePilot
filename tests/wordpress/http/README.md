@@ -23,3 +23,33 @@ Phases:
 7. Restore without invoking WordPress; restart; prove database-backed HTTP health.
 
 No authenticated WordPress admin or dashboard authentication claim is made. No pilot activation. Failure to start containers is an environment blocker, not a passing result. The native SQLite harness remains an independent test.
+
+## Hardened execution and evidence
+
+The runner now refuses DOCKER_HOST / DOCKER_CONTEXT overrides, inspects the selected
+context and accepts only a Unix socket endpoint, then pins that context for every
+Docker command. A locally forwarded socket still requires operator trust; never
+point it at shared/remote infrastructure. Inherited Compose and credential environment
+variables are stripped and an explicit empty interpolation file is used.
+
+FPM and nginx no longer mount the complete fixture. They cannot access the host-only
+vault/key or root DB password. FPM receives only site, app DB credential, installer
+and runtime marker directory. The runner alone receives the independent vault.
+
+`evidence.json` records phase results, byte hashes, HTTP status/response hashes and
+image IDs/available repository digests. `checks.jsonl` records completed assertions
+incrementally. Image IDs for locally built PHP are not registry manifest digests.
+No real digest inventory exists until the containers have actually run; do not
+substitute tag strings for immutable digest evidence.
+
+The fatal phase requires HTTP 500 AND a fixed fatal shutdown marker AND an otherwise
+healthy direct FPM probe. A generic nginx 502/503 is not PHP fatal acceptance.
+The baseline verifies FPM SAPI and actual enabled OPcache with timestamp checks off.
+
+On failure, scoped containers are stopped but the generated site/vault/key and
+private diagnostics remain under the generated owner-only directory. Treat that
+directory as sensitive: never commit, upload or paste its contents. The printed
+path is for trusted local operator investigation. On success, generated site and
+secret files are removed, but redacted evidence is retained. Cleanup failure is
+FAIL, never PASS. Preserve failure backups until operator investigation is complete.
+This supersedes the earlier unconditional generated-tree cleanup description.

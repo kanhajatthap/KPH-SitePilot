@@ -8,21 +8,22 @@ const sha=s=>createHash('sha256').update(s).digest('hex');
 const original={ 'style.css':'/* Theme Name: Disposable HTTP Fixture */\nbody {color:black;}', 'script.js':'window.fixture="healthy";', 'functions.php':'<?php function fixture_health(){return "healthy";}' };
 const changed={ 'style.css':'/* Theme Name: Disposable HTTP Fixture */\nbody {color:blue;}', 'script.js':'window.fixture="changed";', 'functions.php':'<?php function fixture_health(){return "changed";}' };
 const relative=n=>`wp-content/themes/kph-fixture/${n}`;
-const pass=label=>console.log(`PASS ${label}`);
+const pass=(label,details={})=>{const line=JSON.stringify({status:'PASS',phase:process.argv[2],label,...details});fs.appendFileSync('/fixture/checks.jsonl',line+'\n',{mode:0o600});console.log(line);};
 async function get(url='/') {const r=await fetch(`http://web:8080${url}`,{redirect:'manual',signal:AbortSignal.timeout(5000)});return {status:r.status,text:await r.text()};}
-async function health(expected){let last;for(let i=0;i<30;i++){try{last=await get();if(last.status===200&&last.text===`KPH_HTTP:${expected}`){pass(`FPM/MySQL HTTP health ${expected}`);return;}}catch{}await new Promise(r=>setTimeout(r,200));}throw new Error(`HTTP_HEALTH_FAILED expected=${expected} status=${last?.status}`);}
+async function health(expected){let last;for(let i=0;i<30;i++){try{last=await get();if(last.status===200&&last.text===`KPH_HTTP:${expected}`){pass(`FPM/MySQL HTTP health ${expected}`,{httpStatus:last.status,responseHash:sha(last.text)});return;}}catch{}await new Promise(r=>setTimeout(r,200));}throw new Error(`HTTP_HEALTH_FAILED expected=${expected} status=${last?.status}`);}
 function mutate(name,text){assert.equal(preflight(policy,relative(name)).readyForBackup,true);const snapshot=prepare(policy,relative(name),sha(text));fs.writeFileSync(`/fixture/${name}.receipt`,JSON.stringify(snapshot));fs.writeFileSync(theme+name,text);assert.equal(sha(fs.readFileSync(theme+name)),sha(text));}
-function recover(name){const p=JSON.parse(fs.readFileSync(`/fixture/${name}.receipt`));assert.equal(restore(policy,p.id,p.id).dryRun,true);assert.equal(restore(policy,p.id,p.id,true).verified,true);assert.equal(sha(fs.readFileSync(theme+name)),sha(original[name]));pass(`${name} independent restore and original SHA-256`);}
+function recover(name){const p=JSON.parse(fs.readFileSync(`/fixture/${name}.receipt`));assert.equal(restore(policy,p.id,p.id).dryRun,true);assert.equal(restore(policy,p.id,p.id,true).verified,true);assert.equal(sha(fs.readFileSync(theme+name)),sha(original[name]));pass(`${name} independent restore and original SHA-256`,{beforeHash:sha(original[name]),restoredHash:sha(fs.readFileSync(theme+name)),backupId:p.id});}
 switch(process.argv[2]) {
  case 'baseline': {
+  const probe=await get('/fpm-ready.php');assert.equal(probe.status,200);const runtime=JSON.parse(probe.text);assert.deepEqual(runtime,{sapi:'fpm-fcgi',opcache:true,validateTimestamps:'0'});pass('FPM and deliberately stale OPcache configuration confirmed');
   await health('healthy'); const login=await get('/wp-login.php');assert.equal(login.status,200);assert.match(login.text,/user_login/);
   const admin=await get('/wp-admin/');assert.ok([301,302].includes(admin.status));pass('login HTTP and unauthenticated admin redirect (not authenticated admin E2E)');
   for(const name of ['style.css','script.js']){mutate(name,changed[name]);assert.equal((await get('/wp-content/themes/kph-fixture/'+name)).text,changed[name]);recover(name);assert.equal((await get('/wp-content/themes/kph-fixture/'+name)).text,original[name]);}
   mutate('functions.php',changed['functions.php']);await health('healthy');pass('OPcache retains old PHP until worker restart');break;
  }
  case 'changed': await health('changed');recover('functions.php');await health('changed');pass('restored bytes do not imply cache refreshed');break;
- case 'restored': await health('healthy');mutate('functions.php','<?php throw new RuntimeException("DISPOSABLE_FATAL");');break;
- case 'fatal': {const r=await get();assert.ok(r.status>=500&&!r.text.includes('KPH_HTTP:healthy'));pass('runtime fatal breaks HTTP bootstrap');recover('functions.php');break;}
+ case 'restored': await health('healthy');mutate('functions.php',`<?php register_shutdown_function(function(){ $e=error_get_last(); if($e && strpos($e['message'],'DISPOSABLE_FATAL')!==false) file_put_contents('/fixture/runtime/fatal.json',json_encode(['fixtureFatal'=>true])); }); throw new RuntimeException("DISPOSABLE_FATAL");`);break;
+ case 'fatal': {assert.equal((await get('/fpm-ready.php')).status,200);const r=await get();assert.equal(r.status,500);assert.ok(!r.text.includes('KPH_HTTP:healthy'));assert.deepEqual(JSON.parse(fs.readFileSync('/fixture/runtime/fatal.json','utf8')),{fixtureFatal:true});pass('runtime fatal breaks HTTP bootstrap',{httpStatus:r.status,fatalMarker:true});recover('functions.php');break;}
  case 'final': await health('healthy');pass('fatal recovery plus independent worker restart complete');break;
  default: throw new Error('UNKNOWN_PHASE');
 }

@@ -1,0 +1,130 @@
+TAP version 13
+# Subtest: prepare encrypts and verifies without editing; restore defaults to dry-run
+ok 1 - prepare encrypts and verifies without editing; restore defaults to dry-run
+  ---
+  duration_ms: 13.617692
+  type: 'test'
+  ...
+# Subtest: corrupted backup refuses without touching target
+ok 2 - corrupted backup refuses without touching target
+  ---
+  duration_ms: 3.188172
+  type: 'test'
+  ...
+# Subtest: changed target and wrong confirmation refuse
+ok 3 - changed target and wrong confirmation refuse
+  ---
+  duration_ms: 2.89182
+  type: 'test'
+  ...
+# Subtest: wrong root binding refuses
+ok 4 - wrong root binding refuses
+  ---
+  duration_ms: 2.764428
+  type: 'test'
+  ...
+# Subtest: production, unrestricted paths and public vault are rejected
+ok 5 - production, unrestricted paths and public vault are rejected
+  ---
+  duration_ms: 1.548394
+  type: 'test'
+  ...
+# Subtest: symlink and hard-linked targets rejected
+ok 6 - symlink and hard-linked targets rejected
+  ---
+  duration_ms: 1.336137
+  type: 'test'
+  ...
+# Subtest: private policy and key permissions required
+ok 7 - private policy and key permissions required
+  ---
+  duration_ms: 2.1215
+  type: 'test'
+  ...
+# Subtest: rename failure leaves original and removes temporary file
+ok 8 - rename failure leaves original and removes temporary file
+  ---
+  duration_ms: 3.274973
+  type: 'test'
+  ...
+# Subtest: temporary write failure leaves live target and cleans partial source
+ok 9 - temporary write failure leaves live target and cleans partial source
+  ---
+  duration_ms: 3.003654
+  type: 'test'
+  ...
+# Subtest: read-back mismatch never reports verified success
+ok 10 - read-back mismatch never reports verified success
+  ---
+  duration_ms: 4.130318
+  type: 'test'
+  ...
+# Subtest: cooperative recovery lock refuses concurrent operator
+ok 11 - cooperative recovery lock refuses concurrent operator
+  ---
+  duration_ms: 1.041078
+  type: 'test'
+  ...
+# Subtest: size limit rejects oversized source
+ok 12 - size limit rejects oversized source
+  ---
+  duration_ms: 1.238068
+  type: 'test'
+  ...
+# Subtest: fixed runtime-fatal PHP fixture recovered without booting WordPress
+ok 13 - fixed runtime-fatal PHP fixture recovered without booting WordPress # SKIP native PHP unavailable
+  ---
+  duration_ms: 0.183293
+  type: 'test'
+  ...
+# Subtest: preflight reports limited readiness without filesystem writes or source leakage
+ok 14 - preflight reports limited readiness without filesystem writes or source leakage
+  ---
+  duration_ms: 2.226675
+  type: 'test'
+  ...
+# Subtest: preflight refuses active or dangling recovery lock
+ok 15 - preflight refuses active or dangling recovery lock
+  ---
+  duration_ms: 0.919287
+  type: 'test'
+  ...
+# Subtest: preflight cannot accept a non-allowlisted file
+ok 16 - preflight cannot accept a non-allowlisted file
+  ---
+  duration_ms: 0.960608
+  type: 'test'
+  ...
+# Subtest: preflight fails closed on invalid key without creating a backup
+ok 17 - preflight fails closed on invalid key without creating a backup
+  ---
+  duration_ms: 0.904646
+  type: 'test'
+  ...
+# Subtest: CLI preflight is read-only and rejects an apply flag
+ok 18 - CLI preflight is read-only and rejects an apply flag
+  ---
+  duration_ms: 81.387335
+  type: 'test'
+  ...
+# Subtest: missing key yields actionable redacted CLI error without modifying vault
+ok 19 - missing key yields actionable redacted CLI error without modifying vault
+  ---
+  duration_ms: 43.29888
+  type: 'test'
+  ...
+# Subtest: invalid JSON policy reports safe guidance
+ok 20 - invalid JSON policy reports safe guidance
+  ---
+  duration_ms: 40.337787
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 300.812345

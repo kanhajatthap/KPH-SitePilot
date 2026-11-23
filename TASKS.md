@@ -1,27 +1,17 @@
-# Controlled pilot execution — arena/8a847ed8-kph-sitepilot
+# Four-day execution — arena/6e110001-kph-sitepilot
 
-Base: 85fad37f7c4eaa7699a565a99e4794eb917210e1. Local work only. No push/PR/merge, remote migration, production mutation or pilot activation.
+Baseline: 45e032ab0cbc2186c074055d9f502ca4077804f4. Initial tree clean. Prior checklist preserved in docs/pr50-task-history.md; old passes are not new evidence.
 
-## Completed this session
-- [x] Audit branch/environment and external account visibility.
-- [x] Run all migrations + 55 pgTAP SQL assertions on fresh native PostgreSQL (identity shim explicitly documented).
-- [x] 24 native migration/RLS/concurrency/security checks; reproduce/fix expiry after lock waits.
-- [x] Verify owner/non-owner, transfer, revocation, scopes, hashes, replay, source purge and retention in native DB.
-- [x] Harden review click freshness, expired-source DOM display and malformed status handling.
-- [x] Expand compiled Chromium fixture suite to 11 passing scenarios.
-- [x] Implement disposable MySQL/FPM/HTTP/OPcache phase harness; syntax/YAML validation only.
-- [x] Implement local real-auth signed-ingestion/browser runner; syntax validation only.
-- [x] Controlled-pilot specification and fail-closed evidence-completeness gate (8 passing tests).
-- [x] Release regression: 8/8 gates; 1,069 tests / 108 files; host recovery 19 pass / 1 native skip.
+- [x] PASS — inspect baseline, tracking files, existing runners and initial recovery suite (19 pass, native PHP case BLOCKED).
+- [!] BLOCKED — Docker/MySQL/PHP-FPM/nginx/OPcache runtime: binaries absent; container registries outside network allowlist.
+- [x] PASS — unit/structural tests for fixture isolation, local Docker endpoint guards, evidence preservation and scoped cleanup; Docker runtime remains BLOCKED.
+- [x] PASS — 11 runner safety/cleanup tests and independent CSS/JS/PHP byte evidence.
+- [x] PASS — 55 native pgTAP SQL assertions and 29 custom native PostgreSQL checks, including disable ordering.
+- [!] BLOCKED — real-auth Supabase/browser and HTTPS expiry/refresh: disposable runtime absent. No publicly exposed local test services authorized.
+- [x] PASS — auth cleanup helper tests; actual provider cleanup remains BLOCKED.
+- [x] PASS — 25 WordPress+SQLite assertions under PHP WASM; not MySQL/FPM.
+- [x] PASS — 11 compiled browser fixture scenarios in isolated network namespace, no host/public listener.
+- [x] PASS — final release regression (8/8, 1,070 tests / 108 files), diff/secrets review, tested code commit 30d1bb1127ea3a160c2ce0177a671ccec0be806d.
+- [x] PASS — FINAL-EXECUTION-REPORT.md and persistent redacted evidence written. Documentation-only handover commit follows.
 
-## Blocked / not executed (remain mandatory)
-- [ ] Full Docker Supabase Auth/PostgREST stack and native Supabase CLI suite: Docker absent; native SQL alternative passed but does not replace Auth.
-- [ ] MySQL/PHP-FPM/HTTP/OPcache runner runtime: Docker/native services absent; registries outside network allowlist.
-- [ ] Real-auth browser runtime: disposable Supabase stack absent.
-- [ ] Timed JWT expiry/refresh, HTTPS cookies, slow backend, authenticated WordPress admin acceptance: not yet covered by new runners.
-- [ ] Correct remote Supabase migration inventory: configured project absent from connected account; prior 403, no substitution.
-- [ ] Hosted deployment: Vercel CPU fair-use block; latest observed production remains PR42.
-- [ ] Pilot activation: prohibited without separate authorization AND all mandatory evidence.
-
-## Resume
-Read PROGRESS.md and docs/pilot-execution-report.md, then git status. Recreate /tmp dependencies if needed. Run blocked suites only when prerequisites exist. Do not repeat completed tests without changes. Current pilot: **NO-GO**.
+Pilot: NO-GO. No push, PR, merge, deployment, remote migration or activation.
