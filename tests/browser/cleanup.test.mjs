@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {cleanupResources} from './cleanup.mjs';
+test('one cleanup failure does not leave all remaining generated resources',async()=>{const calls=[];const r=await cleanupResources([{label:'browser',run:async()=>{calls.push('browser');throw new Error('private detail');}},{label:'fixture-project',run:async()=>{calls.push('project');}},{label:'fixture-user',run:async()=>{calls.push('user');}}]);assert.deepEqual(calls,['browser','project','user']);assert.deepEqual(r.map(x=>x.status),['FAIL','PASS','PASS']);assert.equal(JSON.stringify(r).includes('private detail'),false);});
+test('no provided resources means no destructive work',async()=>{assert.deepEqual(await cleanupResources([]),[]);});

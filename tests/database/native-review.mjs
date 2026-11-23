@@ -76,6 +76,23 @@ try {
  check((await admin.query("SELECT NOT has_function_privilege('authenticated','public.purge_expired_restricted_sources()','EXECUTE') AS ok")).rows[0].ok,'browser cannot invoke source purge');
  await service.query('SELECT public.purge_expired_restricted_sources()');
  check((await admin.query('SELECT 1 FROM public.restricted_file_evidence WHERE proposal_id=$1',[mismatch])).rowCount===1,'purge retains fresh evidence');
+ // A committed disable must win against a consumer waiting on the site row.
+ await admin.query("UPDATE public.sites SET scopes=ARRAY['files','code'] WHERE id=$1",[site]);
+ const disabledWait='5'.repeat(32);await ingest(disabledWait);
+ await blocker.query('BEGIN');await blocker.query("UPDATE public.sites SET status='revoked' WHERE id=$1",[site]);
+ const disabledPending=consume(a,disabledWait);await admin.query('SELECT pg_sleep(0.15)');await blocker.query('COMMIT');
+ check(!await disabledPending,'site revoked while consumer waits cannot be consumed');
+ await admin.query("UPDATE public.sites SET status='active' WHERE id=$1",[site]);
+ // Conversely a receipt already consumed inside a transaction holds the site share lock:
+ // revocation commits after it, and must prevent every subsequent request.
+ const inFlight='6'.repeat(32);await ingest(inFlight);await a.query('BEGIN');
+ check(await consume(a,inFlight),'in-flight receipt can consume before disable acquires lock');
+ let disableFinished=false;
+ const disable=blocker.query("UPDATE public.sites SET status='revoked' WHERE id=$1",[site]).then(()=>{disableFinished=true;});
+ await admin.query('SELECT pg_sleep(0.15)');check(!disableFinished,'disable waits for already-authorized transaction');
+ await a.query('COMMIT');await disable;
+ check(!await consume(b,disabledWait),'after disable commit all pending consumption refused');
+ check((await admin.query('SELECT status FROM public.restricted_file_reviews WHERE proposal_id=$1',[inFlight])).rows[0].status==='consumed','disable does not pretend to undo an earlier committed receipt');
  check((await admin.query('SELECT count(*)::int AS n FROM public.jobs WHERE site_id=$1',[site])).rows[0].n===0,'no execution jobs created');
  console.log(`NATIVE_REVIEW_OK ${passed} assertions; native PostgreSQL, identity shim, NOT Auth/PostgREST/hosted E2E`);
 } finally {await Promise.all(clients.map(c=>c.end().catch(()=>{})));await cluster.stop();fs.rmSync(base,{recursive:true,force:true});}

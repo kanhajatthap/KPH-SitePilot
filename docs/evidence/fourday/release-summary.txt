@@ -1,0 +1,10 @@
+Release check: 8/8 gates passed.
+  PASS typecheck
+  PASS lint
+  PASS test
+  PASS build
+  PASS abuse-load
+  PASS governance-audit
+  PASS secret-audit
+  PASS diff-check
+Release gates green. Vercel auto-deploys the merge to main.
