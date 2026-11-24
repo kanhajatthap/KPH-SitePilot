@@ -1,0 +1,57 @@
+name: Disposable MySQL FPM Recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mysql-recovery.yml'
+      - 'tests/wordpress/**'
+      - 'tools/recovery/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mysql-recovery.yml'
+      - 'tests/wordpress/**'
+      - 'tools/recovery/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mysql-recovery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mysql-fpm-recovery:
+    name: Disposable MySQL FPM HTTP recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Test fixture guards and artifact redaction
+        run: node --test tests/wordpress/http/safety.test.mjs tests/wordpress/http/export-evidence.test.mjs
+      - name: Check local Docker prerequisites
+        run: |
+          docker compose version
+          docker info --format '{{.ServerVersion}}'
+      - name: Fetch pinned disposable sources
+        run: node tests/wordpress/fetch-sources.mjs > "$RUNNER_TEMP/wp-http-sources.json"
+      - name: Real MySQL FPM HTTP and OPcache acceptance
+        env:
+          WP_TEST_SOURCES: ${{ runner.temp }}/wp-http-sources.json
+        run: node tests/wordpress/http/run.mjs > "$RUNNER_TEMP/http-run-summary.json"
+      - name: Export only redacted evidence
+        if: always()
+        run: |
+          node tests/wordpress/http/export-evidence.mjs "$RUNNER_TEMP/http-run-summary.json" "$RUNNER_TEMP/http-public-evidence.json"
+      - name: Upload redacted acceptance evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-fpm-recovery-evidence
+          path: ${{ runner.temp }}/http-public-evidence.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -53,3 +53,22 @@ path is for trusted local operator investigation. On success, generated site and
 secret files are removed, but redacted evidence is retained. Cleanup failure is
 FAIL, never PASS. Preserve failure backups until operator investigation is complete.
 This supersedes the earlier unconditional generated-tree cleanup description.
+
+## Docker-capable CI acceptance
+
+`.github/workflows/mysql-recovery.yml` runs this harness on a disposable GitHub-hosted
+Ubuntu runner for relevant PR/main changes, with a manual trigger also available.
+It is a test job only: no deployment, remote credentials, application secrets or
+published service ports. It downloads the existing pinned test sources, runs the
+real MySQL/FPM/HTTP/OPcache phases, and fails on runner errors. Workflow configuration
+is not evidence of runtime success; inspect the actual job after authorized publication.
+
+Only `http-public-evidence.json` is uploaded, for seven days. The exporter validates
+the generated temp evidence path and projects statuses, known phases, SHA-256 values,
+HTTP codes, fatal markers and image identities. It excludes raw diagnostic logs,
+source, arbitrary labels, filesystem paths, vaults and credentials. Missing/invalid
+evidence fails export rather than uploading a broader directory. Full private
+failure diagnostics remain only on the ephemeral runner and are NOT artifact-uploaded.
+Automatic replacement-run cancellation is disabled; forced cancellation/timeouts may
+still prevent normal cleanup, in which case the disposable hosted VM lifecycle is
+the final isolation boundary—not a claimed successful cleanup result.
