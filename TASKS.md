@@ -1,3 +1,20 @@
+# Current task — MySQL/FPM recovery CI
+
+Branch: arena/c3b5cf08-kph-sitepilot. Base: e5b42f558bd402bca6644d51313493dd676f93db.
+
+- [x] PASS — clean baseline inspected; Docker preflight executed.
+- [!] BLOCKED — local MySQL/FPM/HTTP/OPcache acceptance: DOCKER_UNAVAILABLE (exit 2).
+- [x] PASS — Docker-capable CI workflow implemented; YAML and safe artifact path validated locally.
+- [x] PASS — 12 HTTP safety/export tests; exporter tests included in normal regression wrapper.
+- [x] PASS — release:check 8/8 including build/lint/typecheck/tests.
+- [ ] NOT TESTED — remote CI execution; requires explicit push/PR authorization.
+- [ ] NOT TESTED — actual container digests and runtime recovery evidence until CI runs.
+
+No push/PR/merge, workflow dispatch, remote migration, deployment or pilot activation performed. Pilot NO-GO.
+
+---
+Historical prior-branch checklist below (not new runtime evidence):
+
 # Four-day execution — arena/6e110001-kph-sitepilot
 
 Baseline: 45e032ab0cbc2186c074055d9f502ca4077804f4. Initial tree clean. Prior checklist preserved in docs/pr50-task-history.md; old passes are not new evidence.

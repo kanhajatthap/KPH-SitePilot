@@ -94,3 +94,12 @@ Read this file, TASKS.md and git status first. External runtimes in /tmp may not
 - On resume, implementation/evidence files were present but the previously reported local commits were absent from the current Git history (HEAD was baseline 45e032a). Recreated a consolidated commit from the persisted changes; earlier tested hashes in reports describe the prior session, not reachable commits in this checkout.
 - PR submission checks: diff check and secret audit passed. Full acceptance results remain those recorded during implementation; no new runtime acceptance is claimed by publication.
 - No merge, deployment, remote migration or pilot activation authorized by this follow-up.
+
+## MySQL/FPM CI task — arena/c3b5cf08-kph-sitepilot
+- Baseline e5b42f558bd402bca6644d51313493dd676f93db; initial tree clean. Docker executable still absent.
+- Executed HTTP runner preflight: exit 2, {"status":"BLOCKED","code":"DOCKER_UNAVAILABLE"}; no fixtures or services started.
+- Added .github/workflows/mysql-recovery.yml: GitHub-hosted Ubuntu, Node22, read-only repository permissions, pinned-source download, existing private Compose harness, 20-minute timeout, no deployment or secrets. Automatic concurrency cancellation disabled to avoid interrupting recovery cleanup.
+- Added export-evidence.mjs and tests: allowlisted artifact projection strips labels/source/raw errors/paths/private diagnostics, validates generated temp paths and rejects symlinks. Workflow uploads exactly one sanitized JSON file, never fixture trees/vaults/keys/logs.
+- PASS: 12 safety/export tests. PASS: workflow YAML parse and artifact path/permissions assertions. PASS: pnpm release:check 8/8 gates. Exporter included in dashboard regression wrapper.
+- New workflow has NOT run on GitHub; no push/PR/dispatch authorized or attempted. Runtime hashes/digests and MySQL/FPM health remain BLOCKED locally and NOT TESTED remotely. Pilot remains NO-GO.
+- Next: explicit publication authorization, then inspect actual new CI job output and address runtime failures. Do not infer passing acceptance from workflow configuration.
