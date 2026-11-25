@@ -1,4 +1,5 @@
 // Dedicated ephemeral GitHub-hosted test VM only. No deployment or remote URL accepted.
+import {classifyFailure} from './auth-ci-diagnostics.mjs';
 import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';import {randomBytes} from 'node:crypto';
 assert.equal(process.env.GITHUB_ACTIONS,'true','Use dedicated disposable CI only');
@@ -8,8 +9,8 @@ assert.ok(typeof endpoint==='string'&&endpoint.startsWith('unix:///'),'Local eng
 const base=fs.mkdtempSync(path.join(os.tmpdir(),'sitepilot-auth-ci-')),project='pilot-auth-'+randomBytes(6).toString('hex');
 const log=path.join(base,'private-runtime.log'),env={...process.env};
 for(const key of Object.keys(env))if(/SUPABASE|SITEPILOT|DEMO_ACCOUNT/.test(key))delete env[key];
-let stage='prepare',server,networkCreated=false,stackAttempted=false,passed=false;
-function run(bin,args,extra={}){try{return execFileSync(bin,args,{env,encoding:'utf8',timeout:600000,maxBuffer:16*1024*1024,stdio:['ignore','pipe','pipe'],...extra});}catch(e){fs.appendFileSync(log,String(e.stdout||'')+String(e.stderr||''),{mode:0o600});throw new Error('PRIVATE_STEP_FAILED');}}
+let stage='prepare',server,networkCreated=false,stackAttempted=false,passed=false,failureCode='UNCLASSIFIED';
+function run(bin,args,extra={}){try{return execFileSync(bin,args,{env,encoding:'utf8',timeout:600000,maxBuffer:16*1024*1024,stdio:['ignore','pipe','pipe'],...extra});}catch(e){failureCode=classifyFailure(String(e.stdout||'')+String(e.stderr||''));fs.appendFileSync(log,String(e.stdout||'')+String(e.stderr||''),{mode:0o600});throw new Error('PRIVATE_STEP_FAILED');}}
 const cli=(args)=>run('pnpm',['dlx','supabase@2.122.0','--workdir',base,'--network-id',project,...args]);
 try{
  fs.cpSync('supabase',path.join(base,'supabase'),{recursive:true});
@@ -28,7 +29,7 @@ try{
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('SERVER_TIMEOUT')),30000);server.once('error',reject);server.once('exit',()=>{clearTimeout(timer);reject(new Error('SERVER_EXIT'));});server.stderr.on('data',b=>fs.appendFileSync(log,b,{mode:0o600}));server.stdout.on('data',b=>{if(b.toString().includes('Ready in')){clearTimeout(timer);resolve();}});});
  stage='browser';const output=run(process.execPath,['tests/browser/real-auth-review.mjs',path.resolve(process.argv[2]),'http://127.0.0.1:3002'],{timeout:180000});assert.ok(output.includes('REAL_AUTH_REVIEW_OK'),'Browser success marker absent');
  passed=true;console.log('::notice title=Real auth acceptance::PASS actual local Auth, PostgREST, signed ingestion and browser sessions');
-}catch{console.log(`::error title=Real auth acceptance::FAIL stage=${stage}; private diagnostics not uploaded`);process.exitCode=1;}
+}catch{console.log(`::error title=Real auth acceptance::FAIL stage=${stage}; code=${failureCode}; private diagnostics not uploaded`);process.exitCode=1;}
 finally{
  server?.kill('SIGTERM');
  try{if(stackAttempted)cli(['stop','--no-backup']);if(networkCreated)run('docker',['network','rm',project]);console.log('::notice title=Real auth cleanup::PASS generated stack stopped');}catch{passed=false;process.exitCode=1;console.log('::error title=Real auth cleanup::FAIL generated stack cleanup');}
