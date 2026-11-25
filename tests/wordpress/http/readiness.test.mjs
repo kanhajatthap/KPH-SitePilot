@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {waitForFpm} from './readiness.mjs';
+const ready={status:200,text:JSON.stringify({sapi:'fpm-fcgi',opcache:true,validateTimestamps:'0'})};
+test('restart transport/gateway race is bounded and then validates actual runtime',async()=>{let count=0;await waitForFpm(async()=>{count++;if(count===1)throw new Error('connection reset');if(count===2)return {status:502};return ready;},{attempts:3,pause:async()=>{}});assert.equal(count,3);});
+test('wrong OPcache configuration is not retried into a pass',async()=>{let count=0;await assert.rejects(waitForFpm(async()=>{count++;return {...ready,text:'{"sapi":"fpm-fcgi","opcache":false}'};},{attempts:3,pause:async()=>{}}),{code:'FPM_PROBE_INVALID'});assert.equal(count,1);});
+test('timeout is failure with numeric status only',async()=>{await assert.rejects(waitForFpm(async()=>({status:503,text:'private upstream details'}),{attempts:2,pause:async()=>{}}),e=>e.code==='FPM_PROBE_TIMEOUT'&&e.observedStatus===503&&!e.message.includes('private'));});
+test('unexpected HTTP response and invalid JSON fail immediately',async()=>{for(const r of [{status:404,text:'x'},{status:200,text:'invalid'}])await assert.rejects(waitForFpm(async()=>r,{pause:async()=>{}}),{code:'FPM_PROBE_INVALID'});});

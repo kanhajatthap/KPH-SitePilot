@@ -18,7 +18,7 @@ const base=fs.mkdtempSync(path.join(os.tmpdir(),'sitepilot-http-'));
 const project='sitepilot-fixture-'+randomBytes(6).toString('hex');
 fs.writeFileSync(path.join(base,'.fixture-owner'),project,{mode:0o600});
 fs.writeFileSync(path.join(base,'compose.env'),'# No inherited Compose interpolation\n',{mode:0o600});
-const report={schemaVersion:1,startedAt:new Date().toISOString(),project,status:'NOT TESTED',images:[],phases:[]};
+const report={schemaVersion:1,commit:/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA||'')?process.env.GITHUB_SHA:undefined,startedAt:new Date().toISOString(),project,status:'NOT TESTED',images:[],phases:[]};
 const env={...dockerEnv,FIXTURE_DIR:base,FIXTURE_UID:String(process.getuid()),FIXTURE_GID:String(process.getgid()),REPO_DIR:process.cwd()};
 const compose=['--context',context,'compose','--env-file',path.join(base,'compose.env'),'-p',project,'-f',path.resolve('tests/wordpress/http/compose.yml')];
 function docker(args,{quiet=false}={}){
@@ -50,12 +50,13 @@ try{
  $table_prefix='fixture_';define('ABSPATH',__DIR__.'/');require ABSPATH.'wp-settings.php';`,{mode:0o600});
  fs.mkdirSync(path.join(root,'wp-content/mu-plugins'),{recursive:true});fs.writeFileSync(path.join(root,'wp-content/mu-plugins/isolate.php'),`<?php add_filter('pre_http_request',function(){return new WP_Error('fixture_network_blocked');});add_filter('pre_wp_mail',function(){return true;});`);
  fs.writeFileSync(path.join(base,'install.php'),`<?php $_SERVER['HTTP_HOST']='web:8080';$_SERVER['SERVER_NAME']='web';$_SERVER['SERVER_PORT']='8080';$_SERVER['REQUEST_URI']='/'; define('WP_INSTALLING',true);require '/fixture/site/wp-load.php';require ABSPATH.'wp-admin/includes/upgrade.php';wp_install('Disposable HTTP','fixture_admin','fixture@example.invalid',false,'',${quote(randomBytes(24).toString('hex'))});switch_theme('kph-fixture');echo 'FIXTURE_INSTALLED';`,{mode:0o600});
- provisioned=true;docker(['up','-d','--build','--wait','--wait-timeout','150','db','php','web'],{quiet:true});
- const install=docker(['exec','-T','php','php','/fixture/install.php'],{quiet:true}).toString();assert.ok(install.includes('FIXTURE_INSTALLED'),'WordPress installation failed');
- for(const phase of ['baseline','changed','restored','fatal','final']){report.activePhase=phase;if(phase!=='baseline')docker(['restart','php'],{quiet:true});const output=docker(['run','--rm','--no-deps','runner',phase],{quiet:true}).toString();
+ report.stage='startup';provisioned=true;docker(['up','-d','--build','--wait','--wait-timeout','150','db','php','web'],{quiet:true});
+ report.stage='install';const install=docker(['exec','-T','php','php','/fixture/install.php'],{quiet:true}).toString();if(!install.includes('FIXTURE_INSTALLED')){report.installCode=/Error establishing a database connection|Error while connecting to the database/i.test(install)?'WORDPRESS_DB_UNAVAILABLE':'WORDPRESS_INSTALL_MARKER_MISSING';throw new Error('WORDPRESS_INSTALL_FAILED');}
+ for(const phase of ['baseline','changed','restored','fatal','final']){report.stage='phase';report.activePhase=phase;if(phase!=='baseline')docker(['restart','php'],{quiet:true});const output=docker(['run','--rm','--no-deps','runner',phase],{quiet:true}).toString();
   const evidence=output.trim().split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line));
   assert.ok(evidence.length>0&&evidence.every(e=>e.status==='PASS'),'PHASE_EVIDENCE_MISSING');report.phases.push({phase,status:'PASS',checks:evidence});
  }
+ report.stage='inventory';
  // Capture immutable identities only, never Docker Config/Env (which can contain secrets).
  const ids=[...new Set(docker(['images','-q'],{quiet:true}).toString().trim().split(/\s+/).filter(Boolean)),'node:22.16.0-bookworm-slim'];
  assert.ok(ids.length>=4,'IMAGE_INVENTORY_INCOMPLETE');
@@ -66,6 +67,7 @@ try{
  success=true;
 }catch(error){
  report.failure={code:error.code==='ERR_ASSERTION'?'ACCEPTANCE_ASSERTION_FAILED':'FIXTURE_EXECUTION_FAILED',exitStatus:Number.isInteger(error.status)?error.status:null};
+ if(fs.existsSync(path.join(base,'phase-failure.json')))report.phaseFailure=JSON.parse(fs.readFileSync(path.join(base,'phase-failure.json'),'utf8'));
  if(fs.existsSync(path.join(base,'checks.jsonl')))report.completedChecksFile='checks.jsonl';
  // Raw subprocess output is intentionally not printed: service errors may include secrets.
  process.exitCode=1;

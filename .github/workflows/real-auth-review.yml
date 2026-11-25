@@ -1,0 +1,29 @@
+name: Disposable Real Auth Review
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/real-auth-review.yml'
+      - 'tests/browser/local-auth-ci.mjs'
+      - 'tests/browser/real-auth-review.mjs'
+      - 'tests/browser/cleanup.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: real-auth-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  real-auth:
+    name: Actual disposable Auth and browser review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - name: Install isolated browser runtime
+        run: npm install --prefix "$RUNNER_TEMP/auth-browser" --ignore-scripts --no-audit --no-fund playwright-core@1.65.1 @sparticuz/chromium@153.0.0
+      - name: Execute real local authentication acceptance
+        run: node tests/browser/local-auth-ci.mjs "$RUNNER_TEMP/auth-browser/node_modules"
