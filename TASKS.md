@@ -1,3 +1,13 @@
+# Current investigation — arena/86278a1c-kph-sitepilot
+
+- [x] PASS — compare failed PR and successful main recovery CI; same file tree.
+- [!] BLOCKED — historical artifact/log bodies unavailable from storage; root cause unconfirmed.
+- [x] PASS — 18 local regression tests for safe diagnostics and bounded FPM readiness.
+- [ ] Pending — full release regression, publish authorized test PR, verify two actual runtime samples.
+- [ ] Pending — if recovery stable, assess real-auth next acceptance path; no deployment/activation.
+
+Prior task history follows; prior counts are not new execution evidence.
+
 # Current task — MySQL/FPM recovery CI
 
 Branch: arena/c3b5cf08-kph-sitepilot. Base: e5b42f558bd402bca6644d51313493dd676f93db.

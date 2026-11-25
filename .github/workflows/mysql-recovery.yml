@@ -23,7 +23,12 @@ concurrency:
 
 jobs:
   mysql-fpm-recovery:
-    name: Disposable MySQL FPM HTTP recovery
+    name: Disposable MySQL FPM HTTP recovery (${{ matrix.sample }})
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: [1, 2]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -32,7 +37,7 @@ jobs:
         with:
           node-version: 22.x
       - name: Test fixture guards and artifact redaction
-        run: node --test tests/wordpress/http/safety.test.mjs tests/wordpress/http/export-evidence.test.mjs
+        run: node --test tests/wordpress/http/safety.test.mjs tests/wordpress/http/export-evidence.test.mjs tests/wordpress/http/readiness.test.mjs
       - name: Check local Docker prerequisites
         run: |
           docker compose version
@@ -47,11 +52,14 @@ jobs:
         if: always()
         run: |
           node tests/wordpress/http/export-evidence.mjs "$RUNNER_TEMP/http-run-summary.json" "$RUNNER_TEMP/http-public-evidence.json"
+      - name: Publish redacted check annotations
+        if: always()
+        run: node tests/wordpress/http/annotate-evidence.mjs "$RUNNER_TEMP/http-public-evidence.json"
       - name: Upload redacted acceptance evidence only
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mysql-fpm-recovery-evidence
+          name: mysql-fpm-recovery-evidence-${{ matrix.sample }}
           path: ${{ runner.temp }}/http-public-evidence.json
           if-no-files-found: warn
           retention-days: 7

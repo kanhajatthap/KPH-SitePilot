@@ -5,6 +5,12 @@ const phases=new Set(['baseline','changed','restored','fatal','final']);
 const status=value=>['PASS','FAIL','BLOCKED','NOT TESTED'].includes(value)?value:'NOT TESTED';
 export function publicEvidence(report){
  const result={schemaVersion:1,status:status(report.status),images:[],phases:[]};
+ if(/^[a-f0-9]{40}$/.test(report.commit||''))result.commit=report.commit;
+ if(['startup','install','phase','inventory'].includes(report.stage))result.stage=report.stage;
+ if(phases.has(report.activePhase))result.activePhase=report.activePhase;
+ if(report.failure){result.failure={code:['ACCEPTANCE_ASSERTION_FAILED','FIXTURE_EXECUTION_FAILED'].includes(report.failure.code)?report.failure.code:'UNKNOWN_FAILURE'};if(Number.isInteger(report.failure.exitStatus))result.failure.exitStatus=report.failure.exitStatus;}
+ if(report.phaseFailure){const f=report.phaseFailure;result.phaseFailure={code:['FPM_PROBE_INVALID','FPM_PROBE_TIMEOUT','PHASE_ASSERTION_FAILED'].includes(f.code)?f.code:'UNKNOWN_FAILURE'};if(Number.isInteger(f.observedStatus)&&f.observedStatus>=100&&f.observedStatus<=599)result.phaseFailure.observedStatus=f.observedStatus;}
+
  for(const image of report.images||[])result.images.push(imageIdentity({Id:image.id,RepoDigests:image.repoDigests}));
  for(const p of report.phases||[]){
   if(!phases.has(p.phase))throw new Error('INVALID_PHASE');

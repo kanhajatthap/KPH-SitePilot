@@ -103,3 +103,11 @@ Read this file, TASKS.md and git status first. External runtimes in /tmp may not
 - PASS: 12 safety/export tests. PASS: workflow YAML parse and artifact path/permissions assertions. PASS: pnpm release:check 8/8 gates. Exporter included in dashboard regression wrapper.
 - New workflow has NOT run on GitHub; no push/PR/dispatch authorized or attempted. Runtime hashes/digests and MySQL/FPM health remain BLOCKED locally and NOT TESTED remotely. Pilot remains NO-GO.
 - Next: explicit publication authorization, then inspect actual new CI job output and address runtime failures. Do not infer passing acceptance from workflow configuration.
+
+## Current authorized investigation — arena/86278a1c-kph-sitepilot
+- Clean baseline 0f2d76dfc5fc58d72830448e0d49c5dca87e81dc. User authorized phases 1–5 including test publication/runtime verification; no merge/deploy/remote migration/pilot activation.
+- GitHub run 45390402958 failed acceptance; newer main run 45398049759 PASSED all steps, including actual MySQL/FPM/HTTP/OPcache. GitHub compare reports no file differences between failed PR head and successful merge. Historical root cause is NOT CONFIRMED; intermittent environment/readiness remains a hypothesis.
+- Artifact metadata readable; artifact download redirected to unavailable storage and failed EOF. Did not bypass network restrictions or repeatedly retry. Existing failed-job annotations only say exit 1.
+- Confirmed diagnostics defect: exporter discarded runner stage/failure fields, preventing safe remote diagnosis. Added allowlisted stage/code/HTTP status and commit provenance, plus GitHub Checks annotations accessible without artifact storage.
+- Hardened single-shot FPM probes to bounded transport/502/503/504 readiness retries. Unit reproduction covers restart transport race; wrong runtime/OPcache or invalid response fails immediately. This is not claimed as confirmed historical root cause.
+- Added two independent CI samples (both required; no masking retries) and unique artifact names. Local 18 safety/export/readiness tests PASS. Full regression and actual CI pending.
