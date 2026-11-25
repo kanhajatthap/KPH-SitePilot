@@ -11,7 +11,9 @@ services:
     tmpfs: [/var/lib/mysql]
     networks: [isolated]
     healthcheck:
-      test: [CMD, mysqladmin, ping, --silent]
+      # The temporary initialization server is socket-only (--skip-networking).
+      # TCP avoids declaring readiness before fixture DB/user creation finishes.
+      test: [CMD, mysqladmin, --protocol=TCP, --host=127.0.0.1, ping, --silent]
       interval: 2s
       timeout: 2s
       retries: 45

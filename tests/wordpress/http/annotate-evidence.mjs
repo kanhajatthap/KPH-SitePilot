@@ -3,7 +3,7 @@ import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} fro
 import {publicEvidence} from './export-evidence.mjs';
 export function annotations(input){
  const r=publicEvidence(input);const level=r.status==='PASS'?'notice':'error';
- const lines=[`::${level} title=Recovery acceptance::status=${r.status}; stage=${r.stage||'unknown'}; phase=${r.activePhase||'unknown'}; code=${r.phaseFailure?.code||r.failure?.code||'none'}; http=${r.phaseFailure?.observedStatus||'unknown'}`];
+ const lines=[`::${level} title=Recovery acceptance::status=${r.status}; stage=${r.stage||'unknown'}; phase=${r.activePhase||'unknown'}; code=${r.installCode||r.phaseFailure?.code||r.failure?.code||'none'}; http=${r.phaseFailure?.observedStatus||'unknown'}`];
  if(r.commit)lines.push(`::notice title=Tested commit::${r.commit}`);
  for(const p of r.phases){lines.push(`::notice title=Recovery phase::${p.phase}: ${p.status}; checks=${p.checks.length}`);for(const c of p.checks)if(c.beforeHash&&c.restoredHash)lines.push(`::notice title=Restore hashes::${p.phase}: before=${c.beforeHash}; restored=${c.restoredHash}`);}
  for(const i of r.images)lines.push(`::notice title=Runtime image::${i.id}`);
